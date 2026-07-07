@@ -5,6 +5,7 @@ from typing import Any, Literal
 from ..kt.engine import KTStateEngine
 from ..kt.mock_engine import MockKTStateEngine
 from ..planning.recommender import RiskPrioritizedRecommender, recommender
+from ..rag.knowledge_rag import KnowledgeRAG, knowledge_rag
 from ..schemas.learning import (
     LearningEvent,
     MathTutorEventResponse,
@@ -22,11 +23,13 @@ class MathTutorLearningLoop:
         store: InMemoryProgressStore | None = None,
         content: DemoTeachingContentRepository | None = None,
         question_recommender: RiskPrioritizedRecommender | None = None,
+        rag: KnowledgeRAG | None = None,
     ) -> None:
         self.kt_engine = kt_engine or MockKTStateEngine()
         self.store = store or progress_store
         self.content = content or content_repository
         self.recommender = question_recommender or recommender
+        self.rag = rag or knowledge_rag
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
@@ -53,6 +56,11 @@ class MathTutorLearningLoop:
 
     def _load_context(self, state: MathTutorState) -> None:
         self._grade_answer_if_needed(state)
+        rag_query, rag_filters = self._build_rag_request(state)
+        state.rag_context = [
+            result.model_dump()
+            for result in self.rag.search(query=rag_query, filters=rag_filters, limit=3)
+        ]
         state.teaching_trace.append(
             self._trace(
                 stage="load_context",
@@ -61,6 +69,12 @@ class MathTutorLearningLoop:
                     "progress_version_before": state.kt_progress.version,
                     "memory_count": len(state.student_memories),
                     "rag_context_count": len(state.rag_context),
+                    "rag_query": rag_query,
+                    "rag_filters": rag_filters,
+                    "rag_sources": [
+                        {"title": item["title"], "source": item["source"]}
+                        for item in state.rag_context
+                    ],
                     "grading_source": state.learning_event.payload.get("grading_source"),
                     "is_correct": state.learning_event.payload.get("is_correct"),
                     "correct_answer_available": "correct_answer" in state.learning_event.payload,
@@ -177,9 +191,9 @@ class MathTutorLearningLoop:
             state.response = self._answer_submission_response(state)
         elif state.intent == "next_step_advice":
             question = state.recommended_questions[0]
-            state.response = f"我已经查看你的学习状态。下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。推荐理由：{question['reason']}。做完后我会用标准答案确定性判题。"
+            state.response = f"我已经查看你的学习状态。下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
         else:
-            state.response = "我已收到你的问题。当前 V1 主循环已经记录上下文，后续会结合本地数学知识库给出更完整讲解。"
+            state.response = self._knowledge_response(state)
 
         state.teaching_trace.append(
             self._trace(
@@ -193,11 +207,58 @@ class MathTutorLearningLoop:
         question_id = state.learning_event.payload.get("question_id", "这道题")
         is_correct = state.learning_event.payload.get("is_correct")
         if is_correct is True:
-            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。"
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。{self._citation_sentence(state)}"
         if is_correct is False:
             correct_answer = state.learning_event.payload.get("correct_answer", "标准答案")
-            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}，我会优先安排错因讲解和同类练习。"
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}，我会优先安排错因讲解和同类练习。{self._citation_sentence(state)}"
         return f"收到，你提交了 {question_id} 的答案，但我还没有在内容集中找到这道题，暂时只记录事件。"
+
+    def _knowledge_response(self, state: MathTutorState) -> str:
+        if not state.rag_context:
+            return "我已收到你的问题。当前 V1 主循环已经记录上下文，后续会结合本地数学知识库给出更完整讲解。"
+        top = state.rag_context[0]
+        return f"我查到一条相关知识：{top['content']} {self._citation_sentence(state)}"
+
+    def _citation_sentence(self, state: MathTutorState) -> str:
+        if not state.rag_context:
+            return ""
+        sources = "；".join(
+            f"{item['title']}（{item['source']}）" for item in state.rag_context[:2]
+        )
+        return f"参考：{sources}。"
+
+    def _build_rag_request(self, state: MathTutorState) -> tuple[str, dict[str, Any]]:
+        if state.learning_event.type == "answer_submitted":
+            query = " ".join(
+                str(part)
+                for part in (
+                    state.learning_event.payload.get("concept_name", ""),
+                    state.learning_event.payload.get("question_id", ""),
+                    "错因 题解 学习策略",
+                )
+                if part
+            )
+            filters: dict[str, Any] = {
+                "doc_types": ["question_explanation", "mistake_pattern", "learning_strategy"]
+            }
+            if state.learning_event.payload.get("question_id"):
+                filters["question_id"] = state.learning_event.payload["question_id"]
+            if state.learning_event.payload.get("concept_id"):
+                filters["concept_id"] = state.learning_event.payload["concept_id"]
+            return query, filters
+
+        if state.intent == "next_step_advice":
+            weak_concept_id = (
+                state.kt_diagnosis.weak_concepts[0]["concept_id"]
+                if state.kt_diagnosis and state.kt_diagnosis.weak_concepts
+                else None
+            )
+            filters = {"doc_types": ["concept_note", "learning_strategy"]}
+            if weak_concept_id:
+                filters["concept_id"] = weak_concept_id
+            return state.learning_event.message or "下一步 推荐 学习策略", filters
+
+        return state.learning_event.message, {}
 
     def _grade_answer_if_needed(self, state: MathTutorState) -> None:
         if state.learning_event.type != "answer_submitted":

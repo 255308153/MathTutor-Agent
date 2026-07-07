@@ -1,0 +1,92 @@
+[
+  {
+    "doc_id": "rag_fraction_addition_basic",
+    "doc_type": "concept_note",
+    "title": "异分母分数加法：先通分再相加",
+    "content": "异分母分数相加时，先找到共同分母，把每个分数改写成同分母分数，再相加分子，分母保持不变。",
+    "source": "demo-rag/fraction_addition.md",
+    "concept_id": "c_fraction_addition",
+    "question_id": null,
+    "keywords": ["分数", "通分", "异分母", "共同分母"]
+  },
+  {
+    "doc_id": "rag_fraction_addition_mistake",
+    "doc_type": "mistake_pattern",
+    "title": "常见错因：分母直接相加",
+    "content": "把 1/2 + 1/4 算成 2/6 是典型错误。分母表示每份大小，异分母相加前必须先统一每份大小。",
+    "source": "demo-rag/fraction_mistakes.md",
+    "concept_id": "c_fraction_addition",
+    "question_id": "q_frac_001",
+    "keywords": ["错因", "分母相加", "通分"]
+  },
+  {
+    "doc_id": "rag_q_frac_001_solution",
+    "doc_type": "question_explanation",
+    "title": "q_frac_001 题解",
+    "content": "1/2 可以改写为 2/4，所以 1/2 + 1/4 = 2/4 + 1/4 = 3/4。",
+    "source": "demo-rag/question_solutions.md#q_frac_001",
+    "concept_id": "c_fraction_addition",
+    "question_id": "q_frac_001",
+    "keywords": ["1/2", "1/4", "3/4", "题解"]
+  },
+  {
+    "doc_id": "rag_linear_equation_inverse",
+    "doc_type": "concept_note",
+    "title": "一元一次方程：用逆运算保持等式平衡",
+    "content": "解一元一次方程时，对等式两边做相同的逆运算。先处理加减，再处理乘除，目标是让 x 单独留在一边。",
+    "source": "demo-rag/linear_equation.md",
+    "concept_id": "c_linear_equation",
+    "question_id": null,
+    "keywords": ["方程", "逆运算", "移项", "等式"]
+  },
+  {
+    "doc_id": "rag_linear_equation_mistake",
+    "doc_type": "mistake_pattern",
+    "title": "常见错因：移项符号错误",
+    "content": "把 3x + 2 = 11 处理成 3x = 13，说明没有把 +2 变成 -2。移项可以理解为两边同时减 2。",
+    "source": "demo-rag/equation_mistakes.md",
+    "concept_id": "c_linear_equation",
+    "question_id": "q_eq_003",
+    "keywords": ["移项", "符号", "错因"]
+  },
+  {
+    "doc_id": "rag_rectangle_area",
+    "doc_type": "concept_note",
+    "title": "长方形面积：长乘宽",
+    "content": "长方形面积表示覆盖了多少个单位正方形，公式是面积 = 长 × 宽。不要和周长 = 2 × (长 + 宽) 混淆。",
+    "source": "demo-rag/rectangle_area.md",
+    "concept_id": "c_area_rectangle",
+    "question_id": null,
+    "keywords": ["面积", "长方形", "长乘宽", "周长"]
+  },
+  {
+    "doc_id": "rag_ratio_unit_rate",
+    "doc_type": "concept_note",
+    "title": "比例与单价：先求单位量",
+    "content": "遇到同样单价或同样速度的问题，先求 1 个单位对应多少，再乘目标数量。",
+    "source": "demo-rag/ratio_unit_rate.md",
+    "concept_id": "c_ratio",
+    "question_id": null,
+    "keywords": ["比例", "单价", "单位量", "倍数"]
+  },
+  {
+    "doc_id": "rag_strategy_review_wrong",
+    "doc_type": "learning_strategy",
+    "title": "错题复习策略：先解释错因，再做同类题",
+    "content": "错题后不要马上刷很多新题。先说清楚错在哪里，再做一道结构相同、数字不同的题来验证是否修正。",
+    "source": "demo-rag/learning_strategies.md#wrong-answer",
+    "concept_id": null,
+    "question_id": null,
+    "keywords": ["错题", "复习", "同类题", "策略"]
+  },
+  {
+    "doc_id": "rag_strategy_next_step",
+    "doc_type": "learning_strategy",
+    "title": "下一步练习策略：薄弱优先，难度适中",
+    "content": "下一步练习应优先覆盖薄弱知识点和高遗忘风险知识点，同时选择略高于当前掌握度的题目。",
+    "source": "demo-rag/learning_strategies.md#next-step",
+    "concept_id": null,
+    "question_id": null,
+    "keywords": ["推荐", "薄弱", "遗忘风险", "难度"]
+  }
+]

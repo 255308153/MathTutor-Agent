@@ -170,7 +170,72 @@ TeachingTrace 的 `plan` 阶段会记录：
 - `recommendation_candidates`：排序后的前几名候选、分数和分数因子。
 - `selected_question_ids`：最终返回的 1-3 道题。
 
-## 6. Demo 教学内容集
+## 6. 数学 RAG
+
+V1 本地 RAG fallback 位于：
+
+```text
+backend/app/rag/knowledge_rag.py
+data/rag/demo_knowledge.json
+```
+
+RAG 文档 schema：
+
+```json
+{
+  "doc_id": "rag_fraction_addition_basic",
+  "doc_type": "concept_note",
+  "title": "异分母分数加法：先通分再相加",
+  "content": "异分母分数相加时，先找到共同分母...",
+  "source": "demo-rag/fraction_addition.md",
+  "concept_id": "c_fraction_addition",
+  "question_id": null,
+  "keywords": ["分数", "通分", "异分母"]
+}
+```
+
+四类知识：
+
+| `doc_type` | 用途 |
+| --- | --- |
+| `concept_note` | 概念讲解和规则说明。 |
+| `question_explanation` | 单题题解，通常绑定 `question_id`。 |
+| `mistake_pattern` | 常见错因，供错因诊断和答题反馈引用。 |
+| `learning_strategy` | 学习策略，如错题复习和下一步练习建议。 |
+
+检索能力：
+
+- 支持 `doc_type` 单类型过滤。
+- 支持 `doc_types` 多类型过滤。
+- 支持 `concept_id` 过滤。
+- 支持 `question_id` 过滤。
+- 返回 `title`、`source`、`content` 和 `score`，供 response 和 TeachingTrace 引用。
+
+主循环接入：
+
+- `load_context` 阶段会读取 RAG context。
+- 普通知识问答按学生消息检索。
+- 答题提交按 `question_id` / `concept_id` 检索题解和错因。
+- 下一步建议检索概念说明和学习策略。
+- 学生回答中会附简短 `参考：title（source）` citation。
+- TeachingTrace 记录 `rag_query`、`rag_filters` 和 `rag_sources`。
+
+边界：
+
+```text
+RAG 支持解释和 citation。
+RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probability。
+```
+
+后续替换为 Chroma / VikingDB：
+
+1. 保持 `KnowledgeRAG.search(query, filters, limit)` 接口不变。
+2. 保持文档 metadata 字段语义不变。
+3. adapter 内部负责向量召回和 metadata filter。
+4. 返回结果仍然映射为 `RAGSearchResult`。
+5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
+
+## 7. Demo 教学内容集
 
 本地 demo 内容集位于：
 
@@ -229,7 +294,7 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
-## 7. 环境变量
+## 8. 环境变量
 
 从示例文件创建本地配置：
 
@@ -248,7 +313,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 8. 数据目录约定
+## 9. 数据目录约定
 
 ```text
 data/
@@ -265,7 +330,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 9. V1 不做什么
+## 10. V1 不做什么
 
 V1 明确不做：
 
@@ -279,7 +344,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 10. 核心实现边界
+## 11. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -297,7 +362,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 11. GitHub Issue 工作流
+## 12. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -318,7 +383,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 12. 常见排错
+## 13. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 
