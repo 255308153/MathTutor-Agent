@@ -7,6 +7,11 @@ from backend.app.storage.content_repository import content_repository
 TRACE_STAGES = ["load_context", "diagnose", "plan", "generate_response"]
 
 
+def assert_core_trace(stages: list[str]) -> None:
+    assert stages[:4] == TRACE_STAGES
+    assert "memory_update" in stages
+
+
 def test_chat_message_returns_next_step_response_and_trace() -> None:
     client = TestClient(create_app())
 
@@ -32,7 +37,7 @@ def test_chat_message_returns_next_step_response_and_trace() -> None:
     assert "score_factors" in body["recommended_questions"][0]
     assert "standard_answer" not in body["recommended_questions"][0]
     assert "explanation" not in body["recommended_questions"][0]
-    assert [event["stage"] for event in body["teaching_trace"]] == TRACE_STAGES
+    assert_core_trace([event["stage"] for event in body["teaching_trace"]])
 
 
 def test_answer_submitted_updates_progress_and_returns_trace() -> None:
@@ -60,7 +65,7 @@ def test_answer_submitted_updates_progress_and_returns_trace() -> None:
     assert body["state_summary"]["next_action"]["type"] == "review_answer"
     assert body["state_summary"]["progress_version"] == 1
     assert body["recommended_questions"] == []
-    assert [event["stage"] for event in body["teaching_trace"]] == TRACE_STAGES
+    assert_core_trace([event["stage"] for event in body["teaching_trace"]])
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
     assert body["teaching_trace"][0]["metadata"]["grading_source"] == "demo_teaching_content"
 

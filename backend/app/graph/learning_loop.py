@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from ..kt.engine import KTStateEngine
 from ..kt.mock_engine import MockKTStateEngine
+from ..memory.store import StudentMemory, StudentMemoryStore, memory_store
 from ..planning.recommender import RiskPrioritizedRecommender, recommender
 from ..rag.knowledge_rag import KnowledgeRAG, knowledge_rag
 from ..schemas.learning import (
@@ -24,12 +25,14 @@ class MathTutorLearningLoop:
         content: DemoTeachingContentRepository | None = None,
         question_recommender: RiskPrioritizedRecommender | None = None,
         rag: KnowledgeRAG | None = None,
+        memories: StudentMemoryStore | None = None,
     ) -> None:
         self.kt_engine = kt_engine or MockKTStateEngine()
         self.store = store or progress_store
         self.content = content or content_repository
         self.recommender = question_recommender or recommender
         self.rag = rag or knowledge_rag
+        self.memories = memories or memory_store
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
@@ -45,6 +48,7 @@ class MathTutorLearningLoop:
         self._diagnose(state)
         self._plan(state)
         self._generate_response(state)
+        self._update_memory(state)
 
         self.store.save(state.kt_progress)
         return MathTutorEventResponse(
@@ -56,6 +60,15 @@ class MathTutorLearningLoop:
 
     def _load_context(self, state: MathTutorState) -> None:
         self._grade_answer_if_needed(state)
+        memory_query = self._memory_query(state)
+        state.student_memories = [
+            memory.model_dump()
+            for memory in self.memories.search(
+                student_id=state.student_id,
+                query=memory_query,
+                limit=5,
+            )
+        ]
         rag_query, rag_filters = self._build_rag_request(state)
         state.rag_context = [
             result.model_dump()
@@ -68,6 +81,15 @@ class MathTutorLearningLoop:
                 metadata={
                     "progress_version_before": state.kt_progress.version,
                     "memory_count": len(state.student_memories),
+                    "memory_query": memory_query,
+                    "memory_summaries": [
+                        {
+                            "memory_type": item["memory_type"],
+                            "content": item["content"],
+                            "evidence": item["evidence"],
+                        }
+                        for item in state.student_memories
+                    ],
                     "rag_context_count": len(state.rag_context),
                     "rag_query": rag_query,
                     "rag_filters": rag_filters,
@@ -141,7 +163,7 @@ class MathTutorLearningLoop:
             ranked_questions = self.recommender.recommend(
                 progress=state.kt_progress,
                 diagnosis=state.kt_diagnosis,
-                preferences=state.learning_event.payload,
+                preferences=self._planning_preferences(state),
                 limit=len(self.content.list_questions()),
             )
             state.recommended_questions = ranked_questions[:3]
@@ -191,7 +213,7 @@ class MathTutorLearningLoop:
             state.response = self._answer_submission_response(state)
         elif state.intent == "next_step_advice":
             question = state.recommended_questions[0]
-            state.response = f"我已经查看你的学习状态。下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
+            state.response = f"我已经查看你的学习状态。{self._memory_preface(state)}下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
         else:
             state.response = self._knowledge_response(state)
 
@@ -213,11 +235,102 @@ class MathTutorLearningLoop:
             return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}，我会优先安排错因讲解和同类练习。{self._citation_sentence(state)}"
         return f"收到，你提交了 {question_id} 的答案，但我还没有在内容集中找到这道题，暂时只记录事件。"
 
+    def _update_memory(self, state: MathTutorState) -> None:
+        updates: list[StudentMemory] = []
+        preferred_teaching_type = state.learning_event.payload.get("preferred_teaching_type")
+        preferred_concept_id = state.learning_event.payload.get("preferred_concept_id")
+        if preferred_teaching_type or preferred_concept_id:
+            updates.append(
+                StudentMemory(
+                    student_id=state.student_id,
+                    memory_type="preference",
+                    content="学生在推荐中表达了学习偏好。",
+                    evidence={
+                        "preferred_teaching_type": preferred_teaching_type,
+                        "preferred_concept_id": preferred_concept_id,
+                    },
+                )
+            )
+
+        if state.learning_event.type == "answer_submitted":
+            is_correct = state.learning_event.payload.get("is_correct")
+            if is_correct is False:
+                updates.append(
+                    StudentMemory(
+                        student_id=state.student_id,
+                        memory_type="repeated_mistake",
+                        content=f"学生在「{state.learning_event.payload.get('concept_name')}」上出现错题。",
+                        evidence={
+                            "question_id": state.learning_event.payload.get("question_id"),
+                            "concept_id": state.learning_event.payload.get("concept_id"),
+                            "mistake_patterns": state.learning_event.payload.get("mistake_patterns", []),
+                        },
+                    )
+                )
+            elif is_correct is True:
+                updates.append(
+                    StudentMemory(
+                        student_id=state.student_id,
+                        memory_type="effective_strategy",
+                        content="学生完成了一次正确作答，可继续用同类巩固题推进。",
+                        evidence={
+                            "question_id": state.learning_event.payload.get("question_id"),
+                            "concept_id": state.learning_event.payload.get("concept_id"),
+                        },
+                    )
+                )
+
+        written = [self.memories.write(memory).model_dump() for memory in updates]
+        state.teaching_trace.append(
+            self._trace(
+                stage="memory_update",
+                content="已生成并写入本轮长期记忆更新。",
+                metadata={
+                    "memory_update_count": len(written),
+                    "memory_updates": [
+                        {
+                            "memory_type": item["memory_type"],
+                            "content": item["content"],
+                            "evidence": item["evidence"],
+                        }
+                        for item in written
+                    ],
+                    "boundary": "Memory influences strategy, not mastery.",
+                },
+            )
+        )
+
     def _knowledge_response(self, state: MathTutorState) -> str:
         if not state.rag_context:
             return "我已收到你的问题。当前 V1 主循环已经记录上下文，后续会结合本地数学知识库给出更完整讲解。"
         top = state.rag_context[0]
         return f"我查到一条相关知识：{top['content']} {self._citation_sentence(state)}"
+
+    def _memory_query(self, state: MathTutorState) -> str:
+        parts = [
+            state.learning_event.message,
+            str(state.learning_event.payload.get("concept_name", "")),
+            str(state.learning_event.payload.get("concept_id", "")),
+            "偏好 错因 策略 反思",
+        ]
+        return " ".join(part for part in parts if part)
+
+    def _planning_preferences(self, state: MathTutorState) -> dict[str, Any]:
+        preferences = dict(state.learning_event.payload)
+        for memory in state.student_memories:
+            if memory["memory_type"] != "preference":
+                continue
+            evidence = memory.get("evidence", {})
+            for key in ("preferred_teaching_type", "preferred_concept_id"):
+                if key not in preferences and evidence.get(key):
+                    preferences[key] = evidence[key]
+        return preferences
+
+    def _memory_preface(self, state: MathTutorState) -> str:
+        preferences = self._planning_preferences(state)
+        if preferences.get("preferred_concept_id") or preferences.get("preferred_teaching_type"):
+            return "我会参考你之前的学习偏好，"
+        return ""
 
     def _citation_sentence(self, state: MathTutorState) -> str:
         if not state.rag_context:

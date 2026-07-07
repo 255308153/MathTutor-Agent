@@ -235,7 +235,69 @@ RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probabil
 4. 返回结果仍然映射为 `RAGSearchResult`。
 5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
 
-## 7. Demo 教学内容集
+## 7. 学生长期记忆
+
+V1 本地 memory fallback 位于：
+
+```text
+backend/app/memory/store.py
+```
+
+接口 seam：
+
+- `StudentMemoryStore.search(student_id, query, memory_types, limit)`
+- `StudentMemoryStore.write(memory)`
+- `StudentMemoryStore.list_recent(student_id, limit)`
+
+记忆条目格式：
+
+```json
+{
+  "memory_id": "mem_xxx",
+  "student_id": "u001",
+  "memory_type": "preference",
+  "content": "学生偏好先练比例相关题。",
+  "evidence": {"preferred_concept_id": "c_ratio"},
+  "created_at": "2026-07-07T...",
+  "updated_at": "2026-07-07T..."
+}
+```
+
+支持的 `memory_type`：
+
+| 类型 | 用途 |
+| --- | --- |
+| `preference` | 学生偏好，如偏好的知识点或教学类型。 |
+| `repeated_mistake` | 重复错因和错题证据。 |
+| `effective_strategy` | 对该学生有效的练习策略。 |
+| `reflection` | 学习反思摘要，后续可由 memory refinery 生成。 |
+
+主循环接入：
+
+- `load_context` 阶段检索学生长期记忆。
+- 推荐规划会把 `preference` memory 合并到推荐器 preferences。
+- 每轮结束后追加 `memory_update` trace。
+- 错题会写入 `repeated_mistake`。
+- 正确作答会写入 `effective_strategy`。
+- 学生在 payload 中传入 `preferred_teaching_type` 或 `preferred_concept_id` 时会写入 `preference`。
+
+边界：
+
+```text
+Memory 影响教学策略、推荐偏好和表达方式。
+Memory 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probability。
+RAG 提供外部知识证据。
+KT state 仍是学习事实来源。
+```
+
+后续替换为 Mem0：
+
+1. 保持 `StudentMemoryStore` 接口不变。
+2. Mem0 adapter 负责持久化、语义检索和去重。
+3. adapter 返回仍映射为 `StudentMemory`。
+4. memory refinery 可以生成 reflection，但不能写 KT facts。
+
+## 8. Demo 教学内容集
 
 本地 demo 内容集位于：
 
@@ -294,7 +356,7 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
-## 8. 环境变量
+## 9. 环境变量
 
 从示例文件创建本地配置：
 
@@ -313,7 +375,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 9. 数据目录约定
+## 10. 数据目录约定
 
 ```text
 data/
@@ -330,7 +392,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 10. V1 不做什么
+## 11. V1 不做什么
 
 V1 明确不做：
 
@@ -344,7 +406,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 11. 核心实现边界
+## 12. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -362,7 +424,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 12. GitHub Issue 工作流
+## 13. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -383,7 +445,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 13. 常见排错
+## 14. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 
