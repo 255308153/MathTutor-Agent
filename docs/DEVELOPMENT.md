@@ -91,9 +91,8 @@ curl -X POST http://127.0.0.1:8000/api/events \
     "type": "answer_submitted",
     "message": "我选 B",
     "payload": {
-      "question_id": "q-demo-001",
+      "question_id": "q_frac_001",
       "answer": "B",
-      "is_correct": false,
       "time_spent": 73
     }
   }'
@@ -127,9 +126,68 @@ curl -X POST http://127.0.0.1:8000/api/events \
 }
 ```
 
-当前 #3 切片只提供推荐占位和本地内存进度；#4/#5 会接入真实小题库、确定性判题和风险排序理由。
+当前推荐来自本地 demo 内容集，答题提交由服务端根据标准答案确定性判题；#5 会进一步接入风险优先排序理由。
 
-## 5. 环境变量
+## 5. Demo 教学内容集
+
+本地 demo 内容集位于：
+
+```text
+data/content/demo_teaching_content.json
+```
+
+数据结构：
+
+```json
+{
+  "concept_teaching_type_map": {
+    "c_fraction_addition": "procedure"
+  },
+  "questions": [
+    {
+      "question_id": "q_frac_001",
+      "stem": "计算：1/2 + 1/4 = ?",
+      "standard_answer": "3/4",
+      "explanation": "先通分到四分之一，1/2 = 2/4，所以 2/4 + 1/4 = 3/4。",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "difficulty": 0.35,
+      "mistake_patterns": ["没有通分", "分母直接相加"],
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    }
+  ]
+}
+```
+
+字段约定：
+
+- `question_id`：题目稳定 ID，后续推荐、判题、RAG、UI 都使用它串联。
+- `stem`：学生可见题干。
+- `standard_answer`：服务端标准答案，不在推荐题 payload 中返回。
+- `explanation`：题解，推荐时不提前返回，后续讲解 / RAG 使用。
+- `concept_id` / `concept_name`：知识点标识和中文名。
+- `difficulty`：0-1 难度分，后续推荐排序使用。
+- `mistake_patterns`：常见错因，后续错因诊断使用。
+- `rag_doc_ids`：关联 RAG 文档 ID。
+- `concept_teaching_type_map`：稳定标注知识点教学类型，取值为 `memory`、`concept`、`procedure`、`design`。
+
+确定性判题规则：
+
+- `answer_submitted` 进入主循环后，服务端会根据 `question_id` 读取内容集标准答案。
+- 客户端传入的 `is_correct`、`correct_answer`、`concept_id` 等判题字段会被清理，避免覆盖服务端事实。
+- 判题结果写回 learning event payload，再交给 `MockKTStateEngine` 更新 progress。
+- 正确路径会提高 mastery、降低 forgetting risk，并走 `reinforce_mastery`。
+- 错误路径会降低 mastery、提高 forgetting risk，写入 `error_records` / `review_queue`，并走 `review_answer`。
+
+替换为 ASSISTments2017 / DGEKT 数据时：
+
+1. 保持 `question_id`、标准答案、知识点、难度、解析、错因、RAG 文档 ID 的字段语义不变。
+2. 将 ASSISTments skill / problem 映射到 `concept_id` 与 `question_id`。
+3. 将 DGEKT 需要的历史序列特征放在 adapter 内部，不泄漏到 API payload。
+4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
+5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
+
+## 6. 环境变量
 
 从示例文件创建本地配置：
 
@@ -148,7 +206,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 6. 数据目录约定
+## 7. 数据目录约定
 
 ```text
 data/
@@ -165,7 +223,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 7. V1 不做什么
+## 8. V1 不做什么
 
 V1 明确不做：
 
@@ -179,7 +237,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 8. 核心实现边界
+## 9. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -197,7 +255,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 9. GitHub Issue 工作流
+## 10. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -218,7 +276,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 10. 常见排错
+## 11. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 

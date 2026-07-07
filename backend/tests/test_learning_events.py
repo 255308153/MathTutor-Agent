@@ -3,6 +3,9 @@ from fastapi.testclient import TestClient
 from backend.app.main import create_app
 
 
+TRACE_STAGES = ["load_context", "diagnose", "plan", "generate_response"]
+
+
 def test_chat_message_returns_next_step_response_and_trace() -> None:
     client = TestClient(create_app())
 
@@ -19,16 +22,13 @@ def test_chat_message_returns_next_step_response_and_trace() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert "下一步建议" in body["response"]
+    assert "下一步先练" in body["response"]
     assert body["state_summary"]["intent"] == "next_step_advice"
     assert body["state_summary"]["progress_version"] == 1
-    assert body["recommended_questions"][0]["question_id"] == "placeholder-q-risk-1"
-    assert [event["stage"] for event in body["teaching_trace"]] == [
-        "load_context",
-        "diagnose",
-        "plan",
-        "generate_response",
-    ]
+    assert body["recommended_questions"][0]["question_id"] == "q_frac_001"
+    assert "standard_answer" not in body["recommended_questions"][0]
+    assert "explanation" not in body["recommended_questions"][0]
+    assert [event["stage"] for event in body["teaching_trace"]] == TRACE_STAGES
 
 
 def test_answer_submitted_updates_progress_and_returns_trace() -> None:
@@ -40,11 +40,10 @@ def test_answer_submitted_updates_progress_and_returns_trace() -> None:
             "session_id": "session-answer-001",
             "student_id": "student-answer-001",
             "type": "answer_submitted",
-            "message": "我选 B",
+            "message": "我选 1/6",
             "payload": {
-                "question_id": "q-demo-001",
-                "answer": "B",
-                "is_correct": False,
+                "question_id": "q_frac_001",
+                "answer": "1/6",
                 "time_spent": 73,
             },
         },
@@ -57,9 +56,84 @@ def test_answer_submitted_updates_progress_and_returns_trace() -> None:
     assert body["state_summary"]["next_action"]["type"] == "review_answer"
     assert body["state_summary"]["progress_version"] == 1
     assert body["recommended_questions"] == []
-    assert [event["stage"] for event in body["teaching_trace"]] == [
-        "load_context",
-        "diagnose",
-        "plan",
-        "generate_response",
-    ]
+    assert [event["stage"] for event in body["teaching_trace"]] == TRACE_STAGES
+    assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
+    assert body["teaching_trace"][0]["metadata"]["grading_source"] == "demo_teaching_content"
+
+
+def test_recommended_question_then_correct_answer_updates_state() -> None:
+    client = TestClient(create_app())
+
+    recommendation = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-correct-001",
+            "student_id": "student-correct-001",
+            "type": "chat_message",
+            "message": "推荐下一题",
+            "payload": {},
+        },
+    ).json()
+    question = recommendation["recommended_questions"][0]
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-correct-001",
+            "student_id": "student-correct-001",
+            "type": "answer_submitted",
+            "message": "答案是 3/4",
+            "payload": {
+                "question_id": question["question_id"],
+                "answer": "3/4",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "判定为正确" in body["response"]
+    assert body["state_summary"]["progress_version"] == 2
+    assert body["state_summary"]["next_action"]["type"] == "reinforce_mastery"
+    assert body["state_summary"]["weak_concepts"] == []
+    assert body["teaching_trace"][0]["metadata"]["is_correct"] is True
+    assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 0
+
+
+def test_recommended_question_then_wrong_answer_updates_state() -> None:
+    client = TestClient(create_app())
+
+    recommendation = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-wrong-001",
+            "student_id": "student-wrong-001",
+            "type": "chat_message",
+            "message": "推荐下一题",
+            "payload": {},
+        },
+    ).json()
+    question = recommendation["recommended_questions"][0]
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-wrong-001",
+            "student_id": "student-wrong-001",
+            "type": "answer_submitted",
+            "message": "答案是 1/6",
+            "payload": {
+                "question_id": question["question_id"],
+                "answer": "1/6",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "判定为不正确" in body["response"]
+    assert body["state_summary"]["progress_version"] == 2
+    assert body["state_summary"]["next_action"]["type"] == "review_answer"
+    assert body["state_summary"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
+    assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
+    assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 1

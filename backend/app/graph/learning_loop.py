@@ -10,6 +10,7 @@ from ..schemas.learning import (
     MathTutorState,
 )
 from ..schemas.trace import TeachingTraceEvent, TeachingTraceEventType
+from ..storage.content_repository import DemoTeachingContentRepository, content_repository
 from ..storage.progress_store import InMemoryProgressStore, progress_store
 
 
@@ -18,9 +19,11 @@ class MathTutorLearningLoop:
         self,
         kt_engine: KTStateEngine | None = None,
         store: InMemoryProgressStore | None = None,
+        content: DemoTeachingContentRepository | None = None,
     ) -> None:
         self.kt_engine = kt_engine or MockKTStateEngine()
         self.store = store or progress_store
+        self.content = content or content_repository
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
@@ -46,6 +49,7 @@ class MathTutorLearningLoop:
         )
 
     def _load_context(self, state: MathTutorState) -> None:
+        self._grade_answer_if_needed(state)
         state.teaching_trace.append(
             self._trace(
                 stage="load_context",
@@ -54,6 +58,9 @@ class MathTutorLearningLoop:
                     "progress_version_before": state.kt_progress.version,
                     "memory_count": len(state.student_memories),
                     "rag_context_count": len(state.rag_context),
+                    "grading_source": state.learning_event.payload.get("grading_source"),
+                    "is_correct": state.learning_event.payload.get("is_correct"),
+                    "correct_answer_available": "correct_answer" in state.learning_event.payload,
                 },
             )
         )
@@ -87,6 +94,23 @@ class MathTutorLearningLoop:
     def _plan(self, state: MathTutorState) -> None:
         if state.intent == "answer_submission":
             is_correct = state.learning_event.payload.get("is_correct")
+            if is_correct is None:
+                state.next_action = {
+                    "type": "record_ungraded_answer",
+                    "label": "记录未判题作答并等待内容集补齐",
+                }
+                state.teaching_trace.append(
+                    self._trace(
+                        stage="plan",
+                        content="已生成最小教学动作计划。",
+                        metadata={
+                            "intent": state.intent,
+                            "next_action": state.next_action,
+                            "recommended_question_count": len(state.recommended_questions),
+                        },
+                    )
+                )
+                return
             state.next_action = {
                 "type": "review_answer" if is_correct is False else "reinforce_mastery",
                 "label": "讲解错因并安排同类练习" if is_correct is False else "巩固掌握并推荐下一题",
@@ -96,12 +120,11 @@ class MathTutorLearningLoop:
                 "type": "recommend_next_question",
                 "label": "根据薄弱知识点推荐下一步练习",
             }
+            question = self.content.first_recommendable_question()
+            state.kt_progress.pending_question = question
             state.recommended_questions = [
-                {
-                    "question_id": "placeholder-q-risk-1",
-                    "title": "待接入题库的风险优先推荐占位题",
-                    "reason": "当前切片先打通主循环，#4/#5 将接入真实题库和排序理由。",
-                }
+                self.content.public_question(question)
+                | {"reason": "当前先返回 demo 内容集中的第一道可作答题，#5 将改为风险优先排序。"}
             ]
         else:
             state.next_action = {
@@ -125,7 +148,8 @@ class MathTutorLearningLoop:
         if state.intent == "answer_submission":
             state.response = self._answer_submission_response(state)
         elif state.intent == "next_step_advice":
-            state.response = "我已经查看你的学习状态。下一步建议先练一题风险较高的知识点题目，推荐列表里先给出占位题，后续会接入真实题库。"
+            question = state.recommended_questions[0]
+            state.response = f"我已经查看你的学习状态。下一步先练：{question['stem']} 这题来自「{question['concept_name']}」，做完后我会用标准答案确定性判题。"
         else:
             state.response = "我已收到你的问题。当前 V1 主循环已经记录上下文，后续会结合本地数学知识库给出更完整讲解。"
 
@@ -141,10 +165,59 @@ class MathTutorLearningLoop:
         question_id = state.learning_event.payload.get("question_id", "这道题")
         is_correct = state.learning_event.payload.get("is_correct")
         if is_correct is True:
-            return f"收到，你提交的 {question_id} 判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。"
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。"
         if is_correct is False:
-            return f"收到，你提交的 {question_id} 目前判定为不正确。我会优先安排错因讲解和同类练习，先帮你把薄弱点补稳。"
-        return f"收到，你提交了 {question_id} 的答案。我已记录这次作答，后续会接入确定性判题来更新诊断。"
+            correct_answer = state.learning_event.payload.get("correct_answer", "标准答案")
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}，我会优先安排错因讲解和同类练习。"
+        return f"收到，你提交了 {question_id} 的答案，但我还没有在内容集中找到这道题，暂时只记录事件。"
+
+    def _grade_answer_if_needed(self, state: MathTutorState) -> None:
+        if state.learning_event.type != "answer_submitted":
+            return
+
+        for key in (
+            "is_correct",
+            "correct_answer",
+            "concept_id",
+            "concept_name",
+            "difficulty",
+            "teaching_type",
+            "mistake_patterns",
+            "rag_doc_ids",
+            "grading_source",
+        ):
+            state.learning_event.payload.pop(key, None)
+
+        question_id = state.learning_event.payload.get("question_id")
+        if not question_id and state.kt_progress.pending_question:
+            question_id = state.kt_progress.pending_question.get("question_id")
+            state.learning_event.payload["question_id"] = question_id
+
+        if not question_id:
+            state.errors.append("answer_submitted missing question_id")
+            return
+
+        grade = self.content.grade(
+            question_id=str(question_id),
+            submitted_answer=state.learning_event.payload.get("answer"),
+        )
+        if grade is None:
+            state.errors.append(f"unknown question_id: {question_id}")
+            return
+
+        state.learning_event.payload.update(
+            {
+                "is_correct": grade.is_correct,
+                "correct_answer": grade.question["standard_answer"],
+                "concept_id": grade.question["concept_id"],
+                "concept_name": grade.question["concept_name"],
+                "difficulty": grade.question["difficulty"],
+                "teaching_type": grade.question["teaching_type"],
+                "mistake_patterns": grade.question["mistake_patterns"],
+                "rag_doc_ids": grade.question["rag_doc_ids"],
+                "grading_source": "demo_teaching_content",
+            }
+        )
 
     def _classify_intent(self, event: LearningEvent) -> Literal[
         "next_step_advice",
