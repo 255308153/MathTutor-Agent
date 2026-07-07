@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from ..kt.engine import KTStateEngine
 from ..kt.mock_engine import MockKTStateEngine
+from ..planning.recommender import RiskPrioritizedRecommender, recommender
 from ..schemas.learning import (
     LearningEvent,
     MathTutorEventResponse,
@@ -20,10 +21,12 @@ class MathTutorLearningLoop:
         kt_engine: KTStateEngine | None = None,
         store: InMemoryProgressStore | None = None,
         content: DemoTeachingContentRepository | None = None,
+        question_recommender: RiskPrioritizedRecommender | None = None,
     ) -> None:
         self.kt_engine = kt_engine or MockKTStateEngine()
         self.store = store or progress_store
         self.content = content or content_repository
+        self.recommender = question_recommender or recommender
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
@@ -92,6 +95,7 @@ class MathTutorLearningLoop:
         )
 
     def _plan(self, state: MathTutorState) -> None:
+        ranked_questions: list[dict[str, Any]] = []
         if state.intent == "answer_submission":
             is_correct = state.learning_event.payload.get("is_correct")
             if is_correct is None:
@@ -120,12 +124,24 @@ class MathTutorLearningLoop:
                 "type": "recommend_next_question",
                 "label": "根据薄弱知识点推荐下一步练习",
             }
-            question = self.content.first_recommendable_question()
-            state.kt_progress.pending_question = question
-            state.recommended_questions = [
-                self.content.public_question(question)
-                | {"reason": "当前先返回 demo 内容集中的第一道可作答题，#5 将改为风险优先排序。"}
-            ]
+            ranked_questions = self.recommender.recommend(
+                progress=state.kt_progress,
+                diagnosis=state.kt_diagnosis,
+                preferences=state.learning_event.payload,
+                limit=len(self.content.list_questions()),
+            )
+            state.recommended_questions = ranked_questions[:3]
+            first_question = self.content.get_question(state.recommended_questions[0]["question_id"])
+            state.kt_progress.pending_question = first_question
+            state.kt_progress.recommendation_history.extend(
+                {
+                    "question_id": question["question_id"],
+                    "score": question["score"],
+                    "reason": question["reason"],
+                }
+                for question in state.recommended_questions
+            )
+            state.kt_progress.recommendation_history = state.kt_progress.recommendation_history[-30:]
         else:
             state.next_action = {
                 "type": "answer_question",
@@ -140,6 +156,18 @@ class MathTutorLearningLoop:
                     "intent": state.intent,
                     "next_action": state.next_action,
                     "recommended_question_count": len(state.recommended_questions),
+                    "candidate_count": len(self.content.list_questions()),
+                    "recommendation_candidates": [
+                        {
+                            "question_id": question["question_id"],
+                            "score": question["score"],
+                            "score_factors": question["score_factors"],
+                        }
+                        for question in ranked_questions[:5]
+                    ],
+                    "selected_question_ids": [
+                        question["question_id"] for question in state.recommended_questions
+                    ],
                 },
             )
         )
@@ -149,7 +177,7 @@ class MathTutorLearningLoop:
             state.response = self._answer_submission_response(state)
         elif state.intent == "next_step_advice":
             question = state.recommended_questions[0]
-            state.response = f"我已经查看你的学习状态。下一步先练：{question['stem']} 这题来自「{question['concept_name']}」，做完后我会用标准答案确定性判题。"
+            state.response = f"我已经查看你的学习状态。下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。推荐理由：{question['reason']}。做完后我会用标准答案确定性判题。"
         else:
             state.response = "我已收到你的问题。当前 V1 主循环已经记录上下文，后续会结合本地数学知识库给出更完整讲解。"
 

@@ -128,7 +128,49 @@ curl -X POST http://127.0.0.1:8000/api/events \
 
 当前推荐来自本地 demo 内容集，答题提交由服务端根据标准答案确定性判题；#5 会进一步接入风险优先排序理由。
 
-## 5. Demo 教学内容集
+## 5. 风险优先推荐
+
+下一步学习建议由确定性推荐器完成，入口在：
+
+```text
+backend/app/planning/recommender.py
+```
+
+推荐结果包含：
+
+- `question_id`：题目 ID。
+- `stem_summary` / `stem`：题干摘要和完整题干。
+- `concept`：知识点 ID、中文名和教学类型。
+- `difficulty`：题目难度。
+- `score`：最终排序分。
+- `score_factors`：五类可解释分数因子。
+- `reason`：中文推荐理由。
+
+当前五类分数因子：
+
+| 因子 | 作用 | 边界 |
+| --- | --- | --- |
+| `weak_concept_match` | 优先匹配 KT 诊断出的薄弱知识点。 | 来自 KT diagnosis，推荐器只读取，不改写。 |
+| `difficulty_fit` | 选择与当前 mastery 接近、略有挑战的题。 | 使用题目 `difficulty` 和 KT mastery 计算。 |
+| `forgetting_urgency` | 遗忘风险越高越优先复习。 | 来自 KT forgetting risk。 |
+| `novelty` | 降权最近做过或刚推荐过的题，减少重复。 | 读取 recent_events 和 recommendation_history。 |
+| `preference_fit` | 允许学生偏好影响题型或教学类型。 | 只影响排序，不覆盖 mastery / risk。 |
+
+核心边界：
+
+```text
+KT 决定学习优先级。
+推荐器决定从内容集中选哪道题。
+LLM 只负责把推荐理由说得更自然，不能决定最终排序。
+```
+
+TeachingTrace 的 `plan` 阶段会记录：
+
+- `candidate_count`：候选题数量。
+- `recommendation_candidates`：排序后的前几名候选、分数和分数因子。
+- `selected_question_ids`：最终返回的 1-3 道题。
+
+## 6. Demo 教学内容集
 
 本地 demo 内容集位于：
 
@@ -187,7 +229,7 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
-## 6. 环境变量
+## 7. 环境变量
 
 从示例文件创建本地配置：
 
@@ -206,7 +248,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 7. 数据目录约定
+## 8. 数据目录约定
 
 ```text
 data/
@@ -223,7 +265,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 8. V1 不做什么
+## 9. V1 不做什么
 
 V1 明确不做：
 
@@ -237,7 +279,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 9. 核心实现边界
+## 10. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -255,7 +297,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 10. GitHub Issue 工作流
+## 11. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -276,7 +318,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 11. 常见排错
+## 12. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 

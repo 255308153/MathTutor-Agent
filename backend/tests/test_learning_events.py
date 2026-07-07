@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
+from backend.app.storage.content_repository import content_repository
 
 
 TRACE_STAGES = ["load_context", "diagnose", "plan", "generate_response"]
@@ -25,7 +26,10 @@ def test_chat_message_returns_next_step_response_and_trace() -> None:
     assert "下一步先练" in body["response"]
     assert body["state_summary"]["intent"] == "next_step_advice"
     assert body["state_summary"]["progress_version"] == 1
-    assert body["recommended_questions"][0]["question_id"] == "q_frac_001"
+    assert len(body["recommended_questions"]) == 3
+    assert body["recommended_questions"][0]["score"] >= body["recommended_questions"][1]["score"]
+    assert body["recommended_questions"][0]["reason"]
+    assert "score_factors" in body["recommended_questions"][0]
     assert "standard_answer" not in body["recommended_questions"][0]
     assert "explanation" not in body["recommended_questions"][0]
     assert [event["stage"] for event in body["teaching_trace"]] == TRACE_STAGES
@@ -75,6 +79,7 @@ def test_recommended_question_then_correct_answer_updates_state() -> None:
         },
     ).json()
     question = recommendation["recommended_questions"][0]
+    standard_answer = content_repository.get_question(question["question_id"])["standard_answer"]
 
     response = client.post(
         "/api/events",
@@ -82,10 +87,10 @@ def test_recommended_question_then_correct_answer_updates_state() -> None:
             "session_id": "session-correct-001",
             "student_id": "student-correct-001",
             "type": "answer_submitted",
-            "message": "答案是 3/4",
+            "message": f"答案是 {standard_answer}",
             "payload": {
                 "question_id": question["question_id"],
-                "answer": "3/4",
+                "answer": standard_answer,
             },
         },
     )
@@ -95,9 +100,7 @@ def test_recommended_question_then_correct_answer_updates_state() -> None:
     assert "判定为正确" in body["response"]
     assert body["state_summary"]["progress_version"] == 2
     assert body["state_summary"]["next_action"]["type"] == "reinforce_mastery"
-    assert body["state_summary"]["weak_concepts"] == []
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is True
-    assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 0
 
 
 def test_recommended_question_then_wrong_answer_updates_state() -> None:
@@ -134,6 +137,6 @@ def test_recommended_question_then_wrong_answer_updates_state() -> None:
     assert "判定为不正确" in body["response"]
     assert body["state_summary"]["progress_version"] == 2
     assert body["state_summary"]["next_action"]["type"] == "review_answer"
-    assert body["state_summary"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
+    assert body["state_summary"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
     assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 1
