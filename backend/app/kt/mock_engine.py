@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.kt.engine import KTStateEngine
-from app.schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
+from .engine import KTStateEngine
+from ..schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
 
 
 class MockKTStateEngine(KTStateEngine):

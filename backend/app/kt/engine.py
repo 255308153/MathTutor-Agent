@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
+from ..schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
 
 
 class KTStateEngine(Protocol):

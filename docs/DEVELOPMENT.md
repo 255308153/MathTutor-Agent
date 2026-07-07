@@ -64,7 +64,72 @@ ruff check .
 - 每个 issue 收口前至少运行 Python 编译检查和相关测试。
 - 新功能必须补可验证测试，除非 issue 明确只改文档。
 
-## 4. 环境变量
+## 4. 统一事件 API
+
+V1 后端通过统一事件入口接收聊天消息和学习事件：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "s001",
+    "student_id": "u001",
+    "type": "chat_message",
+    "message": "我下一步应该学什么？",
+    "payload": {}
+  }'
+```
+
+答题提交示例：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "s001",
+    "student_id": "u001",
+    "type": "answer_submitted",
+    "message": "我选 B",
+    "payload": {
+      "question_id": "q-demo-001",
+      "answer": "B",
+      "is_correct": false,
+      "time_spent": 73
+    }
+  }'
+```
+
+响应包含：
+
+```json
+{
+  "response": "学生可读中文回复",
+  "state_summary": {
+    "session_id": "s001",
+    "student_id": "u001",
+    "intent": "next_step_advice",
+    "progress_version": 1,
+    "weak_concepts": [],
+    "forgetting_risks": [],
+    "next_action": {
+      "type": "recommend_next_question",
+      "label": "根据薄弱知识点推荐下一步练习"
+    },
+    "errors": []
+  },
+  "recommended_questions": [],
+  "teaching_trace": [
+    {"type": "observation", "stage": "load_context"},
+    {"type": "observation", "stage": "diagnose"},
+    {"type": "observation", "stage": "plan"},
+    {"type": "observation", "stage": "generate_response"}
+  ]
+}
+```
+
+当前 #3 切片只提供推荐占位和本地内存进度；#4/#5 会接入真实小题库、确定性判题和风险排序理由。
+
+## 5. 环境变量
 
 从示例文件创建本地配置：
 
@@ -83,7 +148,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 5. 数据目录约定
+## 6. 数据目录约定
 
 ```text
 data/
@@ -100,7 +165,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 6. V1 不做什么
+## 7. V1 不做什么
 
 V1 明确不做：
 
@@ -114,7 +179,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 7. 核心实现边界
+## 8. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -132,7 +197,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 8. GitHub Issue 工作流
+## 9. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -153,7 +218,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 9. 常见排错
+## 10. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 
