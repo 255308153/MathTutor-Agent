@@ -120,18 +120,49 @@ curl http://127.0.0.1:8000/api/health
 {"status":"ok"}
 ```
 
+启动 React 学习驾驶舱：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+前端开发服务器会把 `/api` 代理到 `http://127.0.0.1:8000`。如果后端使用其他地址，可设置：
+
+```bash
+VITE_MATHTUTOR_API_BASE=http://127.0.0.1:8000 npm run dev
+```
+
+## Demo 操作路径
+
+1. 启动后端：`uvicorn backend.app.main:app --reload`。
+2. 启动前端：`cd frontend && npm run dev`。
+3. 打开 `http://127.0.0.1:5173`，页面会自动请求“我下一步应该练什么？”。
+4. 在“推荐题”里输入答案并提交，例如对 `q_frac_001` 输入 `3/4`。
+5. 查看 Agent 回复中的正确 / 错误反馈和下一步建议。
+6. 展开 `TeachingTrace`、`RAG 引用`、`模型证据`，检查 KT facts、RAG 来源、planner decision 和 attribution evidence。
+
 ## 测试与检查
 
 ```bash
 python -m compileall backend/app
 pytest
 ruff check .
+cd frontend && npm test && npm run build
 ```
 
 当前基线要求：
 
 - 健康检查测试通过。
 - Python 编译检查通过。
+- React smoke test 和生产构建通过。
 - 新增功能应优先补最小可验证测试。
 
 ## 环境变量

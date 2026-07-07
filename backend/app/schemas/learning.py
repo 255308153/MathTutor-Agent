@@ -100,6 +100,9 @@ class MathTutorState(BaseModel):
             "student_id": self.student_id,
             "intent": self.intent,
             "progress_version": self.kt_progress.version,
+            "concept_states": [
+                concept.model_dump() for concept in self.kt_progress.concept_states
+            ],
             "weak_concepts": self.kt_diagnosis.weak_concepts if self.kt_diagnosis else [],
             "forgetting_risks": self.kt_diagnosis.forgetting_risks if self.kt_diagnosis else [],
             "mistake_diagnosis": self.teaching_plan.get("mistake_diagnosis") if self.teaching_plan else None,

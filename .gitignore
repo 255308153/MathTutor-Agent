@@ -15,6 +15,7 @@ node_modules/
 dist/
 build/
 .next/
+*.tsbuildinfo
 
 data/local/
 data/**/*.sqlite

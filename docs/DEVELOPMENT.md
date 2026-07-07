@@ -8,7 +8,7 @@
 
 - Python 3.11+
 - pip
-- 可选：Node.js 20+，用于后续 React 学习驾驶舱
+- Node.js 20+，用于 React 学习驾驶舱
 
 初始化：
 
@@ -47,7 +47,52 @@ curl http://127.0.0.1:8000/api/health
 
 如果使用 `cd backend && uvicorn app.main:app --reload` 也可以启动；仓库根目录启动时优先使用 `backend.app.main:app`。
 
-## 3. 测试命令
+## 3. 启动 React 学习驾驶舱
+
+前端位于：
+
+```text
+frontend/
+```
+
+首次安装依赖：
+
+```bash
+cd /Users/lqc/Downloads/MathTutor-Agent/frontend
+npm install
+```
+
+本地启动：
+
+```bash
+npm run dev
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+Vite 开发服务器会把 `/api` 代理到 `http://127.0.0.1:8000`。演示时先启动后端，再启动前端。
+
+Demo 路径：
+
+1. 页面加载后自动发起“我下一步应该练什么？”。
+2. 查看“今日建议”“概念状态”“薄弱概念”“遗忘风险”和“推荐题”。
+3. 在推荐题输入答案并提交，后端会用本地内容集确定性判题。
+4. 查看 Agent 回复中的正确 / 错误反馈和下一步教学动作。
+5. 展开 `TeachingTrace` 查看阶段、actor 和学生 / 专家可见性。
+6. 展开 `RAG 引用` 查看引用来源。
+7. 展开 `模型证据` 查看 KT diagnosis、planner decision 和 attribution evidence。
+
+前端环境变量：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `VITE_MATHTUTOR_API_BASE` | 空字符串 | 为空时走 Vite `/api` proxy；部署或非代理模式可设为后端地址。 |
+
+## 4. 测试命令
 
 常用检查：
 
@@ -55,16 +100,18 @@ curl http://127.0.0.1:8000/api/health
 python -m compileall backend/app
 pytest
 ruff check .
+cd frontend && npm test && npm run build
 ```
 
 开发节奏：
 
 - 小改动先运行相关单测。
 - 改动核心主循环、schema、KT、RAG、memory 或 API 后运行 `pytest`。
+- 改动 React 学习驾驶舱后运行 `cd frontend && npm test && npm run build`。
 - 每个 issue 收口前至少运行 Python 编译检查和相关测试。
 - 新功能必须补可验证测试，除非 issue 明确只改文档。
 
-## 4. 统一事件 API
+## 5. 统一事件 API
 
 V1 后端通过统一事件入口接收聊天消息和学习事件：
 
@@ -108,6 +155,7 @@ curl -X POST http://127.0.0.1:8000/api/events \
     "student_id": "u001",
     "intent": "next_step_advice",
     "progress_version": 1,
+    "concept_states": [],
     "weak_concepts": [],
     "forgetting_risks": [],
     "next_action": {
@@ -128,7 +176,7 @@ curl -X POST http://127.0.0.1:8000/api/events \
 
 当前推荐来自本地 demo 内容集，答题提交由服务端根据标准答案确定性判题；#5 会进一步接入风险优先排序理由。
 
-## 5. 风险优先推荐
+## 6. 风险优先推荐
 
 下一步学习建议由确定性推荐器完成，入口在：
 
@@ -170,7 +218,7 @@ TeachingTrace 的 `plan` 阶段会记录：
 - `recommendation_candidates`：排序后的前几名候选、分数和分数因子。
 - `selected_question_ids`：最终返回的 1-3 道题。
 
-## 6. 错因诊断与教学动作
+## 7. 错因诊断与教学动作
 
 确定性教学规划器位于：
 
@@ -216,7 +264,7 @@ TeachingTrace 的 `plan` 阶段会记录：
 - `mistake_diagnosis`
 - `planner_evidence`
 
-## 7. TeachingTrace 与专家证据
+## 8. TeachingTrace 与专家证据
 
 每次 `POST /api/events` 都会返回：
 
@@ -267,7 +315,7 @@ TeachingTrace 的 `plan` 阶段会记录：
 4. `key_history` 放对预测贡献最高的历史作答。
 5. `prediction_probability` 与 `weak_concepts` 仍是 KT facts，RAG / Memory 不得覆盖。
 
-## 8. 数学 RAG
+## 9. 数学 RAG
 
 V1 本地 RAG fallback 位于：
 
@@ -332,7 +380,7 @@ RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probabil
 4. 返回结果仍然映射为 `RAGSearchResult`。
 5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
 
-## 9. 学生长期记忆
+## 10. 学生长期记忆
 
 V1 本地 memory fallback 位于：
 
@@ -394,7 +442,7 @@ KT state 仍是学习事实来源。
 3. adapter 返回仍映射为 `StudentMemory`。
 4. memory refinery 可以生成 reflection，但不能写 KT facts。
 
-## 10. Demo 教学内容集
+## 11. Demo 教学内容集
 
 本地 demo 内容集位于：
 
@@ -453,7 +501,7 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
-## 11. 环境变量
+## 12. 环境变量
 
 从示例文件创建本地配置：
 
@@ -472,7 +520,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 12. 数据目录约定
+## 13. 数据目录约定
 
 ```text
 data/
@@ -489,7 +537,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 13. V1 不做什么
+## 14. V1 不做什么
 
 V1 明确不做：
 
@@ -503,7 +551,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 14. 核心实现边界
+## 15. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -521,7 +569,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 15. GitHub Issue 工作流
+## 16. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -542,7 +590,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 16. 常见排错
+## 17. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 
