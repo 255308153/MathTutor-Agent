@@ -1,11 +1,67 @@
 {
   "concept_teaching_type_map": {
+    "c_multiplication_facts": "memory",
     "c_fraction_addition": "procedure",
     "c_linear_equation": "procedure",
     "c_area_rectangle": "concept",
     "c_ratio": "design"
   },
   "questions": [
+    {
+      "question_id": "q_mem_001",
+      "stem": "快速回答：7 × 8 = ?",
+      "standard_answer": "56",
+      "explanation": "7 × 8 是常用乘法事实，结果是 56。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.2,
+      "mistake_patterns": ["乘法事实记忆不稳", "相邻口诀混淆"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_mem_002",
+      "stem": "快速回答：6 × 9 = ?",
+      "standard_answer": "54",
+      "explanation": "六九五十四，所以 6 × 9 = 54。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.2,
+      "mistake_patterns": ["乘法事实记忆不稳", "口诀结果混淆"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_mem_003",
+      "stem": "快速回答：8 × 9 = ?",
+      "standard_answer": "72",
+      "explanation": "八九七十二，所以 8 × 9 = 72。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.25,
+      "mistake_patterns": ["高位乘法口诀记忆不稳"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_mem_004",
+      "stem": "快速回答：7 × 6 = ?",
+      "standard_answer": "42",
+      "explanation": "六七四十二，所以 7 × 6 = 42。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.2,
+      "mistake_patterns": ["乘法事实记忆不稳"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_mem_005",
+      "stem": "快速回答：9 × 9 = ?",
+      "standard_answer": "81",
+      "explanation": "九九八十一，所以 9 × 9 = 81。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.25,
+      "mistake_patterns": ["平方口诀记忆不稳"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
     {
       "question_id": "q_frac_001",
       "stem": "计算：1/2 + 1/4 = ?",

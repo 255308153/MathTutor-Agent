@@ -170,7 +170,53 @@ TeachingTrace 的 `plan` 阶段会记录：
 - `recommendation_candidates`：排序后的前几名候选、分数和分数因子。
 - `selected_question_ids`：最终返回的 1-3 道题。
 
-## 6. 数学 RAG
+## 6. 错因诊断与教学动作
+
+确定性教学规划器位于：
+
+```text
+backend/app/planning/teaching_planner.py
+```
+
+规划输入：
+
+- `KTDiagnosis`：薄弱知识点、遗忘风险、预测概率等权威学习事实。
+- `teaching_type`：来自内容集的知识点教学类型。
+- `RAG context`：概念说明、题解、错因模式、学习策略。
+- `LearningEvent`：事件类型、题目、答案、服务端判题结果。
+
+四类教学动作：
+
+| `teaching_type` | 动作类型 | 可见行为 |
+| --- | --- | --- |
+| `memory` | `quick_review` | 记忆型快速复习，先快速回忆事实，再用短题即时检查。 |
+| `concept` | `concept_explain_self_check` | 概念型解释与自我解释检查，先解释概念，再让学生复述关键区别。 |
+| `procedure` | `worked_example_steps` | 程序型 worked example 和步骤练习，先展示标准步骤，再让学生补下一步。 |
+| `design` | `challenge_reflection` | 综合型挑战与反思，给应用题并要求说明建模思路。 |
+
+错题路径：
+
+- 只在服务端确定性判题为错误时生成 `mistake_diagnosis`。
+- 诊断包含 concept-level 信息：`concept_id`、`concept_name`、`teaching_type`。
+- 诊断包含 mistake-pattern-level 信息：内容集 `mistake_patterns` 和 RAG `mistake_pattern` 文档。
+- planner 会把动作改为 `*_after_mistake`，例如 `worked_example_steps_after_mistake`。
+
+安全边界：
+
+```text
+错因诊断只描述可观察证据。
+禁止输出“你不认真”“你粗心”“你态度不好”等无证据心理判断。
+```
+
+TeachingTrace 的 `plan` 阶段会记录：
+
+- `planner_decision`
+- `selected_action`
+- `teaching_type`
+- `mistake_diagnosis`
+- `planner_evidence`
+
+## 7. 数学 RAG
 
 V1 本地 RAG fallback 位于：
 
@@ -235,7 +281,7 @@ RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probabil
 4. 返回结果仍然映射为 `RAGSearchResult`。
 5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
 
-## 7. 学生长期记忆
+## 8. 学生长期记忆
 
 V1 本地 memory fallback 位于：
 
@@ -297,7 +343,7 @@ KT state 仍是学习事实来源。
 3. adapter 返回仍映射为 `StudentMemory`。
 4. memory refinery 可以生成 reflection，但不能写 KT facts。
 
-## 8. Demo 教学内容集
+## 9. Demo 教学内容集
 
 本地 demo 内容集位于：
 
@@ -356,7 +402,7 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
-## 9. 环境变量
+## 10. 环境变量
 
 从示例文件创建本地配置：
 
@@ -375,7 +421,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 10. 数据目录约定
+## 11. 数据目录约定
 
 ```text
 data/
@@ -392,7 +438,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 11. V1 不做什么
+## 12. V1 不做什么
 
 V1 明确不做：
 
@@ -406,7 +452,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 12. 核心实现边界
+## 13. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -424,7 +470,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 13. GitHub Issue 工作流
+## 14. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -445,7 +491,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 14. 常见排错
+## 15. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 

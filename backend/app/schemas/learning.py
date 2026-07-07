@@ -84,6 +84,7 @@ class MathTutorState(BaseModel):
     rag_context: list[dict[str, Any]] = Field(default_factory=list)
     student_memories: list[dict[str, Any]] = Field(default_factory=list)
     kt_diagnosis: KTDiagnosis | None = None
+    teaching_plan: dict[str, Any] | None = None
     next_action: dict[str, Any] | None = None
     recommended_questions: list[dict[str, Any]] = Field(default_factory=list)
     response: str = ""
@@ -98,6 +99,7 @@ class MathTutorState(BaseModel):
             "progress_version": self.kt_progress.version,
             "weak_concepts": self.kt_diagnosis.weak_concepts if self.kt_diagnosis else [],
             "forgetting_risks": self.kt_diagnosis.forgetting_risks if self.kt_diagnosis else [],
+            "mistake_diagnosis": self.teaching_plan.get("mistake_diagnosis") if self.teaching_plan else None,
             "next_action": self.next_action,
             "errors": self.errors,
         }

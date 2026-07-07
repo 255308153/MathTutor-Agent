@@ -81,7 +81,7 @@ class LocalKnowledgeRAG:
             .replace(".", " ")
         )
         terms = {term.strip() for term in normalized.split() if term.strip()}
-        for keyword in ("分数", "通分", "方程", "面积", "比例", "错因", "策略", "推荐"):
+        for keyword in ("分数", "通分", "方程", "面积", "比例", "乘法", "口诀", "记忆", "错因", "策略", "推荐"):
             if keyword in normalized:
                 terms.add(keyword)
         return terms

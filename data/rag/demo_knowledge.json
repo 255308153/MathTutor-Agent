@@ -1,5 +1,25 @@
 [
   {
+    "doc_id": "rag_multiplication_facts",
+    "doc_type": "concept_note",
+    "title": "乘法口诀事实：快速回忆",
+    "content": "乘法口诀属于记忆型知识，目标是快速、稳定地回忆结果。练习时可以用短题快速检查，并把容易混淆的口诀单独复习。",
+    "source": "demo-rag/multiplication_facts.md",
+    "concept_id": "c_multiplication_facts",
+    "question_id": null,
+    "keywords": ["乘法", "口诀", "记忆", "快速复习"]
+  },
+  {
+    "doc_id": "rag_multiplication_mistake",
+    "doc_type": "mistake_pattern",
+    "title": "常见错因：相邻乘法口诀混淆",
+    "content": "把 7 × 8 和 6 × 9 等相邻口诀结果混在一起，通常说明乘法事实记忆还不够稳定，需要短间隔快速复习。",
+    "source": "demo-rag/multiplication_mistakes.md",
+    "concept_id": "c_multiplication_facts",
+    "question_id": "q_mem_001",
+    "keywords": ["乘法", "口诀", "错因", "混淆"]
+  },
+  {
     "doc_id": "rag_fraction_addition_basic",
     "doc_type": "concept_note",
     "title": "异分母分数加法：先通分再相加",

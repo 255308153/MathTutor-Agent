@@ -6,6 +6,7 @@ from ..kt.engine import KTStateEngine
 from ..kt.mock_engine import MockKTStateEngine
 from ..memory.store import StudentMemory, StudentMemoryStore, memory_store
 from ..planning.recommender import RiskPrioritizedRecommender, recommender
+from ..planning.teaching_planner import TeachingPlanner, teaching_planner
 from ..rag.knowledge_rag import KnowledgeRAG, knowledge_rag
 from ..schemas.learning import (
     LearningEvent,
@@ -26,6 +27,7 @@ class MathTutorLearningLoop:
         question_recommender: RiskPrioritizedRecommender | None = None,
         rag: KnowledgeRAG | None = None,
         memories: StudentMemoryStore | None = None,
+        planner: TeachingPlanner | None = None,
     ) -> None:
         self.kt_engine = kt_engine or MockKTStateEngine()
         self.store = store or progress_store
@@ -33,6 +35,7 @@ class MathTutorLearningLoop:
         self.recommender = question_recommender or recommender
         self.rag = rag or knowledge_rag
         self.memories = memories or memory_store
+        self.planner = planner or teaching_planner
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
@@ -151,10 +154,6 @@ class MathTutorLearningLoop:
                     )
                 )
                 return
-            state.next_action = {
-                "type": "review_answer" if is_correct is False else "reinforce_mastery",
-                "label": "讲解错因并安排同类练习" if is_correct is False else "巩固掌握并推荐下一题",
-            }
         elif state.intent == "next_step_advice":
             state.next_action = {
                 "type": "recommend_next_question",
@@ -179,18 +178,29 @@ class MathTutorLearningLoop:
             )
             state.kt_progress.recommendation_history = state.kt_progress.recommendation_history[-30:]
         else:
-            state.next_action = {
-                "type": "answer_question",
-                "label": "回答学生问题并保留学习上下文",
-            }
+            state.next_action = None
+
+        state.teaching_plan = self.planner.plan(
+            intent=state.intent,
+            event=state.learning_event,
+            diagnosis=state.kt_diagnosis,
+            rag_context=state.rag_context,
+            recommended_questions=state.recommended_questions,
+        )
+        state.next_action = state.teaching_plan["selected_action"]
 
         state.teaching_trace.append(
             self._trace(
                 stage="plan",
-                content="已生成最小教学动作计划。",
+                content="TeachingPlanner 已生成教学动作和证据化决策。",
                 metadata={
                     "intent": state.intent,
+                    "planner_decision": state.teaching_plan["decision"],
                     "next_action": state.next_action,
+                    "selected_action": state.teaching_plan["selected_action"],
+                    "teaching_type": state.teaching_plan["teaching_type"],
+                    "mistake_diagnosis": state.teaching_plan["mistake_diagnosis"],
+                    "planner_evidence": state.teaching_plan["evidence"],
                     "recommended_question_count": len(state.recommended_questions),
                     "candidate_count": len(self.content.list_questions()),
                     "recommendation_candidates": [
@@ -213,7 +223,9 @@ class MathTutorLearningLoop:
             state.response = self._answer_submission_response(state)
         elif state.intent == "next_step_advice":
             question = state.recommended_questions[0]
-            state.response = f"我已经查看你的学习状态。{self._memory_preface(state)}下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
+            action_label = state.next_action["label"] if state.next_action else "下一步练习"
+            instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
+            state.response = f"我已经查看你的学习状态。{self._memory_preface(state)}下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。教学动作：{action_label}。{instruction} 推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
         else:
             state.response = self._knowledge_response(state)
 
@@ -229,11 +241,24 @@ class MathTutorLearningLoop:
         question_id = state.learning_event.payload.get("question_id", "这道题")
         is_correct = state.learning_event.payload.get("is_correct")
         if is_correct is True:
-            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。{self._citation_sentence(state)}"
+            instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。{instruction}{self._citation_sentence(state)}"
         if is_correct is False:
             correct_answer = state.learning_event.payload.get("correct_answer", "标准答案")
-            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}，我会优先安排错因讲解和同类练习。{self._citation_sentence(state)}"
+            diagnosis_text = self._mistake_diagnosis_sentence(state)
+            action_label = state.next_action["label"] if state.next_action else "错因讲解"
+            instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}。错因诊断：{diagnosis_text}。教学动作：{action_label}。{instruction}{self._citation_sentence(state)}"
         return f"收到，你提交了 {question_id} 的答案，但我还没有在内容集中找到这道题，暂时只记录事件。"
+
+    def _mistake_diagnosis_sentence(self, state: MathTutorState) -> str:
+        diagnosis = state.teaching_plan.get("mistake_diagnosis") if state.teaching_plan else None
+        if not diagnosis:
+            return "本题还没有足够证据生成错因诊断"
+        concept = diagnosis["concept"].get("concept_name") or "当前知识点"
+        patterns = diagnosis.get("mistake_patterns", [])
+        pattern_text = "；".join(patterns[:2]) if patterns else "需要回到题目步骤核对"
+        return f"问题集中在「{concept}」，可观察证据是 {pattern_text}"
 
     def _update_memory(self, state: MathTutorState) -> None:
         updates: list[StudentMemory] = []

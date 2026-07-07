@@ -71,6 +71,10 @@ class RiskPrioritizedRecommender:
         return 0.45 if weak_concept_ids else 0.65
 
     def _difficulty_fit(self, question: dict[str, Any], progress: KTLearningProgress) -> float:
+        if question.get("teaching_type") == "memory":
+            target_difficulty = 0.25
+            distance = abs(float(question["difficulty"]) - target_difficulty)
+            return round(max(0.0, 1.0 - distance / 0.4), 4)
         mastery = self._concept_mastery(question["concept_id"], progress)
         target_difficulty = min(0.85, max(0.25, mastery + 0.18))
         distance = abs(float(question["difficulty"]) - target_difficulty)

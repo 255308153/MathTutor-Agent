@@ -61,8 +61,10 @@ def test_answer_submitted_updates_progress_and_returns_trace() -> None:
     assert response.status_code == 200
     body = response.json()
     assert "不正确" in body["response"]
+    assert "错因诊断" in body["response"]
     assert body["state_summary"]["intent"] == "answer_submission"
-    assert body["state_summary"]["next_action"]["type"] == "review_answer"
+    assert body["state_summary"]["next_action"]["type"] == "worked_example_steps_after_mistake"
+    assert body["state_summary"]["mistake_diagnosis"]["concept"]["concept_id"] == "c_fraction_addition"
     assert body["state_summary"]["progress_version"] == 1
     assert body["recommended_questions"] == []
     assert_core_trace([event["stage"] for event in body["teaching_trace"]])
@@ -141,7 +143,7 @@ def test_recommended_question_then_wrong_answer_updates_state() -> None:
     body = response.json()
     assert "判定为不正确" in body["response"]
     assert body["state_summary"]["progress_version"] == 2
-    assert body["state_summary"]["next_action"]["type"] == "review_answer"
+    assert body["state_summary"]["next_action"]["type"].endswith("_after_mistake")
     assert body["state_summary"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
     assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 1
