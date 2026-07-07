@@ -216,7 +216,58 @@ TeachingTrace 的 `plan` 阶段会记录：
 - `mistake_diagnosis`
 - `planner_evidence`
 
-## 7. 数学 RAG
+## 7. TeachingTrace 与专家证据
+
+每次 `POST /api/events` 都会返回：
+
+- `trace_id`：本轮事件处理的稳定 trace ID。
+- `teaching_trace`：逐阶段事件列表。
+- `teaching_trace_summary`：前端和专家审计可直接使用的摘要。
+
+`TeachingTraceEvent` 字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 单条 trace event ID。 |
+| `type` | 事件类型，如 `observation`。 |
+| `stage` | 阶段，如 `load_context`、`diagnose`、`plan`。 |
+| `actor` | 责任模块：`system`、`kt`、`rag`、`memory`、`planner`、`response`。 |
+| `visibility` | `student` 表示学生可读解释，`expert` / `debug` 表示专家证据。 |
+| `content` | 简短中文说明。 |
+| `metadata` | 结构化证据。 |
+| `evidence_refs` | 可追溯证据引用，如 RAG source、KT attribution、question ID。 |
+| `created_at` | 事件创建时间。 |
+
+`TeachingTraceSummary` 字段：
+
+- `trace_id`
+- `session_id`
+- `student_id`
+- `intent`
+- `stages`
+- `student_explanation`
+- `expert_evidence`
+- `invariants`
+- `errors`
+
+专家证据层包含：
+
+- `kt_diagnosis`：KT 掌握度、薄弱点、遗忘风险、预测概率等事实。
+- `attribution_evidence`：预留 DGEKT attribution 形状，包含 `top_paths`、`key_history`、`weak_concepts`、`prediction_probability`。
+- `rag_sources`：RAG 文档引用。
+- `student_memories`：本轮读取到的长期记忆。
+- `planner_decision`：TeachingPlanner 的 selected action、mistake diagnosis 和证据。
+- `recommendations`：推荐题、分数、分数因子和理由。
+
+未来 DGEKT 对接位置：
+
+1. 保持 `KTStateEngine.explain_prediction(progress, target_question_id)` 接口不变。
+2. DGEKT adapter 返回 `AttributionEvidence`。
+3. `top_paths` 放图路径或关键概念传播路径。
+4. `key_history` 放对预测贡献最高的历史作答。
+5. `prediction_probability` 与 `weak_concepts` 仍是 KT facts，RAG / Memory 不得覆盖。
+
+## 8. 数学 RAG
 
 V1 本地 RAG fallback 位于：
 
@@ -281,7 +332,7 @@ RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probabil
 4. 返回结果仍然映射为 `RAGSearchResult`。
 5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
 
-## 8. 学生长期记忆
+## 9. 学生长期记忆
 
 V1 本地 memory fallback 位于：
 
@@ -343,7 +394,7 @@ KT state 仍是学习事实来源。
 3. adapter 返回仍映射为 `StudentMemory`。
 4. memory refinery 可以生成 reflection，但不能写 KT facts。
 
-## 9. Demo 教学内容集
+## 10. Demo 教学内容集
 
 本地 demo 内容集位于：
 
@@ -402,7 +453,7 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
-## 10. 环境变量
+## 11. 环境变量
 
 从示例文件创建本地配置：
 
@@ -421,7 +472,7 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 
-## 11. 数据目录约定
+## 12. 数据目录约定
 
 ```text
 data/
@@ -438,7 +489,7 @@ data/
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
-## 12. V1 不做什么
+## 13. V1 不做什么
 
 V1 明确不做：
 
@@ -452,7 +503,7 @@ V1 明确不做：
 - 自动生成大规模题库。
 - 复杂分布式多 Agent。
 
-## 13. 核心实现边界
+## 14. 核心实现边界
 
 以下规则优先级高于任何自然语言生成结果：
 
@@ -470,7 +521,7 @@ RAG can support explanation, not overwrite prediction facts.
 - Memory 可以影响节奏、偏好和教学策略，不直接覆盖 mastery。
 - RAG 只提供解释证据，不覆盖 KT prediction facts。
 
-## 14. GitHub Issue 工作流
+## 15. GitHub Issue 工作流
 
 实现顺序以 GitHub issue 为准，优先选择当前未完成且依赖已满足的最小 issue。
 
@@ -491,7 +542,7 @@ RAG can support explanation, not overwrite prediction facts.
 - 演示方式。
 - 如有遗留风险，明确列出。
 
-## 15. 常见排错
+## 16. 常见排错
 
 ### `ModuleNotFoundError: No module named 'backend'`
 

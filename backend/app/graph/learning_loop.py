@@ -55,10 +55,12 @@ class MathTutorLearningLoop:
 
         self.store.save(state.kt_progress)
         return MathTutorEventResponse(
+            trace_id=state.trace_id,
             response=state.response,
             state_summary=state.summary(),
             recommended_questions=state.recommended_questions,
             teaching_trace=state.teaching_trace,
+            teaching_trace_summary=state.trace_summary(),
         )
 
     def _load_context(self, state: MathTutorState) -> None:
@@ -117,6 +119,11 @@ class MathTutorLearningLoop:
             state.kt_progress,
             target_question_id=target_question_id,
         )
+        if target_question_id:
+            state.attribution_evidence = self.kt_engine.explain_prediction(
+                state.kt_progress,
+                target_question_id=target_question_id,
+            )
         state.kt_progress.weak_concepts = state.kt_diagnosis.weak_concepts
         state.kt_progress.forgetting_risks = state.kt_diagnosis.forgetting_risks
         state.teaching_trace.append(
@@ -129,6 +136,11 @@ class MathTutorLearningLoop:
                     "forgetting_risk_count": len(state.kt_diagnosis.forgetting_risks),
                     "prediction_probability": state.kt_diagnosis.prediction_probability,
                     "evidence": state.kt_diagnosis.evidence,
+                    "attribution_evidence": (
+                        state.attribution_evidence.model_dump()
+                        if state.attribution_evidence
+                        else None
+                    ),
                 },
             )
         )
@@ -469,12 +481,43 @@ class MathTutorLearningLoop:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> TeachingTraceEvent:
+        actor_by_stage = {
+            "load_context": "system",
+            "diagnose": "kt",
+            "plan": "planner",
+            "generate_response": "response",
+            "memory_update": "memory",
+        }
+        visibility_by_stage = {
+            "generate_response": "student",
+            "memory_update": "expert",
+        }
+        evidence_refs = self._evidence_refs(metadata or {})
         return TeachingTraceEvent(
             type=TeachingTraceEventType.OBSERVATION,
             stage=stage,
+            actor=actor_by_stage.get(stage, "system"),
+            visibility=visibility_by_stage.get(stage, "expert"),
             content=content,
             metadata=metadata or {},
+            evidence_refs=evidence_refs,
         )
+
+    def _evidence_refs(self, metadata: dict[str, Any]) -> list[str]:
+        refs: list[str] = []
+        for source in metadata.get("rag_sources", []):
+            if source.get("source"):
+                refs.append(str(source["source"]))
+        attribution = metadata.get("attribution_evidence") or {}
+        if attribution.get("target_question_id"):
+            refs.append(f"kt-attribution:{attribution['target_question_id']}")
+        planner_evidence = metadata.get("planner_evidence") or {}
+        for source in planner_evidence.get("rag_sources", []):
+            if source.get("source"):
+                refs.append(str(source["source"]))
+        for question_id in metadata.get("selected_question_ids", []):
+            refs.append(f"question:{question_id}")
+        return list(dict.fromkeys(refs))
 
 
 learning_loop = MathTutorLearningLoop()

@@ -63,11 +63,25 @@ class MockKTStateEngine(KTStateEngine):
         progress: KTLearningProgress,
         target_question_id: str,
     ) -> AttributionEvidence:
+        key_history = [
+            {
+                "event_type": event.type,
+                "question_id": event.payload.get("question_id"),
+                "is_correct": event.payload.get("is_correct"),
+            }
+            for event in progress.recent_events[-5:]
+        ]
         return AttributionEvidence(
             target_question_id=target_question_id,
             prediction_probability=0.58,
-            top_paths=[],
-            key_history=[],
+            top_paths=[
+                {
+                    "path_id": "mock-path-1",
+                    "description": "recent answer history -> concept state -> prediction",
+                    "weight": 0.62,
+                }
+            ],
+            key_history=key_history,
             weak_concepts=progress.weak_concepts,
         )
 

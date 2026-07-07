@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from .trace import TeachingTraceEvent
+from .trace import TeachingTraceEvent, TeachingTraceSummary
 
 
 class TeachingType(str, Enum):
@@ -76,6 +77,7 @@ class AttributionEvidence(BaseModel):
 
 
 class MathTutorState(BaseModel):
+    trace_id: str = Field(default_factory=lambda: f"tt-{uuid4().hex[:12]}")
     session_id: str
     student_id: str
     intent: Literal["next_step_advice", "answer_submission", "general_chat"] = "general_chat"
@@ -84,6 +86,7 @@ class MathTutorState(BaseModel):
     rag_context: list[dict[str, Any]] = Field(default_factory=list)
     student_memories: list[dict[str, Any]] = Field(default_factory=list)
     kt_diagnosis: KTDiagnosis | None = None
+    attribution_evidence: AttributionEvidence | None = None
     teaching_plan: dict[str, Any] | None = None
     next_action: dict[str, Any] | None = None
     recommended_questions: list[dict[str, Any]] = Field(default_factory=list)
@@ -104,9 +107,45 @@ class MathTutorState(BaseModel):
             "errors": self.errors,
         }
 
+    def trace_summary(self) -> TeachingTraceSummary:
+        return TeachingTraceSummary(
+            trace_id=self.trace_id,
+            session_id=self.session_id,
+            student_id=self.student_id,
+            intent=self.intent,
+            stages=[event.stage for event in self.teaching_trace],
+            student_explanation=self.response,
+            expert_evidence={
+                "kt_diagnosis": self.kt_diagnosis.model_dump() if self.kt_diagnosis else None,
+                "attribution_evidence": (
+                    self.attribution_evidence.model_dump() if self.attribution_evidence else None
+                ),
+                "rag_sources": [
+                    {
+                        "doc_id": item.get("doc_id"),
+                        "title": item.get("title"),
+                        "source": item.get("source"),
+                    }
+                    for item in self.rag_context
+                ],
+                "student_memories": self.student_memories,
+                "planner_decision": self.teaching_plan,
+                "recommendations": self.recommended_questions,
+            },
+            invariants=[
+                "KT facts are authoritative.",
+                "LLM plans are advisory.",
+                "Memory can influence strategy, not mastery.",
+                "RAG can support explanation, not overwrite prediction facts.",
+            ],
+            errors=self.errors,
+        )
+
 
 class MathTutorEventResponse(BaseModel):
+    trace_id: str
     response: str
     state_summary: dict[str, Any]
     recommended_questions: list[dict[str, Any]] = Field(default_factory=list)
     teaching_trace: list[TeachingTraceEvent] = Field(default_factory=list)
+    teaching_trace_summary: TeachingTraceSummary
