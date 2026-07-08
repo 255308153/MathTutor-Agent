@@ -14,7 +14,13 @@ from backend.app.kt.dgekt_engine import (
 )
 from backend.app.kt.factory import create_kt_engine
 from backend.app.kt.mock_engine import MockKTStateEngine
-from backend.app.schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
+from backend.app.schemas.learning import (
+    AttributionEvidence,
+    ConceptState,
+    KTDiagnosis,
+    KTLearningProgress,
+    LearningEvent,
+)
 from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.storage.progress_store import InMemoryProgressStore
 
@@ -42,6 +48,14 @@ def write_dgekt_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     dataset_dir.mkdir()
     (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
     (dataset_dir / "assist2017_pid_test.csv").write_text("test\n", encoding="utf-8")
+    return checkpoint, dataset_dir, q_matrix
+
+
+def write_dgekt_fraction_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    rows = ["1,0" if index % 2 == 0 else "0,1" for index in range(30)]
+    rows[2] = "0,1"
+    q_matrix.write_text("\n".join(rows), encoding="utf-8")
     return checkpoint, dataset_dir, q_matrix
 
 
@@ -613,6 +627,169 @@ def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
     assert expert["kt_diagnosis"]["metadata"]["model_provenance"]["auc"] == 0.7866464407565317
     assert expert["attribution_evidence"]["prediction_probability"] == 0.2
     assert expert["attribution_evidence"]["top_paths"][0]["partial_evidence"] is True
+
+
+def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    session_id = "session-v13-dgekt-e2e"
+    student_id = "student-v13-dgekt-e2e"
+    canonical_concept_id = "c_fraction_addition"
+    store = InMemoryProgressStore()
+    store.save(
+        KTLearningProgress(
+            student_id=student_id,
+            concept_states=[
+                ConceptState(
+                    concept_id=canonical_concept_id,
+                    concept_name="异分母分数加法",
+                    teaching_type="procedure",
+                    mastery=0.17,
+                    forgetting_risk=0.8,
+                    recent_accuracy=0.2,
+                    evidence_count=2,
+                    status="weak",
+                )
+            ],
+            weak_concepts=[
+                {
+                    "concept_id": canonical_concept_id,
+                    "concept_name": "异分母分数加法",
+                    "mastery": 0.17,
+                }
+            ],
+            forgetting_risks=[
+                {
+                    "concept_id": canonical_concept_id,
+                    "concept_name": "异分母分数加法",
+                    "forgetting_risk": 0.8,
+                }
+            ],
+        )
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=store,
+        ),
+    )
+    client = TestClient(create_app())
+
+    next_step = client.post(
+        "/api/events",
+        json={
+            "session_id": session_id,
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "我下一步应该练什么？",
+            "payload": {
+                "preferred_concept_id": canonical_concept_id,
+                "preferred_teaching_type": "procedure",
+            },
+        },
+    ).json()
+    mapped_question = next_step["recommended_questions"][0]
+
+    assert mapped_question["question_id"] == "q_frac_001"
+    assert mapped_question["concept_id"] == canonical_concept_id
+    assert mapped_question["assist2017_question_id"] == 3
+    assert mapped_question["assist2017_concept_id"] == 2
+    assert mapped_question["canonical_mapping"]["q_matrix_reference"]
+    assert "对齐 ASSIST2017 question 3" in mapped_question["reason"]
+
+    answer_response = client.post(
+        "/api/events",
+        json={
+            "session_id": session_id,
+            "student_id": student_id,
+            "type": "answer_submitted",
+            "message": "我先故意答错，验证 V1.3 真实路径",
+            "payload": {
+                "question_id": mapped_question["question_id"],
+                "answer": "__wrong_demo_answer__",
+            },
+        },
+    )
+
+    assert answer_response.status_code == 200
+    body = answer_response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    stages = {event["stage"]: event for event in body["teaching_trace"]}
+    kt_diagnosis = expert["kt_diagnosis"]
+    attribution = expert["attribution_evidence"]
+    rag_sources = expert["rag_sources"]
+    mistake = body["state_summary"]["mistake_diagnosis"]
+    assembled = expert["assembled_context"]
+    plan_metadata = stages["plan"]["metadata"]
+
+    assert body["teaching_trace_summary"]["stages"] == [
+        "load_context",
+        "diagnose",
+        "context_assemble",
+        "plan",
+        "generate_response",
+        "memory_update",
+    ]
+    assert "判定为不正确" in body["response"]
+    assert "错因诊断" in body["response"]
+    assert "demo-rag/" in body["response"]
+
+    assert kt_diagnosis["prediction_probability"] == 0.2
+    assert kt_diagnosis["weak_concepts"][0]["concept_id"] == canonical_concept_id
+    assert kt_diagnosis["forgetting_risks"][0]["concept_id"] == canonical_concept_id
+    assert assembled["authoritative_kt_facts"]["weak_concepts"] == kt_diagnosis["weak_concepts"]
+    assert assembled["authoritative_kt_facts"]["prediction_probability"] == 0.2
+
+    assert any(source["concept_id"] == canonical_concept_id for source in rag_sources)
+    assert any(source["question_id"] == "q_frac_001" for source in rag_sources)
+    assert any(source["assist2017_question_id"] == 3 for source in rag_sources)
+    assert mistake["concept"]["concept_id"] == canonical_concept_id
+    assert any("常见错因" in pattern for pattern in mistake["mistake_patterns"])
+
+    assert attribution["prediction_probability"] == 0.2
+    assert attribution["target_concept_id"] == canonical_concept_id
+    assert attribution["target_assist2017_question_id"] == 3
+    assert attribution["target_assist2017_concept_id"] == 2
+    assert attribution["mapped_teaching_content"]["question_id"] == "q_frac_001"
+    assert attribution["key_history"][0]["concept_id"] == canonical_concept_id
+    assert attribution["top_paths"][0]["weak_concept_hit"] is True
+    assert attribution["top_paths"][0]["weak_concept_evidence"][0]["concept_id"] == (
+        canonical_concept_id
+    )
+
+    attribution_chain = stages["diagnose"]["metadata"]["attribution_chain"]
+    assert attribution_chain["raw_model_target"]["assist2017_question_id"] == 3
+    assert attribution_chain["mapped_teaching_content"]["concept_id"] == canonical_concept_id
+    assert attribution_chain["attribution_evidence"]["weak_concept_hit_count"] == 1
+    assert plan_metadata["mistake_diagnosis"]["concept"]["concept_id"] == canonical_concept_id
+    assert any(
+        target["concept_id"] == canonical_concept_id
+        for target in plan_metadata["selected_canonical_targets"]
+    )
+    assert any(
+        source["concept_id"] == canonical_concept_id
+        for source in plan_metadata["planner_evidence"]["rag_sources"]
+    )
+    assert any(
+        asset["concept_id"] == canonical_concept_id
+        for asset in assembled["normalized_context"]["knowledge_resource"]
+    )
+    assert any(gap["reason"] == "无可用记忆" for gap in assembled["evidence_gaps"])
 
 
 def test_dgekt_mapping_error_returns_readable_api_error(
