@@ -535,6 +535,11 @@ cp .env.example .env
 | `MATHTUTOR_LLM_PROVIDER` | `mock` | V1 优先用 mock / 规则化响应跑通闭环。 |
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
+| `MATHTUTOR_KT_ENGINE` | `mock` | KT 引擎选择。默认 `mock`，显式设为 `dgekt` 才会验证并加载真实 DGEKT 配置。 |
+| `MATHTUTOR_DGEKT_DATASET` | `assist2017` | DGEKT 数据集名；V1.2 当前只支持 `assist2017`。 |
+| `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 ASSIST2017 DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
+| `MATHTUTOR_DGEKT_DATASET_DIR` | 空 | ASSIST2017 数据目录，例如原始工程中的 `Dataset/assist2017`，需包含 `assist2017_pid_train.csv` 和 `assist2017_pid_test.csv`。 |
+| `MATHTUTOR_DGEKT_Q_MATRIX_PATH` | 空 | DGEKT Q-matrix / incidence matrix 文件，例如原始工程中的 `Dataset/H/2017.csv`。 |
 
 ## 13. 数据目录约定
 
@@ -549,7 +554,8 @@ data/
 
 - 先用本地 JSON / sqlite / 内存实现跑通 V1 闭环。
 - `MockKTStateEngine` 是默认 KT 实现。
-- DGEKT / SAFKT 只通过稳定接口预留 adapter。
+- `DGEKTStateEngine` 只有在 `MATHTUTOR_KT_ENGINE=dgekt` 时启用；启动或首次构造时会检查 checkpoint、ASSIST2017 train/test 数据和 Q-matrix / incidence matrix，缺失时给出明确环境变量修复提示。
+- DGEKT / SAFKT 只通过稳定接口接入，不把 PyTorch checkpoint、数据路径或矩阵细节泄漏到 API、planner、recommender 或前端。
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 

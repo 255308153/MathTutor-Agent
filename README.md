@@ -206,6 +206,14 @@ cp .env.example .env
 - `MATHTUTOR_LLM_PROVIDER=mock`：V1 先用 mock / 规则化响应跑通闭环。
 - `MATHTUTOR_LLM_MODEL`：真实 LLM 模型名，mock 模式可留空。
 - `MATHTUTOR_OPENAI_API_KEY`：真实 LLM key，本地 mock 模式可留空。
+- `MATHTUTOR_KT_ENGINE=mock`：默认 KT 引擎；保持 V1.1 演示不依赖真实 checkpoint。
+- `MATHTUTOR_KT_ENGINE=dgekt`：显式启用真实 DGEKT 配置校验。
+- `MATHTUTOR_DGEKT_DATASET=assist2017`：V1.2 当前支持的真实数据集。
+- `MATHTUTOR_DGEKT_CHECKPOINT_PATH`：本地 ASSIST2017 checkpoint 路径。已验证 checkpoint 示例：`/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。
+- `MATHTUTOR_DGEKT_DATASET_DIR`：ASSIST2017 数据目录，需包含 `assist2017_pid_train.csv` 和 `assist2017_pid_test.csv`。
+- `MATHTUTOR_DGEKT_Q_MATRIX_PATH`：Q-matrix / incidence matrix 文件，例如原始 DGEKT 工程的 `Dataset/H/2017.csv`。
+
+大 checkpoint 和原始数据文件不提交到 Git，只通过本地路径或环境变量引用。默认 mock 模式不会读取上述 DGEKT 文件。
 
 ## Agent 工作方式
 

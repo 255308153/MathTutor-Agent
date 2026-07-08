@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from ..kt.engine import KTStateEngine
-from ..kt.mock_engine import MockKTStateEngine
+from ..kt.factory import create_kt_engine
 from ..memory.store import StudentMemory, StudentMemoryStore, memory_store
 from ..planning.recommender import RiskPrioritizedRecommender, recommender
 from ..planning.teaching_planner import TeachingPlanner, teaching_planner
@@ -29,7 +29,7 @@ class MathTutorLearningLoop:
         memories: StudentMemoryStore | None = None,
         planner: TeachingPlanner | None = None,
     ) -> None:
-        self.kt_engine = kt_engine or MockKTStateEngine()
+        self.kt_engine = kt_engine or create_kt_engine()
         self.store = store or progress_store
         self.content = content or content_repository
         self.recommender = question_recommender or recommender
