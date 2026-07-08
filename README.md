@@ -212,6 +212,14 @@ V1.4 新增最小 LearningContextLayer，用来统一组织本轮学习事件需
 - next-step advice / answer submission 主链路会在 KT 诊断之后组装 `assembled_context`，并写入 TeachingTrace expert evidence。
 - `assembled_context.authoritative_kt_facts` 只引用 KT 输出，context assets 不能覆盖 KTDiagnosis、mastery、weak_concepts、forgetting_risk 或 prediction_probability。
 
+V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context：
+
+- `student_memory` 会把已有偏好、重复错因、有效策略和学习目标标准化到 `assembled_context.normalized_context.student_memory`，并生成“参考学生偏好 / 参考重复错因 / 参考有效策略”等 included reason。
+- `knowledge_resource` 会把本地 RAG 的 concept note、question explanation、mistake pattern、learning strategy 标准化到 `assembled_context.normalized_context.knowledge_resource`，推荐理由和 TeachingTrace 可显示“参考相关知识资源”。
+- 新用户没有记忆时不创建假的 memory asset，而是在 `assembled_context.evidence_gaps` 标记“无可用记忆”。
+- RAG 没命中时不伪造 knowledge_resource，也不覆盖 KT facts，而是在 evidence gaps 标记“RAG 未找到相关知识资源”。
+- planner / recommender / response 读取 `assembled_context` 中的 normalized context，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
+
 ## V1.2 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：

@@ -45,7 +45,9 @@ class AssembledContext(BaseModel):
     context_id: str = Field(default_factory=lambda: f"assembled-{uuid4().hex[:12]}")
     intent: str
     authoritative_kt_facts: dict[str, Any] = Field(default_factory=dict)
+    normalized_context: dict[str, Any] = Field(default_factory=dict)
     asset_summaries: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_gaps: list[dict[str, Any]] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     budget: dict[str, Any] = Field(default_factory=dict)
     compression: dict[str, Any] = Field(default_factory=dict)
@@ -111,8 +113,8 @@ class InMemoryContextAssetStore:
             if (student_id is None or asset.student_id == student_id)
             and (session_id is None or asset.session_id == session_id)
             and (not allowed_types or asset.asset_type in allowed_types)
-            and (concept_id is None or asset.concept_id == concept_id)
-            and (question_id is None or asset.question_id == question_id)
+            and (concept_id is None or asset.concept_id in (None, concept_id))
+            and (question_id is None or asset.question_id in (None, question_id))
         ]
         results.sort(key=self._sort_key)
         return results[:limit]
@@ -179,6 +181,7 @@ class LearningContextLayer:
     ) -> list[ContextAsset]:
         assets: list[ContextAsset] = []
         for memory in student_memories:
+            memory_type = str(memory.get("memory_type") or "reflection")
             assets.append(
                 ContextAsset(
                     asset_type="student_memory",
@@ -187,7 +190,8 @@ class LearningContextLayer:
                     summary=str(memory.get("content", ""))[:160] or "学生长期记忆摘要",
                     content_preview=str(memory.get("content", ""))[:240],
                     metadata={
-                        "memory_type": memory.get("memory_type"),
+                        "memory_type": memory_type,
+                        "normalized_kind": _memory_kind(memory_type),
                         "evidence": memory.get("evidence", {}),
                     },
                     evidence_refs=[f"memory:{memory.get('memory_id', 'unknown')}"],
@@ -197,11 +201,12 @@ class LearningContextLayer:
                     session_id=session_id,
                     concept_id=_concept_id_from(memory.get("evidence", {})),
                     question_id=_question_id_from(memory.get("evidence", {})),
-                    included_reason="student memory can personalize strategy without changing mastery",
+                    included_reason=_memory_included_reason(memory_type),
                 )
             )
 
         for item in rag_context:
+            doc_type = str(item.get("doc_type") or "knowledge_resource")
             assets.append(
                 ContextAsset(
                     asset_type="knowledge_resource",
@@ -210,7 +215,8 @@ class LearningContextLayer:
                     summary=str(item.get("title") or item.get("content") or "RAG evidence")[:160],
                     content_preview=str(item.get("content", ""))[:240],
                     metadata={
-                        "doc_type": item.get("doc_type"),
+                        "doc_type": doc_type,
+                        "normalized_kind": _knowledge_kind(doc_type),
                         "score": item.get("score"),
                         "source": item.get("source"),
                     },
@@ -221,7 +227,7 @@ class LearningContextLayer:
                     session_id=session_id,
                     concept_id=item.get("concept_id"),
                     question_id=item.get("question_id"),
-                    included_reason="RAG can support explanation but cannot overwrite KT facts",
+                    included_reason=_knowledge_included_reason(doc_type),
                 )
             )
 
@@ -343,6 +349,10 @@ class LearningContextLayer:
                 "source_type": asset.source_type,
                 "source_ref": asset.source_ref,
                 "summary": asset.summary,
+                "content_preview": asset.content_preview,
+                "metadata": asset.metadata,
+                "concept_id": asset.concept_id,
+                "question_id": asset.question_id,
                 "confidence": asset.confidence,
                 "freshness": asset.freshness,
                 "included_reason": asset.included_reason,
@@ -351,10 +361,14 @@ class LearningContextLayer:
             }
             for asset in selected_assets
         ]
+        normalized_context = self._normalize_assets(selected_assets)
+        evidence_gaps = self._evidence_gaps(normalized_context)
         return AssembledContext(
             intent=intent,
             authoritative_kt_facts=dict(kt_facts),
+            normalized_context=normalized_context,
             asset_summaries=asset_summaries,
+            evidence_gaps=evidence_gaps,
             evidence_refs=list(
                 dict.fromkeys(ref for asset in selected_assets for ref in asset.evidence_refs if ref)
             ),
@@ -395,6 +409,111 @@ class LearningContextLayer:
             "summary": record.summary,
         }
 
+    def _normalize_assets(self, assets: list[ContextAsset]) -> dict[str, Any]:
+        grouped: dict[str, Any] = {
+            "student_memory": [],
+            "knowledge_resource": [],
+            "task_state": [],
+            "tool_observation": [],
+            "trace_reference": [],
+        }
+        for asset in assets:
+            item = {
+                "asset_id": asset.asset_id,
+                "kind": asset.metadata.get("normalized_kind") or asset.asset_type,
+                "summary": asset.summary,
+                "content_preview": asset.content_preview,
+                "source_type": asset.source_type,
+                "source_ref": asset.source_ref,
+                "concept_id": asset.concept_id,
+                "question_id": asset.question_id,
+                "included_reason": asset.included_reason,
+                "evidence_refs": asset.evidence_refs,
+                "confidence": asset.confidence,
+                "freshness": asset.freshness,
+                "metadata": asset.metadata,
+            }
+            grouped[asset.asset_type].append(item)
+
+        return grouped | {
+            "strategy_hints": self._strategy_hints(grouped["student_memory"]),
+            "knowledge_hints": self._knowledge_hints(grouped["knowledge_resource"]),
+        }
+
+    def _strategy_hints(self, memories: list[dict[str, Any]]) -> dict[str, Any]:
+        hints: dict[str, Any] = {
+            "preferred_teaching_type": None,
+            "preferred_concept_id": None,
+            "repeated_mistakes": [],
+            "effective_strategies": [],
+            "goals": [],
+            "included_reasons": [],
+        }
+        for memory in memories:
+            metadata = memory.get("metadata", {})
+            evidence = metadata.get("evidence", {}) if isinstance(metadata, dict) else {}
+            if evidence.get("preferred_teaching_type") and hints["preferred_teaching_type"] is None:
+                hints["preferred_teaching_type"] = evidence["preferred_teaching_type"]
+            if evidence.get("preferred_concept_id") and hints["preferred_concept_id"] is None:
+                hints["preferred_concept_id"] = evidence["preferred_concept_id"]
+            kind = memory.get("kind")
+            if kind == "repeated_mistake":
+                hints["repeated_mistakes"].append(memory["summary"])
+            elif kind == "effective_strategy":
+                hints["effective_strategies"].append(memory["summary"])
+            elif kind == "goal":
+                hints["goals"].append(memory["summary"])
+            if memory.get("included_reason"):
+                hints["included_reasons"].append(memory["included_reason"])
+        hints["included_reasons"] = list(dict.fromkeys(hints["included_reasons"]))
+        return hints
+
+    def _knowledge_hints(self, resources: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "resource_count": len(resources),
+            "doc_types": list(
+                dict.fromkeys(
+                    str(resource.get("metadata", {}).get("doc_type"))
+                    for resource in resources
+                    if resource.get("metadata", {}).get("doc_type")
+                )
+            ),
+            "sources": list(
+                dict.fromkeys(
+                    str(resource.get("metadata", {}).get("source"))
+                    for resource in resources
+                    if resource.get("metadata", {}).get("source")
+                )
+            ),
+            "included_reasons": list(
+                dict.fromkeys(
+                    str(resource["included_reason"])
+                    for resource in resources
+                    if resource.get("included_reason")
+                )
+            ),
+        }
+
+    def _evidence_gaps(self, normalized_context: dict[str, Any]) -> list[dict[str, Any]]:
+        gaps: list[dict[str, Any]] = []
+        if not normalized_context.get("student_memory"):
+            gaps.append(
+                {
+                    "gap_type": "student_memory",
+                    "reason": "无可用记忆",
+                    "impact": "recommendation uses KT facts and content only",
+                }
+            )
+        if not normalized_context.get("knowledge_resource"):
+            gaps.append(
+                {
+                    "gap_type": "knowledge_resource",
+                    "reason": "RAG 未找到相关知识资源",
+                    "impact": "no knowledge_resource asset was fabricated",
+                }
+            )
+        return gaps
+
 
 def _concept_id_from(value: Any) -> str | None:
     if isinstance(value, dict) and value.get("concept_id"):
@@ -406,6 +525,40 @@ def _question_id_from(value: Any) -> str | None:
     if isinstance(value, dict) and value.get("question_id"):
         return str(value["question_id"])
     return None
+
+
+def _memory_kind(memory_type: str) -> str:
+    if memory_type in {"preference", "repeated_mistake", "effective_strategy"}:
+        return memory_type
+    if memory_type == "reflection":
+        return "goal"
+    return "student_memory"
+
+
+def _knowledge_kind(doc_type: str) -> str:
+    if doc_type in {"concept_note", "question_explanation", "mistake_pattern", "learning_strategy"}:
+        return doc_type
+    return "knowledge_resource"
+
+
+def _memory_included_reason(memory_type: str) -> str:
+    reasons = {
+        "preference": "参考学生偏好",
+        "repeated_mistake": "参考重复错因",
+        "effective_strategy": "参考有效策略",
+        "reflection": "参考学习目标或反思",
+    }
+    return reasons.get(memory_type, "参考学生记忆")
+
+
+def _knowledge_included_reason(doc_type: str) -> str:
+    reasons = {
+        "concept_note": "参考相关知识资源",
+        "question_explanation": "参考题目解析资源",
+        "mistake_pattern": "参考错因模式资源",
+        "learning_strategy": "参考学习策略资源",
+    }
+    return reasons.get(doc_type, "参考相关知识资源")
 
 
 context_layer = LearningContextLayer()

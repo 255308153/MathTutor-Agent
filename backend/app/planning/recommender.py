@@ -44,6 +44,7 @@ class RiskPrioritizedRecommender:
             "prediction_risk": self._prediction_risk(question, diagnosis),
             "novelty": self._novelty(question, progress),
             "preference_fit": self._preference_fit(question, preferences),
+            "context_support": self._context_support(question, preferences),
         }
         score = round(
             factors["weak_concept_match"] * 0.35
@@ -64,6 +65,11 @@ class RiskPrioritizedRecommender:
             },
             "score": score,
             "score_factors": factors,
+            "context_rationale": {
+                "included_reasons": list(preferences.get("context_included_reasons", [])),
+                "gap_reasons": list(preferences.get("context_gap_reasons", [])),
+                "knowledge_doc_types": list(preferences.get("knowledge_doc_types", [])),
+            },
         }
 
     def _weak_concept_match(self, question: dict[str, Any], diagnosis: KTDiagnosis) -> float:
@@ -122,13 +128,25 @@ class RiskPrioritizedRecommender:
     def _preference_fit(self, question: dict[str, Any], preferences: dict[str, Any]) -> float:
         preferred_teaching_type = preferences.get("preferred_teaching_type")
         preferred_concept_id = preferences.get("preferred_concept_id")
-        if preferred_concept_id and preferred_concept_id == question["concept_id"]:
-            return 1.0
+        if preferred_concept_id:
+            return 1.0 if preferred_concept_id == question["concept_id"] else 0.25
         if preferred_teaching_type and preferred_teaching_type == question["teaching_type"]:
             return 0.9
-        if preferred_concept_id or preferred_teaching_type:
+        if preferred_teaching_type:
             return 0.35
         return 0.5
+
+    def _context_support(self, question: dict[str, Any], preferences: dict[str, Any]) -> float:
+        score = 0.0
+        if preferences.get("context_included_reasons"):
+            score += 0.4
+        if preferences.get("knowledge_doc_types"):
+            score += 0.3
+        if preferences.get("preferred_concept_id") == question["concept_id"]:
+            score += 0.2
+        if preferences.get("preferred_teaching_type") == question["teaching_type"]:
+            score += 0.1
+        return round(min(score, 1.0), 4)
 
     def _concept_mastery(self, concept_id: str, progress: KTLearningProgress) -> float:
         for state in progress.concept_states:
@@ -145,6 +163,11 @@ class RiskPrioritizedRecommender:
             reason_parts.append("遗忘风险较高")
         if factors.get("prediction_risk", 0.0) >= 0.5:
             reason_parts.append("DGEKT 预测答对概率偏低")
+        context_rationale = item.get("context_rationale", {})
+        for reason in context_rationale.get("included_reasons", [])[:2]:
+            reason_parts.append(reason)
+        for reason in context_rationale.get("gap_reasons", [])[:1]:
+            reason_parts.append(reason)
         if factors["novelty"] < 0.2:
             reason_parts.append("近期做过，因此降权")
         else:

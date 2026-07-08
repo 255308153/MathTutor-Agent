@@ -242,8 +242,18 @@ load_context -> diagnose -> context_assemble -> plan -> generate_response -> mem
 `context_assemble` 阶段会输出：
 
 - `context_assets`：五类资产中的本轮候选和选中资产。
-- `assembled_context`：带 `authoritative_kt_facts`、asset summaries、evidence refs、budget / compression metadata 的上下文包。
+- `assembled_context`：带 `authoritative_kt_facts`、`normalized_context`、asset summaries、evidence gaps、evidence refs、budget / compression metadata 的上下文包。
 - `context_record`：本地组装记录，方便审计本轮 context 是怎样被纳入 trace 的。
+
+V1.4 #29 / #35 的 next-step advice 个性化规则：
+
+- `student_memory` 只来自 `StudentMemoryStore.search()` 已返回的本地记忆，不新增 Mem0 provider 依赖。
+- `knowledge_resource` 只来自 `KnowledgeRAG.search()` 已返回的本地 RAG 结果，不新增 VikingDB / OpenViking provider 依赖。
+- `assembled_context.normalized_context.student_memory` 会区分 preference、repeated_mistake、effective_strategy、goal，并给出 included_reason。
+- `assembled_context.normalized_context.knowledge_resource` 会区分 concept_note、question_explanation、mistake_pattern、learning_strategy，并保留 source / doc_type。
+- `assembled_context.evidence_gaps` 显式记录“无可用记忆”和“RAG 未找到相关知识资源”；缺失时不伪造 `student_memory` 或 `knowledge_resource` asset。
+- planner / recommender / response 只能通过 `assembled_context` 读取 normalized context。它们不能直接调用 Mem0、VikingDB、OpenViking 或外部 provider SDK。
+- 推荐理由可以展示“参考学生偏好”“参考相关知识资源”等 context included_reason，也可以展示 gap reason，但 mastery、weak_concepts、forgetting_risk、prediction_probability 仍只来自 KT。
 
 ## 5. 统一事件 API
 
