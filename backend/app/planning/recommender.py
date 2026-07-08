@@ -44,6 +44,7 @@ class RiskPrioritizedRecommender:
             "prediction_risk": self._prediction_risk(question, diagnosis),
             "novelty": self._novelty(question, progress),
             "preference_fit": self._preference_fit(question, preferences),
+            "canonical_alignment": self._canonical_alignment(question),
             "context_support": self._context_support(question, preferences),
         }
         score = round(
@@ -52,17 +53,20 @@ class RiskPrioritizedRecommender:
             + factors["forgetting_urgency"] * 0.2
             + factors["prediction_risk"] * 0.1
             + factors["novelty"] * 0.15
-            + factors["preference_fit"] * 0.1,
+            + factors["preference_fit"] * 0.1
+            + factors["canonical_alignment"] * 0.04,
             4,
         )
         public = self.content.public_question(question)
+        canonical_mapping = self._canonical_mapping(question)
         return public | {
-            "stem_summary": str(question["stem"])[:60],
+            "stem_summary": str(question.get("stem") or "题干暂缺")[:60],
             "concept": {
                 "concept_id": question["concept_id"],
                 "concept_name": question["concept_name"],
                 "teaching_type": question["teaching_type"],
             },
+            "canonical_mapping": canonical_mapping,
             "score": score,
             "score_factors": factors,
             "context_rationale": {
@@ -136,6 +140,27 @@ class RiskPrioritizedRecommender:
             return 0.35
         return 0.5
 
+    def _canonical_alignment(self, question: dict[str, Any]) -> float:
+        has_curated_mapping = bool(
+            question.get("assist2017_question_id")
+            and question.get("assist2017_concept_id")
+            and question.get("q_matrix_reference")
+            and question.get("canonical_mapping_source")
+        )
+        return 1.0 if has_curated_mapping else 0.0
+
+    def _canonical_mapping(self, question: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "question_id": question.get("question_id"),
+            "concept_id": question.get("concept_id"),
+            "concept_name": question.get("concept_name"),
+            "teaching_type": question.get("teaching_type"),
+            "assist2017_question_id": question.get("assist2017_question_id"),
+            "assist2017_concept_id": question.get("assist2017_concept_id"),
+            "q_matrix_reference": question.get("q_matrix_reference"),
+            "source": question.get("canonical_mapping_source", "local_sequence_fallback"),
+        }
+
     def _context_support(self, question: dict[str, Any], preferences: dict[str, Any]) -> float:
         score = 0.0
         if preferences.get("context_included_reasons"):
@@ -158,16 +183,22 @@ class RiskPrioritizedRecommender:
         factors = item["score_factors"]
         reason_parts = []
         if factors["weak_concept_match"] >= 1.0:
-            reason_parts.append("匹配当前薄弱知识点")
+            reason_parts.append(f"匹配映射知识点「{item['concept_name']}」")
         if factors["forgetting_urgency"] >= 0.5:
             reason_parts.append("遗忘风险较高")
         if factors.get("prediction_risk", 0.0) >= 0.5:
             reason_parts.append("DGEKT 预测答对概率偏低")
+        canonical = item.get("canonical_mapping", {})
+        if canonical.get("assist2017_question_id"):
+            reason_parts.append(f"对齐 ASSIST2017 question {canonical['assist2017_question_id']}")
         context_rationale = item.get("context_rationale", {})
         for reason in context_rationale.get("included_reasons", [])[:2]:
             reason_parts.append(reason)
         for reason in context_rationale.get("gap_reasons", [])[:1]:
             reason_parts.append(reason)
+        availability = item.get("content_availability", {})
+        if availability.get("status") == "partial":
+            reason_parts.append(availability.get("fallback_message") or "教学内容不完整")
         if factors["novelty"] < 0.2:
             reason_parts.append("近期做过，因此降权")
         else:

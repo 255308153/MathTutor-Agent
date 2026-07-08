@@ -1,7 +1,15 @@
+from functools import cached_property
+from typing import Any
+
 from fastapi.testclient import TestClient
 
+from backend.app.api import events as events_api
+from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.main import create_app
+from backend.app.planning.recommender import RiskPrioritizedRecommender
+from backend.app.storage.content_repository import DemoTeachingContentRepository
 from backend.app.storage.content_repository import content_repository
+from backend.app.storage.progress_store import InMemoryProgressStore
 
 
 TRACE_STAGES = ["load_context", "diagnose", "context_assemble", "plan", "generate_response"]
@@ -36,7 +44,9 @@ def test_chat_message_returns_next_step_response_and_trace() -> None:
     assert body["recommended_questions"][0]["reason"]
     assert "score_factors" in body["recommended_questions"][0]
     assert "standard_answer" not in body["recommended_questions"][0]
-    assert "explanation" not in body["recommended_questions"][0]
+    assert body["recommended_questions"][0]["answer"]
+    assert body["recommended_questions"][0]["explanation"]
+    assert body["recommended_questions"][0]["content_availability"]["status"] == "available"
     assert_core_trace([event["stage"] for event in body["teaching_trace"]])
 
 
@@ -152,3 +162,108 @@ def test_recommended_question_then_wrong_answer_updates_state() -> None:
     assert body["recommended_questions"][0]["question_id"] != question["question_id"]
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
     assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 1
+
+
+def test_recommendation_kt_diagnosis_and_trace_share_canonical_target() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-canonical-alignment-001",
+            "student_id": "student-canonical-alignment-001",
+            "type": "answer_submitted",
+            "message": "我选 55",
+            "payload": {
+                "question_id": "q_mem_001",
+                "answer": "55",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    question = body["recommended_questions"][0]
+    plan_event = next(event for event in body["teaching_trace"] if event["stage"] == "plan")
+    selected_target = plan_event["metadata"]["selected_canonical_targets"][0]
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+
+    assert question["question_id"] == "q_mem_002"
+    assert question["answer"] == "54"
+    assert question["explanation"] == "六九五十四，所以 6 × 9 = 54。"
+    assert question["concept_id"] == "c_multiplication_facts"
+    assert question["assist2017_question_id"] == 2
+    assert question["assist2017_concept_id"] == 1
+    assert question["canonical_mapping"]["assist2017_question_id"] == 2
+    assert question["canonical_mapping"]["q_matrix_reference"]["concept_column_indices"] == [1]
+    assert body["state_summary"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
+    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
+    assert selected_target["question_id"] == question["question_id"]
+    assert selected_target["concept_id"] == question["concept_id"]
+    assert selected_target["assist2017_question_id"] == question["assist2017_question_id"]
+    assert selected_target["assist2017_concept_id"] == question["assist2017_concept_id"]
+    assert "question:q_mem_002" in plan_event["evidence_refs"]
+
+
+def test_api_returns_visible_fallback_when_standard_answer_is_missing(
+    monkeypatch,
+) -> None:
+    repository = MissingAnswerTeachingContentRepository()
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            store=InMemoryProgressStore(),
+            content=repository,
+            question_recommender=RiskPrioritizedRecommender(content=repository),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-missing-answer-001",
+            "student_id": "student-missing-answer-001",
+            "type": "answer_submitted",
+            "message": "提交无法判题的内容",
+            "payload": {
+                "question_id": "q_missing_answer",
+                "answer": "3/4",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state_summary"]["next_action"]["type"] == "record_ungraded_answer"
+    assert body["state_summary"]["errors"] == [
+        "q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。"
+    ]
+    assert body["teaching_trace"][0]["metadata"]["grading_source"] == "missing_teaching_content"
+    assert body["teaching_trace"][0]["metadata"]["is_correct"] is None
+    assert body["recommended_questions"] == []
+
+
+class MissingAnswerTeachingContentRepository(DemoTeachingContentRepository):
+    @cached_property
+    def content(self) -> dict[str, Any]:
+        return {
+            "concept_teaching_type_map": {"c_fraction_addition": "procedure"},
+            "questions": [
+                {
+                    "question_id": "q_missing_answer",
+                    "stem": "计算：1/2 + 1/4 = ?",
+                    "explanation": "先通分，再相加。",
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "difficulty": 0.35,
+                    "mistake_patterns": ["没有通分"],
+                    "rag_doc_ids": [],
+                }
+            ],
+        }
+
+    @cached_property
+    def canonical_mapping(self) -> None:
+        return None

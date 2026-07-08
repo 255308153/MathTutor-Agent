@@ -622,21 +622,32 @@ data/content/demo_teaching_content.json
 
 - `question_id`：题目稳定 ID，后续推荐、判题、RAG、UI 都使用它串联。
 - `stem`：学生可见题干。
-- `standard_answer`：服务端标准答案，不在推荐题 payload 中返回。
-- `explanation`：题解，推荐时不提前返回，后续讲解 / RAG 使用。
+- `standard_answer`：服务端标准答案，后端判题只读取本地内容集中的该字段；推荐题 payload 不使用同名字段。
+- `answer`：推荐题 payload 中的标准答案快照，来自 `standard_answer`，用于 #21 验收和可审计 teaching content；客户端提交后仍会由服务端重新读取 `standard_answer` 判题。
+- `explanation`：题解，推荐题 payload 会返回该字段；前端当前不主动展示答案 / 解析，后续可用于讲解和 TeachingTrace。
 - `concept_id` / `concept_name`：知识点标识和中文名。
 - `difficulty`：0-1 难度分，后续推荐排序使用。
 - `mistake_patterns`：常见错因，后续错因诊断使用。
 - `rag_doc_ids`：关联 RAG 文档 ID。
 - `concept_teaching_type_map`：稳定标注知识点教学类型，取值为 `memory`、`concept`、`procedure`、`design`。
+- `content_availability`：推荐题返回的内容可用性诊断，包含题干、标准答案、解析是否缺失，以及中文 fallback 信息。
+- `provenance` / `canonical_mapping`：推荐题返回的来源与 ASSIST2017 / Q-matrix 对齐信息。
 
 确定性判题规则：
 
 - `answer_submitted` 进入主循环后，服务端会根据 `question_id` 读取内容集标准答案。
 - 客户端传入的 `is_correct`、`correct_answer`、`concept_id` 等判题字段会被清理，避免覆盖服务端事实。
+- 如果 `standard_answer` 缺失，API 返回 `record_ungraded_answer` 和中文 `errors`，不会把未判题答案写成 KT facts。
 - 判题结果写回 learning event payload，再交给 `MockKTStateEngine` 更新 progress。
 - 正确路径会提高 mastery、降低 forgetting risk，并走 `reinforce_mastery`。
 - 错误路径会降低 mastery、提高 forgetting risk，写入 `error_records` / `review_queue`，并走 `review_answer`。
+
+推荐题 canonical teaching content：
+
+- `RiskPrioritizedRecommender` 从 `ContentRepository.public_question()` 获取推荐题公开快照，包含 `question_id`、`stem`、`answer`、`explanation`、`concept_name`、`difficulty`、`teaching_type`、`content_availability`、`provenance` 和 `canonical_mapping`。
+- 已具备 curated ASSIST2017 question/concept/Q-matrix 对齐的题会获得轻量 `canonical_alignment` 排序因子，优先于仅有 `local_sequence_fallback` 的 smoke id。
+- TeachingTrace 的 plan 阶段会记录 `selected_canonical_targets`，用于核对推荐题、KTDiagnosis 和 trace 是否指向同一 canonical question / concept。
+- 当前覆盖范围仍是小型 demo 内容集 + `data/mapping/assist2017_canonical_mapping.fixture.json`。全量 ASSISTments2017 题干、答案、解析、RAG 文档导入不得直接提交大文件，应放在 Git 外部或 `data/local/`。
 
 替换为 ASSISTments2017 / DGEKT 数据时：
 

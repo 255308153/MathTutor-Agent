@@ -52,13 +52,21 @@ class DemoTeachingContentRepository:
 
     def public_question(self, question: dict[str, Any]) -> dict[str, Any]:
         public = dict(question)
-        public.pop("standard_answer", None)
-        public.pop("explanation", None)
+        standard_answer = public.pop("standard_answer", None)
+        availability = self.content_availability(question)
+        if public.get("stem") in (None, ""):
+            public["stem"] = availability["fallback_message"] or "题干暂缺，请补齐教学内容。"
+        public["answer"] = standard_answer
+        public["explanation"] = question.get("explanation")
+        public["content_availability"] = availability
+        public["provenance"] = self.provenance(question)
         return public
 
     def grade(self, question_id: str, submitted_answer: Any) -> GradeResult | None:
         question = self.get_question(question_id)
         if question is None:
+            return None
+        if "standard_answer" not in question or question["standard_answer"] in (None, ""):
             return None
         submitted = "" if submitted_answer is None else str(submitted_answer)
         normalized_answer = self._normalize_answer(submitted)
@@ -90,7 +98,64 @@ class DemoTeachingContentRepository:
             enriched["q_matrix_reference"] = canonical.q_matrix_reference.model_dump()
         else:
             enriched.setdefault("assist2017_question_id", assist2017_question_id)
+        enriched["content_availability"] = self.content_availability(enriched)
+        enriched["provenance"] = self.provenance(enriched)
         return enriched
+
+    def content_availability(self, question: dict[str, Any]) -> dict[str, Any]:
+        required_fields = {
+            "stem": "题干",
+            "standard_answer": "标准答案",
+            "explanation": "解析",
+        }
+        missing_fields = [
+            field
+            for field in required_fields
+            if question.get(field) in (None, "")
+        ]
+        return {
+            "status": "available" if not missing_fields else "partial",
+            "has_stem": "stem" not in missing_fields,
+            "has_answer": "standard_answer" not in missing_fields,
+            "has_explanation": "explanation" not in missing_fields,
+            "missing_fields": missing_fields,
+            "missing_labels": [required_fields[field] for field in missing_fields],
+            "fallback_message": self._fallback_message(question, missing_fields),
+        }
+
+    def provenance(self, question: dict[str, Any]) -> dict[str, Any]:
+        mapping_source = question.get("canonical_mapping_source", "local_sequence_fallback")
+        return {
+            "content_source": str(CONTENT_PATH.relative_to(CONTENT_PATH.parents[2])),
+            "mapping_source": mapping_source,
+            "assist2017_question_id": question.get("assist2017_question_id"),
+            "assist2017_concept_id": question.get("assist2017_concept_id"),
+            "q_matrix_reference": question.get("q_matrix_reference"),
+            "answer_source": (
+                "demo_teaching_content.standard_answer"
+                if question.get("standard_answer") not in (None, "")
+                else None
+            ),
+            "explanation_source": (
+                "demo_teaching_content.explanation"
+                if question.get("explanation") not in (None, "")
+                else None
+            ),
+        }
+
+    def _fallback_message(self, question: dict[str, Any], missing_fields: list[str]) -> str | None:
+        if not missing_fields:
+            return None
+        labels = "、".join(
+            {
+                "stem": "题干",
+                "standard_answer": "标准答案",
+                "explanation": "解析",
+            }[field]
+            for field in missing_fields
+        )
+        question_id = question.get("question_id", "unknown")
+        return f"{question_id} 缺少{labels}，请补齐教学内容后再用于完整练习。"
 
     def _normalize_answer(self, answer: str) -> str:
         return answer.strip().replace(" ", "").replace("，", ",").lower()

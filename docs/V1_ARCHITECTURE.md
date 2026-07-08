@@ -843,6 +843,14 @@ TeachingContentMap
 ├─ concept_names
 ├─ difficulty
 ├─ mistake_patterns
+├─ teaching_type
+├─ canonical_mapping
+│  ├─ assist2017_question_id
+│  ├─ assist2017_concept_id
+│  ├─ q_matrix_reference
+│  └─ source
+├─ provenance
+├─ content_availability
 └─ rag_doc_ids
 ```
 
@@ -853,6 +861,18 @@ KT 数据：ASSISTments2017 全量或子集
 教学展示数据：精选 20-50 题人工补全
 RAG 知识库：围绕这些题和知识点建设
 ```
+
+V1.3 #21 主链路约束：
+
+```text
+recommend_next_question
+→ ContentRepository.public_question()
+→ 推荐 payload 携带 stem / answer / explanation / concept / difficulty / teaching_type
+→ plan trace 记录 selected_canonical_targets
+→ answer_submitted 时后端重新读取 standard_answer 确定性判题
+```
+
+`answer` 是推荐 payload 的教学内容快照；`standard_answer` 是服务端内容集字段，不能由客户端覆盖。若题干、标准答案或解析缺失，`content_availability` 必须返回缺口和中文 fallback，KTDiagnosis / mastery / weak_concepts / forgetting_risk / prediction_probability 仍只来自 KT engine。
 
 ## 19. 存储模型
 
