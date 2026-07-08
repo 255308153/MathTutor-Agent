@@ -209,6 +209,42 @@ python -m backend.app.mapping.build_assist2017_mapping \
 - `DGEKTStateEngine` 只在显式设置 `MATHTUTOR_KT_ENGINE=dgekt` 时启用。
 - KT facts 是权威事实；RAG 和 Memory 只能影响解释、偏好和策略，不能覆盖 KT mastery / risk / prediction facts。
 
+## 4.2 LearningContextLayer 本地上下文层
+
+V1.4 的 LearningContextLayer 位于：
+
+```text
+backend/app/context/
+```
+
+它负责把本轮学习事件中已有的学生记忆、RAG 证据、任务状态快照、KT 工具观察和 trace 引用组织成统一的 `ContextAsset`，再压缩成 `assembled_context` 写入 TeachingTrace expert evidence。
+
+核心边界：
+
+```text
+Context can assemble evidence, not decide learning facts.
+```
+
+也就是说：
+
+- KTDiagnosis、mastery、weak_concepts、forgetting_risk、prediction_probability 仍只来自 KTStateEngine。
+- ContextAsset 可以记录 KT 诊断快照，但不能覆盖当前 KT facts。
+- ContextAssetStore 只存上下文引用、摘要、检索结果和组装记录，不是 runtime state 的唯一真相。
+- 默认实现是 `InMemoryContextAssetStore`，本地测试和开发不需要 Mem0、VikingDB、OpenViking 或外部 provider key。
+- VikingDB / OpenViking 后续只能作为 ContextAssetStore 或知识检索的可选后端能力，不能替代 MathTutor runtime。
+
+当前最小主链路：
+
+```text
+load_context -> diagnose -> context_assemble -> plan -> generate_response -> memory_update
+```
+
+`context_assemble` 阶段会输出：
+
+- `context_assets`：五类资产中的本轮候选和选中资产。
+- `assembled_context`：带 `authoritative_kt_facts`、asset summaries、evidence refs、budget / compression metadata 的上下文包。
+- `context_record`：本地组装记录，方便审计本轮 context 是怎样被纳入 trace 的。
+
 ## 5. 统一事件 API
 
 V1 后端通过统一事件入口接收聊天消息和学习事件：

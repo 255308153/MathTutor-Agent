@@ -57,6 +57,7 @@ KT facts are authoritative.
 LLM plans are advisory.
 Memory can influence strategy, not mastery.
 RAG can support explanation, not overwrite prediction facts.
+Context can assemble evidence, not decide learning facts.
 ```
 
 也就是说：
@@ -65,6 +66,7 @@ RAG can support explanation, not overwrite prediction facts.
 - LLM 只给教学表达和策略建议，不覆盖 KT 事实。
 - Memory 可以影响讲解风格、复习策略和偏好，不直接改写 mastery。
 - RAG 支持解释、证据和题解，不覆盖 prediction facts。
+- Context 负责收集和组装证据，不决定或改写 mastery、weak concepts、forgetting risk、prediction probability。
 
 ## 目录结构
 
@@ -74,6 +76,7 @@ backend/
     api/        FastAPI routers
     core/       配置、事件、trace 基础能力
     graph/      MathTutor 主循环编排
+    context/    LearningContextLayer 上下文资产、组装与本地 fallback
     kt/         KTStateEngine 接口与 Mock / DGEKT 预留实现
     memory/     学生长期记忆接口与本地实现
     planning/   教学动作规划与推荐
@@ -197,6 +200,17 @@ python -m backend.app.mapping.build_assist2017_mapping \
 命令会输出 coverage 诊断，包含 mapped questions、mapped concepts、missing questions、missing concepts、missing teaching content 和 missing RAG docs。`ContentRepository` 会优先读取该 artifact，为本地题目补充 `assist2017_question_id`、`assist2017_concept_id` 和 Q-matrix reference；artifact 缺失时回退到 V1.2 的顺序 smoke id，默认 mock 模式不依赖 DGEKT 文件。
 
 本地全量数据建议放在 Git 外部路径，或放在 `data/local/` 下。不要提交 ASSIST2017 全量 train/test、checkpoint、`.pkl`、生成模型文件、全量大型 mapping 输出；只提交小型 fixture、schema、代码和文档。
+
+## V1.4 LearningContextLayer 最小切片
+
+V1.4 新增最小 LearningContextLayer，用来统一组织本轮学习事件需要的上下文资产。它不是新的学习事实来源，也不是 VikingDB / OpenViking Runtime；默认使用本地内存 fallback，不需要 Mem0、VikingDB、OpenViking 或外部 provider 凭据。
+
+当前最小能力：
+
+- `ContextAsset` 支持 `student_memory`、`knowledge_resource`、`task_state`、`tool_observation`、`trace_reference` 五类资产。
+- `InMemoryContextAssetStore` 只保存上下文引用、摘要、检索和组装记录，不作为 runtime state 唯一真相。
+- next-step advice / answer submission 主链路会在 KT 诊断之后组装 `assembled_context`，并写入 TeachingTrace expert evidence。
+- `assembled_context.authoritative_kt_facts` 只引用 KT 输出，context assets 不能覆盖 KTDiagnosis、mastery、weak_concepts、forgetting_risk 或 prediction_probability。
 
 ## V1.2 已知限制与下一阶段优先级
 

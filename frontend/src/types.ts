@@ -73,6 +73,8 @@ export interface TeachingTraceSummary {
     } | null;
     rag_sources?: Array<{ doc_id?: string; title?: string; source?: string }>;
     student_memories?: Array<Record<string, unknown>>;
+    context_assets?: Array<Record<string, unknown>>;
+    assembled_context?: Record<string, unknown> | null;
     planner_decision?: Record<string, unknown> | null;
     recommendations?: RecommendedQuestion[];
   };
