@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from ..context.learning_context import LearningContextLayer, context_layer as default_context_layer
 from ..kt.engine import KTStateEngine
 from ..kt.factory import create_kt_engine
 from ..memory.store import StudentMemory, StudentMemoryStore, memory_store
@@ -28,6 +29,7 @@ class MathTutorLearningLoop:
         rag: KnowledgeRAG | None = None,
         memories: StudentMemoryStore | None = None,
         planner: TeachingPlanner | None = None,
+        context_layer: LearningContextLayer | None = None,
     ) -> None:
         self.kt_engine = kt_engine or create_kt_engine()
         self.store = store or progress_store
@@ -36,6 +38,7 @@ class MathTutorLearningLoop:
         self.rag = rag or knowledge_rag
         self.memories = memories or memory_store
         self.planner = planner or teaching_planner
+        self.context_layer = context_layer or default_context_layer
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
@@ -49,6 +52,7 @@ class MathTutorLearningLoop:
 
         self._load_context(state)
         self._diagnose(state)
+        self._assemble_context(state)
         self._plan(state)
         self._generate_response(state)
         self._update_memory(state)
@@ -166,6 +170,76 @@ class MathTutorLearningLoop:
             return diagnostics
         return {"engine_name": self._kt_engine_name()}
 
+    def _assemble_context(self, state: MathTutorState) -> None:
+        kt_facts = self._authoritative_kt_facts(state)
+        assets = self.context_layer.collect_assets(
+            student_id=state.student_id,
+            session_id=state.session_id,
+            intent=state.intent,
+            learning_event=state.learning_event,
+            kt_progress=state.kt_progress,
+            student_memories=state.student_memories,
+            rag_context=state.rag_context,
+            kt_facts=kt_facts,
+            trace_id=state.trace_id,
+        )
+        concept_id = self._context_concept_id(state)
+        question_id = self._target_question_id(state.learning_event)
+        retrieved = self.context_layer.retrieve_assets(
+            student_id=state.student_id,
+            session_id=state.session_id,
+            concept_id=concept_id,
+            question_id=question_id,
+            top_k=8,
+        )
+        if not retrieved:
+            retrieved = assets[:8]
+        assembled = self.context_layer.assemble_context(
+            intent=state.intent,
+            assets=retrieved,
+            kt_facts=kt_facts,
+            token_budget=1200,
+        )
+        context_record = self.context_layer.record_context_trace(
+            session_id=state.session_id,
+            student_id=state.student_id,
+            assembled_context=assembled,
+        )
+        state.context_assets = [asset.model_dump() for asset in retrieved]
+        state.assembled_context = assembled.model_dump()
+        state.teaching_trace.append(
+            self._trace(
+                stage="context_assemble",
+                content="LearningContextLayer 已组装本轮上下文证据，KT facts 保持权威。",
+                metadata={
+                    "context_asset_count": len(state.context_assets),
+                    "assembled_context": state.assembled_context,
+                    "context_record": context_record,
+                    "authoritative_kt_facts": kt_facts,
+                    "boundary": "Context can assemble evidence, not decide learning facts.",
+                },
+            )
+        )
+
+    def _authoritative_kt_facts(self, state: MathTutorState) -> dict[str, Any]:
+        diagnosis = state.kt_diagnosis
+        return {
+            "weak_concepts": diagnosis.weak_concepts if diagnosis else [],
+            "forgetting_risks": diagnosis.forgetting_risks if diagnosis else [],
+            "prediction_probability": diagnosis.prediction_probability if diagnosis else None,
+            "mastery_by_concept": {
+                concept.concept_id: concept.mastery for concept in state.kt_progress.concept_states
+            },
+        }
+
+    def _context_concept_id(self, state: MathTutorState) -> str | None:
+        if state.learning_event.payload.get("concept_id"):
+            return str(state.learning_event.payload["concept_id"])
+        if state.kt_diagnosis and state.kt_diagnosis.weak_concepts:
+            concept_id = state.kt_diagnosis.weak_concepts[0].get("concept_id")
+            return str(concept_id) if concept_id else None
+        return None
+
     def _plan(self, state: MathTutorState) -> None:
         ranked_questions: list[dict[str, Any]] = []
         if state.intent == "answer_submission":
@@ -254,6 +328,10 @@ class MathTutorLearningLoop:
                     "planner_evidence": state.teaching_plan["evidence"],
                     "recommended_question_count": len(state.recommended_questions),
                     "candidate_count": len(self.content.list_questions()),
+                    "assembled_context_id": (
+                        state.assembled_context or {}
+                    ).get("context_id"),
+                    "context_asset_count": len(state.context_assets),
                     "recommendation_candidates": [
                         {
                             "question_id": question["question_id"],
@@ -546,6 +624,7 @@ class MathTutorLearningLoop:
         actor_by_stage = {
             "load_context": "system",
             "diagnose": "kt",
+            "context_assemble": "context",
             "plan": "planner",
             "generate_response": "response",
             "memory_update": "memory",
@@ -579,6 +658,9 @@ class MathTutorLearningLoop:
                 refs.append(str(source["source"]))
         for question_id in metadata.get("selected_question_ids", []):
             refs.append(f"question:{question_id}")
+        assembled_context = metadata.get("assembled_context") or {}
+        for ref in assembled_context.get("evidence_refs", []):
+            refs.append(str(ref))
         return list(dict.fromkeys(refs))
 
 

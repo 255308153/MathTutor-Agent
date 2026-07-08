@@ -28,6 +28,7 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
     assert body["teaching_trace_summary"]["stages"] == [
         "load_context",
         "diagnose",
+        "context_assemble",
         "plan",
         "generate_response",
         "memory_update",
@@ -39,6 +40,7 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
     assert expert["attribution_evidence"]["top_paths"][0]["path_id"] == "mock-path-1"
     assert expert["attribution_evidence"]["key_history"]
     assert expert["rag_sources"]
+    assert expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"] == 0.58
     assert expert["planner_decision"]["selected_action"]["type"] == "worked_example_steps_after_mistake"
 
 
@@ -60,6 +62,7 @@ def test_trace_events_distinguish_student_and_expert_evidence() -> None:
     by_stage = {event["stage"]: event for event in events}
     assert by_stage["load_context"]["visibility"] == "expert"
     assert by_stage["diagnose"]["actor"] == "kt"
+    assert by_stage["context_assemble"]["actor"] == "context"
     assert by_stage["plan"]["actor"] == "planner"
     assert by_stage["generate_response"]["visibility"] == "student"
     assert by_stage["plan"]["metadata"]["planner_decision"] == "deterministic_teaching_planner"

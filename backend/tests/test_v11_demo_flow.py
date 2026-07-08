@@ -73,6 +73,7 @@ def test_v11_dashboard_demo_flow_has_recommendation_grading_trace_and_evidence()
     assert [event["stage"] for event in correct_turn["teaching_trace"]] == [
         "load_context",
         "diagnose",
+        "context_assemble",
         "plan",
         "generate_response",
         "memory_update",

@@ -11,6 +11,7 @@ MathTutor Agent V1 是一个面向个人学习者的数学个人教师 Agent。
 -> 读取个人学习状态与记忆
 -> 检索数学知识库
 -> 知识追踪诊断
+-> 组装 LearningContextLayer 上下文证据
 -> 规划下一步教学动作
 -> 推荐题目 / 讲解 / 复习 / 错因诊断
 -> 生成学生可读反馈
@@ -165,6 +166,7 @@ LangGraph Orchestration
     +--> StudentMemoryStore (Mem0 style)
     +--> KnowledgeRAG (VikingDB adapter / Chroma fallback)
     +--> KTStateEngine (Mock / DGEKT / SAFKT)
+    +--> LearningContextLayer (ContextAsset / assembled_context)
     +--> TeachingPlanner
     +--> QuestionRecommender
     +--> ResponseGenerator
@@ -178,6 +180,7 @@ KT facts are authoritative.
 LLM plans are advisory.
 Memory can influence strategy, not mastery.
 RAG can support explanation, not overwrite prediction.
+Context can assemble evidence, not decide learning facts.
 ```
 
 也就是说：
@@ -186,6 +189,7 @@ RAG can support explanation, not overwrite prediction.
 - LangGraph / Planner 决定教学动作。
 - RAG 提供知识点讲解、题目解析、错因和学习策略证据。
 - Mem0 风格记忆提供个人偏好、反思和历史策略效果。
+- LearningContextLayer 统一组织 context assets 和 assembled_context，但不决定学习事实。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 
 ## 5. 双输入模型

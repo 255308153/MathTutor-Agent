@@ -4,11 +4,11 @@ from backend.app.main import create_app
 from backend.app.storage.content_repository import content_repository
 
 
-TRACE_STAGES = ["load_context", "diagnose", "plan", "generate_response"]
+TRACE_STAGES = ["load_context", "diagnose", "context_assemble", "plan", "generate_response"]
 
 
 def assert_core_trace(stages: list[str]) -> None:
-    assert stages[:4] == TRACE_STAGES
+    assert stages[:5] == TRACE_STAGES
     assert "memory_update" in stages
 
 

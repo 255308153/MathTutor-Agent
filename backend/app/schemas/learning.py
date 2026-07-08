@@ -86,6 +86,8 @@ class MathTutorState(BaseModel):
     kt_progress: KTLearningProgress
     rag_context: list[dict[str, Any]] = Field(default_factory=list)
     student_memories: list[dict[str, Any]] = Field(default_factory=list)
+    context_assets: list[dict[str, Any]] = Field(default_factory=list)
+    assembled_context: dict[str, Any] | None = None
     kt_diagnosis: KTDiagnosis | None = None
     attribution_evidence: AttributionEvidence | None = None
     teaching_plan: dict[str, Any] | None = None
@@ -133,6 +135,8 @@ class MathTutorState(BaseModel):
                     for item in self.rag_context
                 ],
                 "student_memories": self.student_memories,
+                "context_assets": self.context_assets,
+                "assembled_context": self.assembled_context,
                 "planner_decision": self.teaching_plan,
                 "recommendations": self.recommended_questions,
             },
@@ -141,6 +145,7 @@ class MathTutorState(BaseModel):
                 "LLM plans are advisory.",
                 "Memory can influence strategy, not mastery.",
                 "RAG can support explanation, not overwrite prediction facts.",
+                "Context can assemble evidence, not decide learning facts.",
             ],
             errors=self.errors,
         )
