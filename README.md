@@ -212,8 +212,15 @@ cp .env.example .env
 - `MATHTUTOR_DGEKT_CHECKPOINT_PATH`：本地 ASSIST2017 checkpoint 路径。已验证 checkpoint 示例：`/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。
 - `MATHTUTOR_DGEKT_DATASET_DIR`：ASSIST2017 数据目录，需包含 `assist2017_pid_train.csv` 和 `assist2017_pid_test.csv`。
 - `MATHTUTOR_DGEKT_Q_MATRIX_PATH`：Q-matrix / incidence matrix 文件，例如原始 DGEKT 工程的 `Dataset/H/2017.csv`。
+- `MATHTUTOR_RUN_DGEKT_SMOKE=1`：显式运行本地真实 checkpoint smoke test；默认测试不会读取大模型。
 
 大 checkpoint 和原始数据文件不提交到 Git，只通过本地路径或环境变量引用。默认 mock 模式不会读取上述 DGEKT 文件。
+
+DGEKT checkpoint 读取说明：
+
+- adapter 期望 checkpoint 是包含 `epoch`、`model_state_dict`、`optimizer_state_dict`、`auc`、`acc` 的字典。
+- 推理模型只加载 `model_state_dict` 并进入 `eval()`；`optimizer_state_dict` 仅作为 checkpoint 完整性验证，不参与预测。
+- PyTorch 2.6+ 默认 `weights_only=True` 会拒绝该历史 checkpoint 中的 numpy 标量 metadata；本项目仅在显式启用 `MATHTUTOR_KT_ENGINE=dgekt` 且用户信任本地文件时使用 `weights_only=False`。
 
 ## Agent 工作方式
 

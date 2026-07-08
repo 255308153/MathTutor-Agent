@@ -540,6 +540,7 @@ cp .env.example .env
 | `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 ASSIST2017 DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
 | `MATHTUTOR_DGEKT_DATASET_DIR` | 空 | ASSIST2017 数据目录，例如原始工程中的 `Dataset/assist2017`，需包含 `assist2017_pid_train.csv` 和 `assist2017_pid_test.csv`。 |
 | `MATHTUTOR_DGEKT_Q_MATRIX_PATH` | 空 | DGEKT Q-matrix / incidence matrix 文件，例如原始工程中的 `Dataset/H/2017.csv`。 |
+| `MATHTUTOR_RUN_DGEKT_SMOKE` | `0` | 设为 `1` 时启用本地真实 checkpoint smoke test；默认测试不依赖大模型文件。 |
 
 ## 13. 数据目录约定
 
@@ -556,6 +557,9 @@ data/
 - `MockKTStateEngine` 是默认 KT 实现。
 - `DGEKTStateEngine` 只有在 `MATHTUTOR_KT_ENGINE=dgekt` 时启用；启动或首次构造时会检查 checkpoint、ASSIST2017 train/test 数据和 Q-matrix / incidence matrix，缺失时给出明确环境变量修复提示。
 - DGEKT / SAFKT 只通过稳定接口接入，不把 PyTorch checkpoint、数据路径或矩阵细节泄漏到 API、planner、recommender 或前端。
+- V1.2 的 DGEKT adapter 会读取 checkpoint 字典中的 `epoch`、`model_state_dict`、`optimizer_state_dict`、`auc`、`acc`，但推理只加载 `model_state_dict`，不会依赖 optimizer 状态。
+- 已验证本地 checkpoint provenance：epoch 26，AUC 0.7866464407565317，ACC 0.728796544573157。adapter 加载后会进入 `eval()` 模式，并通过 `diagnostics` / KT evidence 暴露 engine metadata。
+- PyTorch 2.6+ 将 `torch.load` 默认改为 `weights_only=True`，该历史 checkpoint 内含 numpy 标量 metadata；adapter 在显式启用 DGEKT 且用户信任本地 checkpoint 时使用 `weights_only=False` 读取。不要对未知来源 checkpoint 使用该配置。
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
