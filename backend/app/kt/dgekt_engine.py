@@ -24,6 +24,10 @@ class DGEKTCheckpointError(RuntimeError):
     """Raised when the configured checkpoint cannot be loaded as a DGEKT runtime."""
 
 
+class DGEKTMappingError(ValueError):
+    """Raised when MathTutor events cannot be mapped into ASSIST2017 ids."""
+
+
 @dataclass(frozen=True)
 class DGEKTPaths:
     checkpoint_path: Path
@@ -36,6 +40,24 @@ class DGEKTRuntime:
     model: Any
     device: str
     metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DGEKTInferenceInput:
+    tensor: Any
+    question_ids: list[int]
+    answers: list[int]
+    concept_ids: list[int]
+    source_event_count: int
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "sequence_length": len(self.question_ids),
+            "question_ids": self.question_ids,
+            "answers": self.answers,
+            "concept_ids": self.concept_ids,
+            "source_event_count": self.source_event_count,
+        }
 
 
 class DGEKTStateEngine(KTStateEngine):
@@ -64,6 +86,8 @@ class DGEKTStateEngine(KTStateEngine):
         self.runtime = self._load_runtime(device=device)
         self.engine_name = "dgekt"
         self.metadata = self.runtime.metadata
+        self.question_concept_map = self._load_question_concept_map()
+        self.last_inference_input: DGEKTInferenceInput | None = None
 
     @classmethod
     def validate_configuration(
@@ -138,7 +162,10 @@ class DGEKTStateEngine(KTStateEngine):
 
     @property
     def diagnostics(self) -> dict[str, Any]:
-        return dict(self.metadata)
+        diagnostics = dict(self.metadata)
+        if self.last_inference_input:
+            diagnostics["last_inference_input"] = self.last_inference_input.summary()
+        return diagnostics
 
     def _load_runtime(self, *, device: str) -> DGEKTRuntime:
         try:
@@ -293,6 +320,127 @@ class DGEKTStateEngine(KTStateEngine):
         shape = torch.Size(sparse_matrix.shape)
         return torch.sparse_coo_tensor(indices, values, shape)
 
+    def _load_question_concept_map(self) -> dict[int, list[int]]:
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise DGEKTCheckpointError(
+                "DGEKT input mapping requires pandas to read the Q-matrix."
+            ) from exc
+
+        q_matrix = pd.read_csv(self.paths.q_matrix_path, header=None)
+        mapping: dict[int, list[int]] = {}
+        for row_index, row in q_matrix.iterrows():
+            concepts = [
+                int(column_index) + 1
+                for column_index, value in enumerate(row.tolist())
+                if int(value) == 1
+            ]
+            mapping[int(row_index) + 1] = concepts
+        return mapping
+
+    def build_inference_input(self, progress: KTLearningProgress) -> DGEKTInferenceInput | None:
+        answer_events = [
+            event
+            for event in progress.recent_events
+            if event.type == "answer_submitted" and event.payload.get("is_correct") is not None
+        ][-ASSIST2017_MAX_STEP:]
+        if not answer_events:
+            self.last_inference_input = None
+            return None
+
+        question_ids: list[int] = []
+        answers: list[int] = []
+        concept_ids: list[int] = []
+        for event in answer_events:
+            question_id = self._extract_assist2017_question_id(event)
+            answer = 1 if event.payload.get("is_correct") is True else 0
+            concept_id = self._resolve_assist2017_concept_id(event, question_id)
+            question_ids.append(question_id)
+            answers.append(answer)
+            concept_ids.append(concept_id)
+
+        inference_input = DGEKTInferenceInput(
+            tensor=self._one_hot_sequence(question_ids=question_ids, answers=answers),
+            question_ids=question_ids,
+            answers=answers,
+            concept_ids=concept_ids,
+            source_event_count=len(answer_events),
+        )
+        self.last_inference_input = inference_input
+        return inference_input
+
+    def _extract_assist2017_question_id(self, event: LearningEvent) -> int:
+        raw_question_id = (
+            event.payload.get("assist2017_question_id")
+            or event.payload.get("dgekt_question_id")
+            or event.payload.get("question_id")
+        )
+        if raw_question_id is None:
+            raise DGEKTMappingError(
+                "Missing ASSIST2017 question mapping. Add assist2017_question_id or "
+                "dgekt_question_id to the LearningEvent payload."
+            )
+        question_id = self._parse_assist2017_id(raw_question_id, field_name="question_id")
+        if question_id < 1 or question_id > ASSIST2017_QUESTION_COUNT:
+            raise DGEKTMappingError(
+                f"ASSIST2017 question_id {question_id} is out of range 1.."
+                f"{ASSIST2017_QUESTION_COUNT}."
+            )
+        if question_id not in self.question_concept_map:
+            raise DGEKTMappingError(
+                f"ASSIST2017 question_id {question_id} is missing from the configured Q-matrix."
+            )
+        if not self.question_concept_map[question_id]:
+            raise DGEKTMappingError(
+                f"ASSIST2017 question_id {question_id} has no concept in the configured Q-matrix."
+            )
+        return question_id
+
+    def _resolve_assist2017_concept_id(self, event: LearningEvent, question_id: int) -> int:
+        mapped_concepts = self.question_concept_map[question_id]
+        raw_concept_id = event.payload.get("assist2017_concept_id") or event.payload.get("dgekt_concept_id")
+        if raw_concept_id is None:
+            return mapped_concepts[0]
+        concept_id = self._parse_assist2017_id(raw_concept_id, field_name="concept_id")
+        if concept_id not in mapped_concepts:
+            raise DGEKTMappingError(
+                f"ASSIST2017 concept_id {concept_id} is inconsistent with Q-matrix mapping "
+                f"for question_id {question_id}; expected one of {mapped_concepts}."
+            )
+        return concept_id
+
+    def _parse_assist2017_id(self, raw_value: Any, *, field_name: str) -> int:
+        if isinstance(raw_value, int):
+            return raw_value
+        value = str(raw_value)
+        if value.startswith("assist2017:"):
+            value = value.split(":", 1)[1]
+        if not value.isdigit():
+            raise DGEKTMappingError(
+                f"Cannot map MathTutor {field_name} '{raw_value}' to ASSIST2017. "
+                f"Use an integer id or assist2017:<id>."
+            )
+        return int(value)
+
+    def _one_hot_sequence(self, *, question_ids: list[int], answers: list[int]) -> Any:
+        try:
+            import torch
+        except ImportError as exc:
+            raise DGEKTCheckpointError("DGEKT input tensor construction requires torch.") from exc
+
+        tensor = torch.zeros(
+            1,
+            ASSIST2017_MAX_STEP,
+            2 * ASSIST2017_QUESTION_COUNT,
+            device=self.runtime.device,
+        )
+        start = max(0, ASSIST2017_MAX_STEP - len(question_ids))
+        for offset, (question_id, answer) in enumerate(zip(question_ids, answers)):
+            column = question_id - 1 if answer == 1 else ASSIST2017_QUESTION_COUNT + question_id - 1
+            tensor[0, start + offset, column] = 1.0
+        return tensor
+
     def update_from_event(
         self,
         progress: KTLearningProgress,
@@ -309,6 +457,7 @@ class DGEKTStateEngine(KTStateEngine):
         progress: KTLearningProgress,
         target_question_id: str | None = None,
     ) -> KTDiagnosis:
+        inference_input = self.build_inference_input(progress)
         evidence = [
             "DGEKT checkpoint loaded and model is in eval mode.",
             (
@@ -316,6 +465,13 @@ class DGEKTStateEngine(KTStateEngine):
                 f"auc={self.metadata['auc']:.6f} acc={self.metadata['acc']:.6f}"
             ),
         ]
+        if inference_input:
+            evidence.append(
+                "DGEKT inference input built from MathTutor recent answer history: "
+                f"sequence_length={len(inference_input.question_ids)}."
+            )
+        else:
+            evidence.append("No graded answer history available for DGEKT inference input yet.")
         return KTDiagnosis(
             weak_concepts=list(progress.weak_concepts),
             forgetting_risks=list(progress.forgetting_risks),

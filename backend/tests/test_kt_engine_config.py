@@ -15,6 +15,41 @@ from backend.app.kt.dgekt_engine import (
 from backend.app.kt.factory import create_kt_engine
 from backend.app.kt.mock_engine import MockKTStateEngine
 from backend.app.schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
+from backend.app.graph.learning_loop import MathTutorLearningLoop
+from backend.app.storage.progress_store import InMemoryProgressStore
+
+
+def write_dgekt_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
+    checkpoint = tmp_path / "save2017model.pkl"
+    checkpoint.write_bytes(b"not-a-real-checkpoint")
+    q_matrix = tmp_path / "2017.csv"
+    q_matrix.write_text("1,0\n0,1\n", encoding="utf-8")
+    dataset_dir = tmp_path / "assist2017"
+    dataset_dir.mkdir()
+    (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
+    (dataset_dir / "assist2017_pid_test.csv").write_text("test\n", encoding="utf-8")
+    return checkpoint, dataset_dir, q_matrix
+
+
+def patch_fake_dgekt_runtime(monkeypatch: pytest.MonkeyPatch, checkpoint: Path) -> None:
+    def fake_load_runtime(self: DGEKTStateEngine, *, device: str) -> DGEKTRuntime:
+        return DGEKTRuntime(
+            model=SimpleNamespace(training=False),
+            device=device,
+            metadata={
+                "engine_name": "dgekt",
+                "dataset": "assist2017",
+                "checkpoint_path": str(checkpoint),
+                "epoch": 26,
+                "auc": 0.7866464407565317,
+                "acc": 0.728796544573157,
+                "device": device,
+                "model_eval": True,
+                "optimizer_state_available": True,
+            },
+        )
+
+    monkeypatch.setattr(DGEKTStateEngine, "_load_runtime", fake_load_runtime)
 
 
 def test_default_kt_engine_is_mock() -> None:
@@ -54,14 +89,7 @@ def test_dgekt_validation_reports_missing_dataset_files(tmp_path: Path) -> None:
 
 
 def test_dgekt_validation_accepts_required_local_files(tmp_path: Path) -> None:
-    checkpoint = tmp_path / "save2017model.pkl"
-    checkpoint.write_bytes(b"not-a-real-checkpoint")
-    q_matrix = tmp_path / "2017.csv"
-    q_matrix.write_text("1,0,1\n", encoding="utf-8")
-    dataset_dir = tmp_path / "assist2017"
-    dataset_dir.mkdir()
-    (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
-    (dataset_dir / "assist2017_pid_test.csv").write_text("test\n", encoding="utf-8")
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
 
     paths = DGEKTStateEngine.validate_configuration(
         dataset="assist2017",
@@ -76,14 +104,7 @@ def test_dgekt_validation_accepts_required_local_files(tmp_path: Path) -> None:
 
 
 def test_dgekt_checkpoint_validation_requires_expected_keys(tmp_path: Path) -> None:
-    checkpoint = tmp_path / "save2017model.pkl"
-    checkpoint.write_bytes(b"not-a-real-checkpoint")
-    q_matrix = tmp_path / "2017.csv"
-    q_matrix.write_text("1,0,1\n", encoding="utf-8")
-    dataset_dir = tmp_path / "assist2017"
-    dataset_dir.mkdir()
-    (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
-    (dataset_dir / "assist2017_pid_test.csv").write_text("test\n", encoding="utf-8")
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
 
     engine = object.__new__(DGEKTStateEngine)
     engine.paths = DGEKTStateEngine.validate_configuration(
@@ -101,33 +122,8 @@ def test_dgekt_engine_matches_kt_contract_shape(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint = tmp_path / "save2017model.pkl"
-    checkpoint.write_bytes(b"not-a-real-checkpoint")
-    q_matrix = tmp_path / "2017.csv"
-    q_matrix.write_text("1,0,1\n", encoding="utf-8")
-    dataset_dir = tmp_path / "assist2017"
-    dataset_dir.mkdir()
-    (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
-    (dataset_dir / "assist2017_pid_test.csv").write_text("test\n", encoding="utf-8")
-
-    def fake_load_runtime(self: DGEKTStateEngine, *, device: str) -> DGEKTRuntime:
-        return DGEKTRuntime(
-            model=SimpleNamespace(training=False),
-            device=device,
-            metadata={
-                "engine_name": "dgekt",
-                "dataset": "assist2017",
-                "checkpoint_path": str(checkpoint),
-                "epoch": 26,
-                "auc": 0.7866464407565317,
-                "acc": 0.728796544573157,
-                "device": device,
-                "model_eval": True,
-                "optimizer_state_available": True,
-            },
-        )
-
-    monkeypatch.setattr(DGEKTStateEngine, "_load_runtime", fake_load_runtime)
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
         dataset="assist2017",
         checkpoint_path=str(checkpoint),
@@ -173,6 +169,165 @@ def test_dgekt_engine_matches_kt_contract_shape(
     assert engine.diagnostics["model_eval"] is True
     assert "epoch=26" in dgekt_diagnosis.evidence[1]
     assert dgekt_evidence.top_paths[0]["engine"] == "dgekt"
+
+
+def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-input",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-input",
+                student_id="student-dgekt-input",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_001",
+                    "assist2017_question_id": 1,
+                    "is_correct": True,
+                },
+            ),
+            LearningEvent(
+                session_id="session-dgekt-input",
+                student_id="student-dgekt-input",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_002",
+                    "assist2017_question_id": "assist2017:2",
+                    "assist2017_concept_id": 2,
+                    "is_correct": False,
+                },
+            ),
+        ],
+    )
+
+    inference_input = engine.build_inference_input(progress)
+
+    assert inference_input is not None
+    assert inference_input.question_ids == [1, 2]
+    assert inference_input.answers == [1, 0]
+    assert inference_input.concept_ids == [1, 2]
+    assert inference_input.tensor.shape == (1, 50, 6324)
+    assert inference_input.tensor[0, 48, 0].item() == 1.0
+    assert inference_input.tensor[0, 49, 3163].item() == 1.0
+
+
+def test_dgekt_mapping_missing_question_id_fails_clearly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-missing",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-missing",
+                student_id="student-dgekt-missing",
+                type="answer_submitted",
+                payload={"question_id": "q_frac_001", "is_correct": True},
+            )
+        ],
+    )
+
+    with pytest.raises(Exception, match="Cannot map MathTutor question_id"):
+        engine.build_inference_input(progress)
+
+
+def test_dgekt_mapping_inconsistent_concept_fails_clearly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-concept",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-concept",
+                student_id="student-dgekt-concept",
+                type="answer_submitted",
+                payload={
+                    "assist2017_question_id": 1,
+                    "assist2017_concept_id": 2,
+                    "is_correct": True,
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(Exception, match="inconsistent with Q-matrix"):
+        engine.build_inference_input(progress)
+
+
+def test_api_answer_submission_can_use_dgekt_engine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=InMemoryProgressStore(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-api-dgekt",
+            "student_id": "student-api-dgekt",
+            "type": "answer_submitted",
+            "message": "我选 1/6",
+            "payload": {
+                "question_id": "q_frac_001",
+                "answer": "1/6",
+                "assist2017_question_id": 1,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state_summary"]["intent"] == "answer_submission"
+    assert body["teaching_trace"][1]["stage"] == "diagnose"
+    assert "DGEKT inference input built" in body["teaching_trace"][1]["metadata"]["evidence"][2]
+    assert engine.diagnostics["last_inference_input"]["question_ids"] == [1]
 
 
 @pytest.mark.skipif(

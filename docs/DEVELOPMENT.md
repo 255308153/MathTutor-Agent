@@ -560,6 +560,13 @@ data/
 - V1.2 的 DGEKT adapter 会读取 checkpoint 字典中的 `epoch`、`model_state_dict`、`optimizer_state_dict`、`auc`、`acc`，但推理只加载 `model_state_dict`，不会依赖 optimizer 状态。
 - 已验证本地 checkpoint provenance：epoch 26，AUC 0.7866464407565317，ACC 0.728796544573157。adapter 加载后会进入 `eval()` 模式，并通过 `diagnostics` / KT evidence 暴露 engine metadata。
 - PyTorch 2.6+ 将 `torch.load` 默认改为 `weights_only=True`，该历史 checkpoint 内含 numpy 标量 metadata；adapter 在显式启用 DGEKT 且用户信任本地 checkpoint 时使用 `weights_only=False` 读取。不要对未知来源 checkpoint 使用该配置。
+- MathTutor 到 DGEKT 的输入转换规则：
+  - `recent_events` 中已判题的 `answer_submitted` 会转换为 ASSIST2017 序列，最多保留最近 50 步。
+  - 题目映射优先读取 payload 的 `assist2017_question_id`，其次读取 `dgekt_question_id`，也支持 `assist2017:<id>` 形式。
+  - 正确性来自服务端判题后的 `is_correct`，正确编码到前 3162 维，错误编码到后 3162 维，保持原 DGEKT OneHot 规则。
+  - concept 映射优先读取 `assist2017_concept_id` / `dgekt_concept_id`；未提供时由 Q-matrix 对应题目行推导第一个 concept。
+  - 如果题目 ID 不能映射为 ASSIST2017 整数、超出 1..3162、Q-matrix 缺题、题目没有 concept，或显式 concept 与 Q-matrix 不一致，会抛出明确映射错误，不返回伪诊断。
+- 当前支持范围：V1.2 只支持本地 ASSIST2017 checkpoint + `Dataset/assist2017` + `Dataset/H/2017.csv`。小型 demo 内容集仍使用自己的 `question_id`，若要走真实 DGEKT 输入，需要在事件 payload 或后续内容映射表中提供 ASSIST2017 题目 ID。
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
