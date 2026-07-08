@@ -142,7 +142,7 @@ VITE_MATHTUTOR_API_BASE=http://127.0.0.1:8000 npm run dev
 
 ## 一分钟演示路径
 
-1. 启动后端：`uvicorn backend.app.main:app --reload`。
+1. 默认 mock 模式启动后端：`uvicorn backend.app.main:app --reload`。
 2. 启动前端：`cd frontend && npm run dev`。
 3. 打开 `http://127.0.0.1:5173`，页面会自动请求“我下一步应该练什么？”。
 4. 看“今日建议”“推荐题”“薄弱概念”“遗忘风险”，确认 Agent 给出下一步练习。
@@ -150,29 +150,46 @@ VITE_MATHTUTOR_API_BASE=http://127.0.0.1:8000 npm run dev
 6. 再对下一道推荐题输入正确答案，查看巩固反馈和后续推荐。
 7. 展开 `TeachingTrace`、`RAG 引用`、`模型证据`，检查 KT facts、RAG 来源、planner decision 和 attribution evidence。
 
-V1.1 演示验收点：
+V1.2 DGEKT 演示路径：
+
+```bash
+export MATHTUTOR_KT_ENGINE=dgekt
+export MATHTUTOR_DGEKT_DATASET=assist2017
+export MATHTUTOR_DGEKT_CHECKPOINT_PATH=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl
+export MATHTUTOR_DGEKT_DATASET_DIR=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/Dataset/assist2017
+export MATHTUTOR_DGEKT_Q_MATRIX_PATH=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/Dataset/H/2017.csv
+uvicorn backend.app.main:app --reload
+```
+
+然后按同一条 dashboard 路径完成“下一步建议 -> 推荐题 -> 提交答案 -> 状态变化 -> TeachingTrace / 模型证据”。DGEKT 模式下，`模型证据` 会显示 engine、checkpoint provenance、prediction facts、DGEKT attribution、Top path、Path strength 和 Key history。若 checkpoint / 数据 / 映射缺失，后端会返回可读错误，前端会在页面顶部展示。
+
+V1.2 演示验收点：
 
 - 答题提交由服务端本地内容集确定性判题，不依赖 LLM 记答案。
 - 答对 / 答错后都会返回新的推荐题，便于连续演示。
 - TeachingTrace 使用学生可读主流程 + 专家证据层，研究者可以看到 KT / RAG / memory / recommendation evidence。
-- 推荐题、题解、错因和 citation 使用本地 demo 数据，便于后续替换为真实 ASSISTments2017 / DGEKT 产物。
+- 默认 mock 模式保留 V1.1 演示；显式 `MATHTUTOR_KT_ENGINE=dgekt` 才会加载真实 checkpoint。
+- DGEKT 模式会产出真实 checkpoint prediction probability，并把 prediction facts / attribution evidence 注入 TeachingTrace。
+- 推荐题、题解、错因和 citation 仍使用本地 demo 数据；demo 题会带稳定 ASSIST2017 smoke 映射，便于 dashboard 走通真实 DGEKT 推理，但它不是完整 ASSISTments2017 内容导入。
 
-## V1.1 已知限制与下一阶段优先级
+## V1.2 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：
 
-- `MockKTStateEngine` 只模拟知识追踪事实，不代表真实 DGEKT 预测。
+- `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖大模型文件。
+- `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；checkpoint 和原始数据不提交 Git。
+- Demo 内容集的 ASSIST2017 question id 是 dashboard smoke 映射，用于验证真实 DGEKT 推理链路，不等同完整题库语义对齐。
+- Attribution evidence 当前是在线 partial evidence：包含历史题、目标题、概念关系和 path weight，但没有运行原 DGEKT 离线 path scorer。
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
-- Demo 内容集是小型人工整理题库，不是完整 ASSISTments2017 导入结果。
 - 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
 
 下一阶段真实集成优先级：
 
-1. `DGEKTStateEngine`：接入真实 mastery、prediction probability、weak-concept hit 和 attribution evidence。
-2. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
-3. `VikingDB` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
-4. `ASSISTments2017` 数据导入：建立题目、知识点、历史作答和 RAG 文档的稳定映射。
+1. `ASSISTments2017` 完整内容导入：建立题目、知识点、历史作答和 RAG 文档的稳定语义映射。
+2. 原 DGEKT explainability scorer 在线化：把离线 `attribution_paths.csv` / `key_history.csv` 级别证据接入 `AttributionEvidence`。
+3. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
+4. `VikingDB` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
 
 ## 测试与检查
 

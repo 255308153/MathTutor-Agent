@@ -13,8 +13,18 @@ export async function sendLearningEvent(
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`事件处理失败：${response.status} ${body}`);
+    throw new Error(`事件处理失败：${response.status} ${errorDetail(body)}`);
   }
 
   return response.json() as Promise<MathTutorEventResponse>;
+}
+
+function errorDetail(body: string) {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    // Fall through to the raw body; it is still more useful than hiding the server response.
+  }
+  return body;
 }

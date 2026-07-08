@@ -28,6 +28,10 @@ export interface ConceptState {
 
 export interface RecommendedQuestion {
   question_id: string;
+  assist2017_question_id?: number | string;
+  dgekt_question_id?: number | string;
+  assist2017_concept_id?: number | string;
+  dgekt_concept_id?: number | string;
   stem: string;
   concept_id: string;
   concept_name: string;

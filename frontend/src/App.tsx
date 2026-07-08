@@ -96,7 +96,14 @@ export default function App() {
       student_id: studentId || DEFAULT_STUDENT_ID,
       type: "answer_submitted",
       message: `提交 ${question.question_id} 的答案`,
-      payload: { question_id: question.question_id, answer }
+      payload: {
+        question_id: question.question_id,
+        answer,
+        assist2017_question_id: question.assist2017_question_id,
+        dgekt_question_id: question.dgekt_question_id,
+        assist2017_concept_id: question.assist2017_concept_id,
+        dgekt_concept_id: question.dgekt_concept_id
+      }
     });
   }
 

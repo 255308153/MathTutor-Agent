@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -33,6 +33,7 @@ const baseResponse: MathTutorEventResponse = {
   recommended_questions: [
     {
       question_id: "q_frac_001",
+      assist2017_question_id: 1,
       stem: "计算：1/2 + 1/4 = ?",
       concept_id: "c_fraction_addition",
       concept_name: "异分母分数加法",
@@ -112,6 +113,7 @@ const baseResponse: MathTutorEventResponse = {
 };
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -148,6 +150,7 @@ describe("学习驾驶舱", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1][1]?.body).toContain("\"answer\":\"3/4\"");
+    expect(fetchMock.mock.calls[1][1]?.body).toContain("\"assist2017_question_id\":1");
   });
 
   it("后端不可达时展示中文错误和重试入口", async () => {
@@ -157,6 +160,21 @@ describe("学习驾驶舱", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("网络不可用");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("后端返回 DGEKT detail 时展示可理解错误", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "DGEKT 映射失败：缺少 ASSIST2017 题目映射" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "事件处理失败：400 DGEKT 映射失败：缺少 ASSIST2017 题目映射"
+    );
   });
 });
 

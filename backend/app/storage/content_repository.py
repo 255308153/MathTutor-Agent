@@ -28,7 +28,10 @@ class DemoTeachingContentRepository:
         return self.content["concept_teaching_type_map"].get(concept_id, "concept")
 
     def list_questions(self) -> list[dict[str, Any]]:
-        return [self._with_teaching_type(question) for question in self.content["questions"]]
+        return [
+            self._with_teaching_type(question, assist2017_question_id=index + 1)
+            for index, question in enumerate(self.content["questions"])
+        ]
 
     def get_question(self, question_id: str) -> dict[str, Any] | None:
         for question in self.list_questions():
@@ -60,9 +63,15 @@ class DemoTeachingContentRepository:
             is_correct=normalized_answer == normalized_standard,
         )
 
-    def _with_teaching_type(self, question: dict[str, Any]) -> dict[str, Any]:
+    def _with_teaching_type(
+        self,
+        question: dict[str, Any],
+        *,
+        assist2017_question_id: int,
+    ) -> dict[str, Any]:
         enriched = dict(question)
         enriched["teaching_type"] = self.teaching_type_for(question["concept_id"])
+        enriched.setdefault("assist2017_question_id", assist2017_question_id)
         return enriched
 
     def _normalize_answer(self, answer: str) -> str:

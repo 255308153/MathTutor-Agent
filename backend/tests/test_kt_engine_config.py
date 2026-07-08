@@ -33,7 +33,10 @@ def write_dgekt_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     checkpoint = tmp_path / "save2017model.pkl"
     checkpoint.write_bytes(b"not-a-real-checkpoint")
     q_matrix = tmp_path / "2017.csv"
-    q_matrix.write_text("1,0\n0,1\n", encoding="utf-8")
+    q_matrix.write_text(
+        "\n".join("1,0" if index % 2 == 0 else "0,1" for index in range(30)),
+        encoding="utf-8",
+    )
     dataset_dir = tmp_path / "assist2017"
     dataset_dir.mkdir()
     (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
@@ -408,6 +411,125 @@ def test_dgekt_prediction_facts_influence_recommendation_reason(
     assert recommendations[0]["concept_id"] == "c_fraction_addition"
     assert recommendations[0]["score_factors"]["prediction_risk"] == 0.8
     assert "DGEKT 预测答对概率偏低" in recommendations[0]["reason"]
+
+
+def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=InMemoryProgressStore(),
+        ),
+    )
+    client = TestClient(create_app())
+    session_id = "session-v12-dgekt-dashboard"
+    student_id = "student-v12-dgekt-dashboard"
+
+    next_step = client.post(
+        "/api/events",
+        json={
+            "session_id": session_id,
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "我下一步应该练什么？",
+            "payload": {},
+        },
+    ).json()
+    first_question = next_step["recommended_questions"][0]
+
+    assert isinstance(first_question["assist2017_question_id"], int)
+
+    submitted = client.post(
+        "/api/events",
+        json={
+            "session_id": session_id,
+            "student_id": student_id,
+            "type": "answer_submitted",
+            "message": "提交 dashboard 推荐题答案",
+            "payload": {
+                "question_id": first_question["question_id"],
+                "answer": "__wrong_demo_answer__",
+                "assist2017_question_id": first_question["assist2017_question_id"],
+            },
+        },
+    )
+
+    assert submitted.status_code == 200
+    body = submitted.json()
+    diagnose_event = body["teaching_trace"][1]
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    assert body["state_summary"]["intent"] == "answer_submission"
+    assert body["state_summary"]["progress_version"] == 2
+    assert body["recommended_questions"]
+    assert diagnose_event["metadata"]["kt_engine"] == "dgekt"
+    assert diagnose_event["metadata"]["kt_engine_diagnostics"]["epoch"] == 26
+    assert diagnose_event["metadata"]["prediction_facts"]["prediction_probability"] == 0.2
+    assert expert["kt_diagnosis"]["metadata"]["model_provenance"]["auc"] == 0.7866464407565317
+    assert expert["attribution_evidence"]["prediction_probability"] == 0.2
+    assert expert["attribution_evidence"]["top_paths"][0]["partial_evidence"] is True
+
+
+def test_dgekt_mapping_error_returns_readable_api_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=InMemoryProgressStore(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v12-dgekt-error",
+            "student_id": "student-v12-dgekt-error",
+            "type": "answer_submitted",
+            "message": "提交无法映射的 DGEKT 题目",
+            "payload": {
+                "question_id": "q_mem_001",
+                "answer": "42",
+                "assist2017_question_id": 1,
+                "assist2017_concept_id": 2,
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert "DGEKT 映射失败" in response.json()["detail"]
+    assert "inconsistent with Q-matrix" in response.json()["detail"]
 
 
 @pytest.mark.skipif(
