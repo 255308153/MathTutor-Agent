@@ -6,6 +6,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+from ..mapping.assist2017_mapping import CanonicalMappingRepository, DEFAULT_MAPPING_PATH
+
 
 CONTENT_PATH = Path(__file__).resolve().parents[3] / "data" / "content" / "demo_teaching_content.json"
 
@@ -23,6 +25,12 @@ class DemoTeachingContentRepository:
     @cached_property
     def content(self) -> dict[str, Any]:
         return json.loads(CONTENT_PATH.read_text(encoding="utf-8"))
+
+    @cached_property
+    def canonical_mapping(self) -> CanonicalMappingRepository | None:
+        if not DEFAULT_MAPPING_PATH.is_file():
+            return None
+        return CanonicalMappingRepository.from_path(DEFAULT_MAPPING_PATH)
 
     def teaching_type_for(self, concept_id: str) -> str:
         return self.content["concept_teaching_type_map"].get(concept_id, "concept")
@@ -71,7 +79,17 @@ class DemoTeachingContentRepository:
     ) -> dict[str, Any]:
         enriched = dict(question)
         enriched["teaching_type"] = self.teaching_type_for(question["concept_id"])
-        enriched.setdefault("assist2017_question_id", assist2017_question_id)
+        canonical = None
+        if self.canonical_mapping is not None:
+            canonical = self.canonical_mapping.get_by_mathtutor_question_id(question["question_id"])
+        if canonical is not None:
+            enriched["assist2017_question_id"] = canonical.assist2017_question_id
+            if canonical.assist2017_concept_id is not None:
+                enriched["assist2017_concept_id"] = canonical.assist2017_concept_id
+            enriched["canonical_mapping_source"] = canonical.source_provenance.source
+            enriched["q_matrix_reference"] = canonical.q_matrix_reference.model_dump()
+        else:
+            enriched.setdefault("assist2017_question_id", assist2017_question_id)
         return enriched
 
     def _normalize_answer(self, answer: str) -> str:

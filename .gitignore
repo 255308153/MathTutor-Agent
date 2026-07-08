@@ -20,6 +20,11 @@ build/
 data/local/
 data/**/*.sqlite
 data/**/*.db
+data/mapping/*full*
+data/mapping/*generated*
+data/mapping/*.pkl
+data/mapping/*.pt
+data/mapping/*.pth
 
 outputs/
 logs/

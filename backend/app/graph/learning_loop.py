@@ -502,9 +502,23 @@ class MathTutorLearningLoop:
                 "grading_source": "demo_teaching_content",
             }
         )
-        for key in ("assist2017_question_id", "dgekt_question_id", "assist2017_concept_id", "dgekt_concept_id"):
+        explicit_assist_question_id = state.learning_event.payload.get(
+            "assist2017_question_id"
+        ) or state.learning_event.payload.get("dgekt_question_id")
+        grade_assist_question_id = grade.question.get("assist2017_question_id") or grade.question.get(
+            "dgekt_question_id"
+        )
+        mapping_matches_payload = (
+            explicit_assist_question_id is None
+            or str(explicit_assist_question_id) == str(grade_assist_question_id)
+        )
+        for key in ("assist2017_question_id", "dgekt_question_id"):
             if key in grade.question and key not in state.learning_event.payload:
                 state.learning_event.payload[key] = grade.question[key]
+        if mapping_matches_payload:
+            for key in ("assist2017_concept_id", "dgekt_concept_id"):
+                if key in grade.question and key not in state.learning_event.payload:
+                    state.learning_event.payload[key] = grade.question[key]
 
     def _classify_intent(self, event: LearningEvent) -> Literal[
         "next_step_advice",

@@ -104,7 +104,7 @@ V1.2 已知限制：
 
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖 checkpoint。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；大模型和原始数据只通过本地路径引用。
-- Demo 内容集会生成稳定 ASSIST2017 smoke question id，确保 dashboard 能走通 DGEKT 推理，但这不是完整 ASSISTments2017 内容语义对齐。
+- Demo 内容集优先读取 V1.3 canonical mapping fixture；未映射题会生成稳定 ASSIST2017 smoke question id，确保 dashboard 能走通 DGEKT 推理，但这不是完整 ASSISTments2017 内容语义对齐。
 - Attribution evidence 当前是在线 partial evidence，没有运行原 DGEKT 离线 path scorer。
 - 本地 memory store 默认进程内保存，服务重启后不保留长期记忆。
 - 本地 RAG 使用 JSON fallback，citation 形状稳定但不是生产向量库。
@@ -141,6 +141,73 @@ cd frontend && npm test && npm run build
 - 改动 React 学习驾驶舱后运行 `cd frontend && npm test && npm run build`。
 - 每个 issue 收口前至少运行 Python 编译检查和相关测试。
 - 新功能必须补可验证测试，除非 issue 明确只改文档。
+
+## 4.1 ASSIST2017 canonical mapping workflow
+
+V1.3 的 mapping 地基位于：
+
+```text
+backend/app/mapping/
+data/mapping/
+```
+
+核心 artifact schema 覆盖：
+
+- ASSIST2017 `question_id`
+- ASSIST2017 `concept_id`
+- MathTutor `concept_id` / `concept_name`
+- `teaching_type`
+- Q-matrix row / concept column reference
+- source provenance
+- 关联 RAG doc ids
+
+当前提交的小型 fixture：
+
+```text
+data/mapping/assist2017_q_matrix.fixture.csv
+data/mapping/assist2017_curated_metadata.fixture.json
+data/mapping/assist2017_canonical_mapping.fixture.json
+```
+
+重新生成并打印 coverage 诊断：
+
+```bash
+python -m backend.app.mapping.build_assist2017_mapping \
+  --q-matrix data/mapping/assist2017_q_matrix.fixture.csv \
+  --metadata data/mapping/assist2017_curated_metadata.fixture.json \
+  --teaching-content data/content/demo_teaching_content.json \
+  --rag-docs data/rag/demo_knowledge.json \
+  --output data/mapping/assist2017_canonical_mapping.fixture.json
+```
+
+诊断字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `mapped_questions` / `mapped_question_count` | artifact 中已有 canonical mapping 的 ASSIST2017 question。 |
+| `mapped_concepts` / `mapped_concept_count` | artifact 中已有 canonical mapping 的 ASSIST2017 concept。 |
+| `missing_questions` | Q-matrix 中存在但 curated metadata 未覆盖的 question 行。 |
+| `missing_concepts` | Q-matrix 中出现但 concept metadata 未覆盖的 concept 列。 |
+| `missing_teaching_content` | artifact 指向但本地教学内容集缺失的 MathTutor question。 |
+| `missing_rag_docs` | artifact 指向但本地 RAG JSON 缺失的 doc id。 |
+
+本地全量 ASSIST2017 文件放置建议：
+
+- checkpoint、`.pkl`、原始 train/test 和全量 Q-matrix 放在 Git 外部路径，使用环境变量引用。
+- 若需要临时放到仓库内，放在 `data/local/`，该目录默认不提交。
+- 不要提交全量 ASSIST2017 train/test、大型 generated mapping、checkpoint、`.pkl`、`.pt`、`.pth` 或生成模型文件。
+
+当前已知缺口：
+
+- fixture 只覆盖少量 demo question / concept，用于验证 schema、builder 和诊断流程。
+- fixture 故意保留缺失 question、缺失 concept、缺失 teaching content 和缺失 RAG doc，方便测试 coverage 报告。
+- 全量 semantic import、完整题解 / RAG 文档补齐、真实 attribution path scorer 接入仍属于后续 V1.3 issue。
+
+边界要求保持不变：
+
+- `MockKTStateEngine` 是默认模式；不读取 checkpoint 或全量 ASSIST2017 文件。
+- `DGEKTStateEngine` 只在显式设置 `MATHTUTOR_KT_ENGINE=dgekt` 时启用。
+- KT facts 是权威事实；RAG 和 Memory 只能影响解释、偏好和策略，不能覆盖 KT mastery / risk / prediction facts。
 
 ## 5. 统一事件 API
 
@@ -563,6 +630,7 @@ cp .env.example .env
 ```text
 data/
   content/      小型数学教学内容集：题目、知识点、答案、题解、错因、策略。
+  mapping/      ASSIST2017 canonical mapping 小型 fixture 与 schema artifact。
   rag/          本地 RAG 文档和可检索片段。
   local/        sqlite、cache、临时索引等本地运行产物，不提交。
 ```

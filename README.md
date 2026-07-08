@@ -85,6 +85,7 @@ backend/
 data/
   content/      小型数学题库、知识点、题解、错因与策略材料
   local/        本地运行产生的 sqlite / cache，默认不提交
+  mapping/      ASSIST2017 canonical mapping 小型 fixture / schema artifact
   rag/          本地 RAG 文档
 
 docs/           中文架构、开发和演示文档
@@ -172,17 +173,43 @@ V1.2 演示验收点：
 - DGEKT 模式会产出真实 checkpoint prediction probability，并把 prediction facts / attribution evidence 注入 TeachingTrace。
 - 推荐题、题解、错因和 citation 仍使用本地 demo 数据；demo 题会带稳定 ASSIST2017 smoke 映射，便于 dashboard 走通真实 DGEKT 推理，但它不是完整 ASSISTments2017 内容导入。
 
+## V1.3 ASSIST2017 canonical mapping
+
+V1.3 第一块地基是把 MathTutor 本地题目 / 知识点和 ASSIST2017 的 question、concept、Q-matrix 建立可审计映射。当前提交的是小型 fixture，不是全量 ASSISTments2017 导入。
+
+已提交的小型文件：
+
+- `data/mapping/assist2017_q_matrix.fixture.csv`：6 行 × 4 列的 Q-matrix fixture。
+- `data/mapping/assist2017_curated_metadata.fixture.json`：人工整理的 question / concept / teaching_type / provenance 元数据。
+- `data/mapping/assist2017_canonical_mapping.fixture.json`：由 Q-matrix 和 curated metadata 生成的 canonical artifact。
+
+重新生成 artifact：
+
+```bash
+python -m backend.app.mapping.build_assist2017_mapping \
+  --q-matrix data/mapping/assist2017_q_matrix.fixture.csv \
+  --metadata data/mapping/assist2017_curated_metadata.fixture.json \
+  --teaching-content data/content/demo_teaching_content.json \
+  --rag-docs data/rag/demo_knowledge.json \
+  --output data/mapping/assist2017_canonical_mapping.fixture.json
+```
+
+命令会输出 coverage 诊断，包含 mapped questions、mapped concepts、missing questions、missing concepts、missing teaching content 和 missing RAG docs。`ContentRepository` 会优先读取该 artifact，为本地题目补充 `assist2017_question_id`、`assist2017_concept_id` 和 Q-matrix reference；artifact 缺失时回退到 V1.2 的顺序 smoke id，默认 mock 模式不依赖 DGEKT 文件。
+
+本地全量数据建议放在 Git 外部路径，或放在 `data/local/` 下。不要提交 ASSIST2017 全量 train/test、checkpoint、`.pkl`、生成模型文件、全量大型 mapping 输出；只提交小型 fixture、schema、代码和文档。
+
 ## V1.2 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：
 
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖大模型文件。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；checkpoint 和原始数据不提交 Git。
-- Demo 内容集的 ASSIST2017 question id 是 dashboard smoke 映射，用于验证真实 DGEKT 推理链路，不等同完整题库语义对齐。
+- Demo 内容集现在优先读取 V1.3 canonical mapping fixture；未映射题仍回退到 dashboard smoke id。当前 fixture 只覆盖小样本，不等同完整题库语义对齐。
 - Attribution evidence 当前是在线 partial evidence：包含历史题、目标题、概念关系和 path weight，但没有运行原 DGEKT 离线 path scorer。
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
 - 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
+- 当前 mapping 已知缺口会通过 coverage 诊断显式暴露：fixture 中仍有缺失 question、缺失 concept、缺失 teaching content 和缺失 RAG doc，用于驱动后续 V1.3 导入切片。
 
 下一阶段真实集成优先级：
 
