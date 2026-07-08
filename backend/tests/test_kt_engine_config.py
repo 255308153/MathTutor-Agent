@@ -179,6 +179,14 @@ def test_dgekt_engine_matches_kt_contract_shape(
     assert engine.diagnostics["model_eval"] is True
     assert "epoch=26" in dgekt_diagnosis.evidence[1]
     assert dgekt_evidence.top_paths[0]["engine"] == "dgekt"
+    assert dgekt_evidence.top_paths[0]["partial_evidence"] is True
+    assert dgekt_evidence.top_paths[0]["evidence_status"] == "partial"
+    assert dgekt_evidence.top_paths[0]["history_assist2017_question_id"] == 1
+    assert dgekt_evidence.top_paths[0]["target_assist2017_question_id"] == 2
+    assert "concept_relation_strength" in dgekt_evidence.top_paths[0]
+    assert "path_weight" in dgekt_evidence.top_paths[0]
+    assert dgekt_evidence.key_history[0]["assist2017_question_id"] == 1
+    assert dgekt_evidence.prediction_probability == 0.2
     assert dgekt_diagnosis.prediction_probability == 0.2
 
 
@@ -339,6 +347,13 @@ def test_api_answer_submission_can_use_dgekt_engine(
     assert body["teaching_trace"][1]["stage"] == "diagnose"
     assert body["teaching_trace"][1]["metadata"]["kt_engine"] == "dgekt"
     assert body["teaching_trace"][1]["metadata"]["prediction_probability"] == 0.2
+    attribution = body["teaching_trace_summary"]["expert_evidence"]["attribution_evidence"]
+    assert attribution["prediction_probability"] == 0.2
+    assert attribution["top_paths"][0]["partial_evidence"] is True
+    assert attribution["top_paths"][0]["evidence_status"] == "partial"
+    assert attribution["key_history"][0]["assist2017_question_id"] == 1
+    assert "partial_evidence" not in body["response"]
+    assert "top_paths" not in body["response"]
     assert "DGEKT inference input built" in body["teaching_trace"][1]["metadata"]["evidence"][2]
     assert (
         body["teaching_trace_summary"]["expert_evidence"]["kt_diagnosis"]["metadata"][

@@ -310,6 +310,9 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const ktDiagnosis = evidence?.kt_diagnosis;
   const plannerDecision = evidence?.planner_decision;
   const recommendations = evidence?.recommendations ?? [];
+  const topPath = attribution?.top_paths?.[0];
+  const keyHistory = attribution?.key_history?.[0];
+  const evidenceStatus = topPath?.partial_evidence ? "partial evidence" : "完整证据";
 
   return (
     <article className="panel trace-panel">
@@ -367,6 +370,30 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <strong>教学动作</strong>
             <span>{actionLabel(plannerDecision)}</span>
           </p>
+          <p>
+            <strong>DGEKT attribution</strong>
+            <span>{attribution ? evidenceStatus : "暂无"}</span>
+          </p>
+          <p>
+            <strong>Top path</strong>
+            <span>
+              {topPath
+                ? `${topPath.history_assist2017_question_id ?? topPath.history_question_id ?? "?"} -> ${topPath.target_assist2017_question_id ?? topPath.target_question_id ?? "?"}`
+                : "暂无"}
+            </span>
+          </p>
+          <p>
+            <strong>Path strength</strong>
+            <span>{formatNumber(topPath?.path_weight ?? topPath?.weight)}</span>
+          </p>
+          <p>
+            <strong>Key history</strong>
+            <span>
+              {keyHistory
+                ? `${keyHistory.assist2017_question_id ?? keyHistory.question_id ?? "?"} · ${keyHistory.is_correct ? "正确" : "错误"}`
+                : "暂无"}
+            </span>
+          </p>
         </div>
         <pre>{JSON.stringify({
           kt_diagnosis: ktDiagnosis,
@@ -413,7 +440,11 @@ function visibilityName(visibility: string) {
 }
 
 function formatProbability(value: number | null | undefined) {
-  return typeof value === "number" ? `${Math.round(value * 100)}%` : "mock";
+  return typeof value === "number" ? `${Math.round(value * 100)}%` : "暂无";
+}
+
+function formatNumber(value: unknown) {
+  return typeof value === "number" ? value.toFixed(3) : "暂无";
 }
 
 function actionLabel(plannerDecision: Record<string, unknown> | null | undefined) {

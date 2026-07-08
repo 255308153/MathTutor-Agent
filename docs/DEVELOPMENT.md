@@ -317,19 +317,20 @@ TeachingTrace 的 `plan` 阶段会记录：
 专家证据层包含：
 
 - `kt_diagnosis`：KT 掌握度、薄弱点、遗忘风险、预测概率等事实。
-- `attribution_evidence`：预留 DGEKT attribution 形状，包含 `top_paths`、`key_history`、`weak_concepts`、`prediction_probability`。
+- `attribution_evidence`：DGEKT attribution evidence，包含 `prediction_probability`、`top_paths`、`key_history`、`weak_concepts`。DGEKT 在线 adapter 当前输出带 `partial_evidence=true` 的可审计 partial evidence。
 - `rag_sources`：RAG 文档引用。
 - `student_memories`：本轮读取到的长期记忆。
 - `planner_decision`：TeachingPlanner 的 selected action、mistake diagnosis 和证据。
 - `recommendations`：推荐题、分数、分数因子和理由。
 
-未来 DGEKT 对接位置：
+DGEKT attribution evidence 约定：
 
 1. 保持 `KTStateEngine.explain_prediction(progress, target_question_id)` 接口不变。
-2. DGEKT adapter 返回 `AttributionEvidence`。
-3. `top_paths` 放图路径或关键概念传播路径。
-4. `key_history` 放对预测贡献最高的历史作答。
-5. `prediction_probability` 与 `weak_concepts` 仍是 KT facts，RAG / Memory 不得覆盖。
+2. DGEKT adapter 返回 `AttributionEvidence`，其中 `prediction_probability` 与 `diagnose` 的预测概率一致。
+3. `key_history` 放最近进入 DGEKT one-hot 序列的已判题交互，包括 MathTutor question、ASSIST2017 question、正确性、序列位置和 concept 映射。
+4. `top_paths` 放 history question 到 target question 的可审计 partial path：history / target question、history / target concept、Q-matrix concept relation strength、question relation strength、recency strength、path weight。
+5. 当前在线 adapter 没有运行原 DGEKT 工程的离线 path scorer / graph path CSV，因此 `top_paths` 必须标注 `partial_evidence=true`、`evidence_status=partial` 和 limitations，不能伪装成完整双图归因。
+6. `prediction_probability` 与 `weak_concepts` 仍是 KT facts，RAG / Memory 不得覆盖。
 
 ## 9. 数学 RAG
 
@@ -573,6 +574,11 @@ data/
   - 如果事件同时带有 MathTutor `concept_id` / `concept_name`，weak/risk facts 使用 MathTutor 概念 ID，推荐器可直接参与现有 risk-prioritized ranking。
   - TeachingTrace 的 `diagnose` 阶段会记录 `kt_engine`、`kt_engine_diagnostics` 和 `prediction_facts`；`KTDiagnosis.metadata` 包含 DGEKT model provenance 和 inference input 摘要。
   - RAG 和 StudentMemory 仍只影响解释、偏好和策略，不覆盖 DGEKT 产生的 mastery / risk / prediction facts。
+- DGEKT attribution evidence 规范化：
+  - `explain_prediction` 返回 `AttributionEvidence.prediction_probability`、`top_paths`、`key_history`、`weak_concepts`，并注入 TeachingTrace expert evidence。
+  - `key_history` 反映最近已判题交互对本次 DGEKT 输入序列的贡献，包括 ASSIST2017 question / concept、正确性、序列位置和 MathTutor concept。
+  - `top_paths` 记录 history question 到 target question 的可审计路径摘要，包括 Q-matrix concept relation、question relation、recency strength、path weight 和 `graph_source=q_matrix_recent_history_proxy`。
+  - 当前实现是在线 partial attribution：没有读取原工程离线 `attribution_paths.csv` / `key_history.csv` scorer 输出，因此每条 path 都标注 `partial_evidence=true` 和 `evidence_status=partial`，研究者可审计但不能当作完整双图归因。
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 

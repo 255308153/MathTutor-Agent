@@ -342,11 +342,7 @@ class DGEKTStateEngine(KTStateEngine):
         return mapping
 
     def build_inference_input(self, progress: KTLearningProgress) -> DGEKTInferenceInput | None:
-        answer_events = [
-            event
-            for event in progress.recent_events
-            if event.type == "answer_submitted" and event.payload.get("is_correct") is not None
-        ][-ASSIST2017_MAX_STEP:]
+        answer_events = self._graded_answer_events(progress)
         if not answer_events:
             self.last_inference_input = None
             return None
@@ -381,6 +377,13 @@ class DGEKTStateEngine(KTStateEngine):
         )
         self.last_inference_input = inference_input
         return inference_input
+
+    def _graded_answer_events(self, progress: KTLearningProgress) -> list[LearningEvent]:
+        return [
+            event
+            for event in progress.recent_events
+            if event.type == "answer_submitted" and event.payload.get("is_correct") is not None
+        ][-ASSIST2017_MAX_STEP:]
 
     def _extract_assist2017_question_id(self, event: LearningEvent) -> int:
         raw_question_id = (
@@ -600,26 +603,144 @@ class DGEKTStateEngine(KTStateEngine):
         progress: KTLearningProgress,
         target_question_id: str,
     ) -> AttributionEvidence:
-        key_history = [
-            {
-                "event_type": event.type,
-                "question_id": event.payload.get("question_id"),
-                "is_correct": event.payload.get("is_correct"),
-            }
-            for event in progress.recent_events[-5:]
+        inference_input = self.build_inference_input(progress)
+        if inference_input is None:
+            return AttributionEvidence(
+                target_question_id=target_question_id,
+                prediction_probability=None,
+                top_paths=[
+                    {
+                        "path_id": "dgekt-partial-no-history",
+                        "engine": "dgekt",
+                        "evidence_status": "partial",
+                        "partial_evidence": True,
+                        "description": (
+                            "No graded ASSIST2017 answer history is available, so DGEKT cannot "
+                            "build online attribution paths for this turn."
+                        ),
+                    }
+                ],
+                key_history=[],
+                weak_concepts=list(progress.weak_concepts),
+            )
+
+        prediction_probability = self._prediction_probability(inference_input, target_question_id)
+        weak_concepts = self._prediction_weak_concepts(inference_input, prediction_probability)
+        target_assist2017_id = self._target_assist2017_question_id(
+            inference_input=inference_input,
+            target_question_id=target_question_id,
+        )
+        target_concepts = self.question_concept_map.get(target_assist2017_id) or [
+            inference_input.concept_ids[-1]
         ]
+        target_concept_id = target_concepts[0]
+        key_history = self._attribution_key_history(progress, inference_input)
+        top_paths = self._partial_attribution_paths(
+            key_history=key_history,
+            target_question_id=target_question_id,
+            target_assist2017_id=target_assist2017_id,
+            target_concept_id=target_concept_id,
+        )
         return AttributionEvidence(
             target_question_id=target_question_id,
-            prediction_probability=None,
-            top_paths=[
-                {
-                    "path_id": "dgekt-checkpoint-loaded",
-                    "description": "ASSIST2017 DGEKT checkpoint loaded; attribution inference follows in #17.",
-                    "weight": 1.0,
-                    "engine": "dgekt",
-                    "epoch": self.metadata["epoch"],
-                }
-            ],
+            prediction_probability=prediction_probability,
+            top_paths=top_paths,
             key_history=key_history,
-            weak_concepts=list(progress.weak_concepts),
+            weak_concepts=weak_concepts,
         )
+
+    def _attribution_key_history(
+        self,
+        progress: KTLearningProgress,
+        inference_input: DGEKTInferenceInput,
+    ) -> list[dict[str, Any]]:
+        events = self._graded_answer_events(progress)
+        key_history: list[dict[str, Any]] = []
+        start_position = max(0, ASSIST2017_MAX_STEP - len(inference_input.question_ids))
+        for index, (event, question_id, answer, concept_id, concept) in enumerate(
+            zip(
+                events,
+                inference_input.question_ids,
+                inference_input.answers,
+                inference_input.concept_ids,
+                inference_input.mathtutor_concepts,
+            )
+        ):
+            key_history.append(
+                {
+                    "event_type": event.type,
+                    "question_id": event.payload.get("question_id"),
+                    "assist2017_question_id": question_id,
+                    "is_correct": answer == 1,
+                    "answer": answer,
+                    "history_position": start_position + index,
+                    "sequence_offset": index,
+                    "concept_id": concept.get("concept_id"),
+                    "concept_name": concept.get("concept_name"),
+                    "assist2017_concept_id": concept_id,
+                    "influence_source": "recent_dgekt_input",
+                }
+            )
+        return key_history[-5:]
+
+    def _partial_attribution_paths(
+        self,
+        *,
+        key_history: list[dict[str, Any]],
+        target_question_id: str,
+        target_assist2017_id: int,
+        target_concept_id: int,
+    ) -> list[dict[str, Any]]:
+        paths: list[dict[str, Any]] = []
+        for rank, history in enumerate(reversed(key_history), start=1):
+            history_concept_id = history.get("assist2017_concept_id")
+            concept_relation_strength = 1.0 if history_concept_id == target_concept_id else 0.0
+            question_relation_strength = (
+                1.0 if history.get("assist2017_question_id") == target_assist2017_id else 0.0
+            )
+            recency_strength = round(1.0 / rank, 6)
+            path_weight = round(
+                (0.55 * recency_strength)
+                + (0.30 * concept_relation_strength)
+                + (0.15 * question_relation_strength),
+                6,
+            )
+            paths.append(
+                {
+                    "path_id": (
+                        f"dgekt-partial-{history.get('assist2017_question_id')}-"
+                        f"{target_assist2017_id}-{rank}"
+                    ),
+                    "engine": "dgekt",
+                    "path_type": "recent_history_to_target_concept",
+                    "evidence_status": "partial",
+                    "partial_evidence": True,
+                    "rank": rank,
+                    "history_question_id": history.get("question_id"),
+                    "history_assist2017_question_id": history.get("assist2017_question_id"),
+                    "history_answer": history.get("answer"),
+                    "history_is_correct": history.get("is_correct"),
+                    "history_position": history.get("history_position"),
+                    "history_concept_id": history.get("concept_id"),
+                    "history_assist2017_concept_id": history_concept_id,
+                    "target_question_id": target_question_id,
+                    "target_assist2017_question_id": target_assist2017_id,
+                    "target_concept_id": f"assist2017_concept:{target_concept_id}",
+                    "target_assist2017_concept_id": target_concept_id,
+                    "time_gap": max(
+                        0,
+                        ASSIST2017_MAX_STEP - 1 - int(history.get("history_position", 0)),
+                    ),
+                    "concept_relation_strength": concept_relation_strength,
+                    "question_relation_strength": question_relation_strength,
+                    "recency_strength": recency_strength,
+                    "path_weight": path_weight,
+                    "graph_source": "q_matrix_recent_history_proxy",
+                    "limitations": (
+                        "Online MathTutor currently exposes recent sequence and Q-matrix concept "
+                        "links, not the original offline DGEKT path scorer; treat this as partial "
+                        "attribution evidence."
+                    ),
+                }
+            )
+        return sorted(paths, key=lambda path: path["path_weight"], reverse=True)[:5]

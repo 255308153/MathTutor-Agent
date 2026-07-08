@@ -223,6 +223,7 @@ DGEKT checkpoint 读取说明：
 - PyTorch 2.6+ 默认 `weights_only=True` 会拒绝该历史 checkpoint 中的 numpy 标量 metadata；本项目仅在显式启用 `MATHTUTOR_KT_ENGINE=dgekt` 且用户信任本地文件时使用 `weights_only=False`。
 - DGEKT 输入转换读取最近已判题的 `answer_submitted` 事件，使用 payload 中的 `assist2017_question_id` / `dgekt_question_id` 构造原 DGEKT one-hot 序列；concept 来自 `assist2017_concept_id` / `dgekt_concept_id` 或 Q-matrix。映射缺失或与 Q-matrix 不一致时会明确失败，不返回伪结果。
 - DGEKT 诊断会把模型预测规范化为 `KTDiagnosis.prediction_probability`、weak concept proxy 和 forgetting risk proxy；推荐器和 TeachingTrace 读取这些 KT facts，但 RAG / Memory 不会覆盖它们。
+- DGEKT attribution evidence 会进入 `AttributionEvidence` 和 TeachingTrace expert evidence：`prediction_probability` 是模型预测答对概率，`key_history` 是最近进入 DGEKT 序列的已判题交互，`top_paths` 记录 history question 到 target question 的 Q-matrix 概念关系、recency strength、path weight 和 `partial_evidence=true`。当前在线 adapter 尚未运行原工程离线 path scorer，因此这些路径标注为 partial evidence，不能解读为完整双图归因。
 
 ## Agent 工作方式
 

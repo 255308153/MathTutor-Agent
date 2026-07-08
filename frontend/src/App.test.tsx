@@ -84,8 +84,16 @@ const baseResponse: MathTutorEventResponse = {
       attribution_evidence: {
         target_question_id: "q_frac_001",
         prediction_probability: 0.58,
-        top_paths: [{ path_id: "mock-path-1" }],
-        key_history: [],
+        top_paths: [
+          {
+            path_id: "dgekt-partial-1-2-1",
+            partial_evidence: true,
+            history_assist2017_question_id: 1,
+            target_assist2017_question_id: 2,
+            path_weight: 0.85
+          }
+        ],
+        key_history: [{ assist2017_question_id: 1, is_correct: false }],
         weak_concepts: []
       },
       rag_sources: [
@@ -127,6 +135,10 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
     expect(screen.getByText("模型证据")).toBeInTheDocument();
     expect(screen.getByText("KT 预测")).toBeInTheDocument();
+    expect(screen.getByText("DGEKT attribution")).toBeInTheDocument();
+    expect(screen.getByText("partial evidence")).toBeInTheDocument();
+    expect(screen.getByText("1 -> 2")).toBeInTheDocument();
+    expect(screen.getByText("0.850")).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
     await userEvent.click(screen.getByLabelText("提交答案"));
