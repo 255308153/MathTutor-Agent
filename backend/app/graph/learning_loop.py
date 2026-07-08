@@ -340,11 +340,17 @@ class MathTutorLearningLoop:
                             "question_id": question["question_id"],
                             "score": question["score"],
                             "score_factors": question["score_factors"],
+                            "canonical_mapping": question.get("canonical_mapping"),
+                            "content_availability": question.get("content_availability"),
                         }
                         for question in ranked_questions[:5]
                     ],
                     "selected_question_ids": [
                         question["question_id"] for question in state.recommended_questions
+                    ],
+                    "selected_canonical_targets": [
+                        self._recommendation_target(question)
+                        for question in state.recommended_questions
                     ],
                 },
             )
@@ -357,7 +363,11 @@ class MathTutorLearningLoop:
             question = state.recommended_questions[0]
             action_label = state.next_action["label"] if state.next_action else "下一步练习"
             instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
-            state.response = f"我已经查看你的学习状态。{self._context_preface(state)}下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。教学动作：{action_label}。{instruction} 推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
+            stem = question.get("stem") or question.get("content_availability", {}).get(
+                "fallback_message",
+                "这道题题干暂缺，请先补齐教学内容。",
+            )
+            state.response = f"我已经查看你的学习状态。{self._context_preface(state)}下一步先练：{stem} 这题来自「{question['concept_name']}」。教学动作：{action_label}。{instruction} 推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
         else:
             state.response = self._knowledge_response(state)
 
@@ -566,6 +576,20 @@ class MathTutorLearningLoop:
             state.errors.append("answer_submitted missing question_id")
             return
 
+        question = self.content.get_question(str(question_id))
+        if question is None:
+            state.errors.append(f"unknown question_id: {question_id}")
+            return
+
+        availability = question.get("content_availability") or self.content.content_availability(question)
+        if "standard_answer" in availability.get("missing_fields", []):
+            state.learning_event.payload["grading_source"] = "missing_teaching_content"
+            state.errors.append(
+                availability.get("fallback_message")
+                or f"{question_id} 缺少标准答案，无法进行服务端确定性判题。"
+            )
+            return
+
         grade = self.content.grade(
             question_id=str(question_id),
             submitted_answer=state.learning_event.payload.get("answer"),
@@ -660,6 +684,26 @@ class MathTutorLearningLoop:
                 summary = item.get("summary") or "知识资源"
                 sources.append(f"{summary}（{source}）")
         return sources
+
+    def _recommendation_target(self, question: dict[str, Any]) -> dict[str, Any]:
+        canonical = question.get("canonical_mapping") or {}
+        return {
+            "question_id": question.get("question_id"),
+            "concept_id": question.get("concept_id"),
+            "concept_name": question.get("concept_name"),
+            "teaching_type": question.get("teaching_type"),
+            "assist2017_question_id": question.get("assist2017_question_id")
+            or canonical.get("assist2017_question_id"),
+            "assist2017_concept_id": question.get("assist2017_concept_id")
+            or canonical.get("assist2017_concept_id"),
+            "q_matrix_reference": question.get("q_matrix_reference")
+            or canonical.get("q_matrix_reference"),
+            "mapping_source": (
+                question.get("provenance", {}).get("mapping_source")
+                or canonical.get("source")
+            ),
+            "content_availability": question.get("content_availability"),
+        }
 
     def _trace(
         self,

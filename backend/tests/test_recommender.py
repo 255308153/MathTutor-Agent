@@ -1,5 +1,9 @@
+from functools import cached_property
+from typing import Any
+
 from backend.app.planning.recommender import RiskPrioritizedRecommender
 from backend.app.schemas.learning import ConceptState, KTDiagnosis, KTLearningProgress, LearningEvent
+from backend.app.storage.content_repository import DemoTeachingContentRepository
 
 
 def test_recommender_prioritizes_weak_concept_and_avoids_recent_repeat() -> None:
@@ -58,3 +62,76 @@ def test_recommender_prioritizes_weak_concept_and_avoids_recent_repeat() -> None
     assert recommendations[0]["score_factors"]["novelty"] == 1.0
     repeated = [item for item in recommendations if item["question_id"] == "q_eq_003"]
     assert repeated == []
+
+
+def test_recommender_returns_canonical_teaching_content_payload() -> None:
+    progress = KTLearningProgress(student_id="student-recommender-content")
+    diagnosis = KTDiagnosis()
+
+    recommendations = RiskPrioritizedRecommender().recommend(
+        progress=progress,
+        diagnosis=diagnosis,
+        limit=1,
+    )
+
+    question = recommendations[0]
+    assert question["question_id"] == "q_mem_001"
+    assert question["stem"] == "快速回答：7 × 8 = ?"
+    assert question["answer"] == "56"
+    assert question["explanation"] == "7 × 8 是常用乘法事实，结果是 56。"
+    assert question["concept_name"] == "乘法口诀事实"
+    assert question["difficulty"] == 0.2
+    assert question["teaching_type"] == "memory"
+    assert "standard_answer" not in question
+    assert question["content_availability"]["status"] == "available"
+    assert question["provenance"]["mapping_source"] == "assist2017_curated_metadata.fixture.json"
+    assert question["canonical_mapping"]["assist2017_question_id"] == 1
+    assert question["canonical_mapping"]["assist2017_concept_id"] == 1
+    assert question["canonical_mapping"]["q_matrix_reference"]["concept_column_indices"] == [1]
+    assert "映射知识点" in question["reason"] or "ASSIST2017 question" in question["reason"]
+
+
+def test_recommender_surfaces_missing_teaching_content() -> None:
+    progress = KTLearningProgress(student_id="student-recommender-missing-content")
+    diagnosis = KTDiagnosis()
+    repository = MissingTeachingContentRepository()
+
+    recommendation = RiskPrioritizedRecommender(content=repository).recommend(
+        progress=progress,
+        diagnosis=diagnosis,
+        limit=1,
+    )[0]
+
+    assert recommendation["question_id"] == "q_missing_answer"
+    assert recommendation["answer"] is None
+    assert recommendation["explanation"] is None
+    assert recommendation["stem"].startswith("q_missing_answer 缺少题干")
+    assert recommendation["content_availability"]["status"] == "partial"
+    assert recommendation["content_availability"]["missing_fields"] == [
+        "stem",
+        "standard_answer",
+        "explanation",
+    ]
+    assert "缺少题干、标准答案、解析" in recommendation["reason"]
+
+
+class MissingTeachingContentRepository(DemoTeachingContentRepository):
+    @cached_property
+    def content(self) -> dict[str, Any]:
+        return {
+            "concept_teaching_type_map": {"c_fraction_addition": "procedure"},
+            "questions": [
+                {
+                    "question_id": "q_missing_answer",
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "difficulty": 0.4,
+                    "mistake_patterns": [],
+                    "rag_doc_ids": [],
+                }
+            ],
+        }
+
+    @cached_property
+    def canonical_mapping(self) -> None:
+        return None

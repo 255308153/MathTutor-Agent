@@ -33,10 +33,23 @@ export interface RecommendedQuestion {
   assist2017_concept_id?: number | string;
   dgekt_concept_id?: number | string;
   stem: string;
+  answer?: string | null;
+  explanation?: string | null;
   concept_id: string;
   concept_name: string;
   difficulty: number;
   teaching_type: string;
+  content_availability?: {
+    status: "available" | "partial";
+    has_stem: boolean;
+    has_answer: boolean;
+    has_explanation: boolean;
+    missing_fields: string[];
+    missing_labels: string[];
+    fallback_message?: string | null;
+  };
+  provenance?: Record<string, unknown>;
+  canonical_mapping?: Record<string, unknown>;
   score: number;
   reason: string;
   score_factors: Record<string, number>;

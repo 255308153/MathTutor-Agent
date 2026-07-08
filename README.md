@@ -201,6 +201,12 @@ python -m backend.app.mapping.build_assist2017_mapping \
 
 本地全量数据建议放在 Git 外部路径，或放在 `data/local/` 下。不要提交 ASSIST2017 全量 train/test、checkpoint、`.pkl`、生成模型文件、全量大型 mapping 输出；只提交小型 fixture、schema、代码和文档。
 
+### V1.3 mapped teaching content
+
+#21 起，推荐题会把 canonical mapping 后的教学内容随推荐结果返回，字段包括稳定 `question_id`、学生可读 `stem`、`answer`、`explanation`、`concept_name`、`difficulty`、`teaching_type`、`canonical_mapping`、`provenance` 和 `content_availability`。`standard_answer` 仍是服务端内容集字段，不作为同名字段暴露；答题提交时后端会重新读取本地内容集做确定性判题，不信任客户端传入的判题事实。
+
+推荐排序会轻微优先选择已具备 curated ASSIST2017 question/concept/Q-matrix 对齐的题，避免 DGEKT 或诊断对象只停留在内部 ID。未映射题仍可作为本地 fallback，但会在 `canonical_mapping.source = local_sequence_fallback` 和 `content_availability` 中显式暴露。若题干、标准答案或解析缺失，API 返回可读 fallback / error，并在 TeachingTrace 中保留缺口，不能静默伪造教学内容。
+
 ## V1.4 LearningContextLayer 最小切片
 
 V1.4 新增最小 LearningContextLayer，用来统一组织本轮学习事件需要的上下文资产。它不是新的学习事实来源，也不是 VikingDB / OpenViking Runtime；默认使用本地内存 fallback，不需要 Mem0、VikingDB、OpenViking 或外部 provider 凭据。
@@ -227,6 +233,7 @@ V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context�
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖大模型文件。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；checkpoint 和原始数据不提交 Git。
 - Demo 内容集现在优先读取 V1.3 canonical mapping fixture；未映射题仍回退到 dashboard smoke id。当前 fixture 只覆盖小样本，不等同完整题库语义对齐。
+- 推荐题已返回 mapped teaching content、provenance 和缺失内容诊断；当前仍只覆盖 demo 内容集和小型 mapping fixture，全量 ASSISTments2017 题干 / 答案 / 解析需要后续导入。
 - Attribution evidence 当前是在线 partial evidence：包含历史题、目标题、概念关系和 path weight，但没有运行原 DGEKT 离线 path scorer。
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
