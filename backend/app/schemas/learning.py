@@ -66,6 +66,7 @@ class KTDiagnosis(BaseModel):
     forgetting_risks: list[dict[str, Any]] = Field(default_factory=list)
     prediction_probability: float | None = None
     evidence: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AttributionEvidence(BaseModel):

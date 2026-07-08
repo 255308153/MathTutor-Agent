@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -19,6 +18,17 @@ from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.storage.progress_store import InMemoryProgressStore
 
 
+class FakeDGEKTModel:
+    training = False
+
+    def __call__(self, tensor):
+        import torch
+
+        batch_size = tensor.shape[0]
+        logits = torch.full((batch_size, 50, 3162), -1.3862944, device=tensor.device)
+        return logits, logits, logits
+
+
 def write_dgekt_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     checkpoint = tmp_path / "save2017model.pkl"
     checkpoint.write_bytes(b"not-a-real-checkpoint")
@@ -34,7 +44,7 @@ def write_dgekt_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
 def patch_fake_dgekt_runtime(monkeypatch: pytest.MonkeyPatch, checkpoint: Path) -> None:
     def fake_load_runtime(self: DGEKTStateEngine, *, device: str) -> DGEKTRuntime:
         return DGEKTRuntime(
-            model=SimpleNamespace(training=False),
+            model=FakeDGEKTModel(),
             device=device,
             metadata={
                 "engine_name": "dgekt",
@@ -169,6 +179,7 @@ def test_dgekt_engine_matches_kt_contract_shape(
     assert engine.diagnostics["model_eval"] is True
     assert "epoch=26" in dgekt_diagnosis.evidence[1]
     assert dgekt_evidence.top_paths[0]["engine"] == "dgekt"
+    assert dgekt_diagnosis.prediction_probability == 0.2
 
 
 def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
@@ -326,8 +337,62 @@ def test_api_answer_submission_can_use_dgekt_engine(
     body = response.json()
     assert body["state_summary"]["intent"] == "answer_submission"
     assert body["teaching_trace"][1]["stage"] == "diagnose"
+    assert body["teaching_trace"][1]["metadata"]["kt_engine"] == "dgekt"
+    assert body["teaching_trace"][1]["metadata"]["prediction_probability"] == 0.2
     assert "DGEKT inference input built" in body["teaching_trace"][1]["metadata"]["evidence"][2]
+    assert (
+        body["teaching_trace_summary"]["expert_evidence"]["kt_diagnosis"]["metadata"][
+            "model_provenance"
+        ]["engine_name"]
+        == "dgekt"
+    )
     assert engine.diagnostics["last_inference_input"]["question_ids"] == [1]
+
+
+def test_dgekt_prediction_facts_influence_recommendation_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-recommend",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-recommend",
+                student_id="student-dgekt-recommend",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "assist2017_question_id": 1,
+                    "is_correct": False,
+                },
+            )
+        ],
+    )
+    diagnosis = engine.diagnose(progress, target_question_id="q_frac_001")
+
+    from backend.app.planning.recommender import RiskPrioritizedRecommender
+
+    recommendations = RiskPrioritizedRecommender().recommend(
+        progress=progress,
+        diagnosis=diagnosis,
+        limit=3,
+    )
+
+    assert diagnosis.prediction_probability == 0.2
+    assert diagnosis.weak_concepts[0]["concept_id"] == "c_fraction_addition"
+    assert recommendations[0]["concept_id"] == "c_fraction_addition"
+    assert recommendations[0]["score_factors"]["prediction_risk"] == 0.8
+    assert "DGEKT 预测答对概率偏低" in recommendations[0]["reason"]
 
 
 @pytest.mark.skipif(

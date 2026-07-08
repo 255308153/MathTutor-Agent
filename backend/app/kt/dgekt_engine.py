@@ -48,6 +48,7 @@ class DGEKTInferenceInput:
     question_ids: list[int]
     answers: list[int]
     concept_ids: list[int]
+    mathtutor_concepts: list[dict[str, Any]]
     source_event_count: int
 
     def summary(self) -> dict[str, Any]:
@@ -56,6 +57,7 @@ class DGEKTInferenceInput:
             "question_ids": self.question_ids,
             "answers": self.answers,
             "concept_ids": self.concept_ids,
+            "mathtutor_concepts": self.mathtutor_concepts,
             "source_event_count": self.source_event_count,
         }
 
@@ -352,6 +354,7 @@ class DGEKTStateEngine(KTStateEngine):
         question_ids: list[int] = []
         answers: list[int] = []
         concept_ids: list[int] = []
+        mathtutor_concepts: list[dict[str, Any]] = []
         for event in answer_events:
             question_id = self._extract_assist2017_question_id(event)
             answer = 1 if event.payload.get("is_correct") is True else 0
@@ -359,12 +362,21 @@ class DGEKTStateEngine(KTStateEngine):
             question_ids.append(question_id)
             answers.append(answer)
             concept_ids.append(concept_id)
+            mathtutor_concepts.append(
+                {
+                    "concept_id": event.payload.get("concept_id"),
+                    "concept_name": event.payload.get("concept_name"),
+                    "teaching_type": event.payload.get("teaching_type"),
+                    "assist2017_concept_id": concept_id,
+                }
+            )
 
         inference_input = DGEKTInferenceInput(
             tensor=self._one_hot_sequence(question_ids=question_ids, answers=answers),
             question_ids=question_ids,
             answers=answers,
             concept_ids=concept_ids,
+            mathtutor_concepts=mathtutor_concepts,
             source_event_count=len(answer_events),
         )
         self.last_inference_input = inference_input
@@ -441,6 +453,85 @@ class DGEKTStateEngine(KTStateEngine):
             tensor[0, start + offset, column] = 1.0
         return tensor
 
+    def _prediction_probability(
+        self,
+        inference_input: DGEKTInferenceInput,
+        target_question_id: str | None,
+    ) -> float:
+        try:
+            import torch
+        except ImportError as exc:
+            raise DGEKTCheckpointError("DGEKT prediction requires torch.") from exc
+
+        target_assist2017_id = self._target_assist2017_question_id(
+            inference_input=inference_input,
+            target_question_id=target_question_id,
+        )
+        sequence_index = ASSIST2017_MAX_STEP - 1
+        with torch.no_grad():
+            output = self.runtime.model(inference_input.tensor)
+            if isinstance(output, tuple) and len(output) == 2:
+                output = output[0]
+            logit_ensemble = output[2]
+            probability = torch.sigmoid(logit_ensemble)[0, sequence_index, target_assist2017_id - 1]
+        return round(float(probability.detach().cpu().item()), 6)
+
+    def _target_assist2017_question_id(
+        self,
+        *,
+        inference_input: DGEKTInferenceInput,
+        target_question_id: str | None,
+    ) -> int:
+        if target_question_id:
+            try:
+                return self._parse_assist2017_id(target_question_id, field_name="target_question_id")
+            except DGEKTMappingError:
+                pass
+        return inference_input.question_ids[-1]
+
+    def _prediction_weak_concepts(
+        self,
+        inference_input: DGEKTInferenceInput,
+        prediction_probability: float,
+    ) -> list[dict[str, Any]]:
+        concept = inference_input.mathtutor_concepts[-1] if inference_input.mathtutor_concepts else {}
+        concept_id = concept.get("concept_id") or f"assist2017_concept:{inference_input.concept_ids[-1]}"
+        concept_name = concept.get("concept_name") or f"ASSIST2017 concept {inference_input.concept_ids[-1]}"
+        mastery = prediction_probability
+        if mastery >= 0.6:
+            return []
+        return [
+            {
+                "concept_id": concept_id,
+                "concept_name": concept_name,
+                "mastery": mastery,
+                "prediction_probability": prediction_probability,
+                "assist2017_concept_id": inference_input.concept_ids[-1],
+                "reason": "DGEKT prediction probability below mastery threshold",
+            }
+        ]
+
+    def _prediction_forgetting_risks(
+        self,
+        inference_input: DGEKTInferenceInput,
+        prediction_probability: float,
+    ) -> list[dict[str, Any]]:
+        risk = round(1.0 - prediction_probability, 6)
+        if risk < 0.4:
+            return []
+        concept = inference_input.mathtutor_concepts[-1] if inference_input.mathtutor_concepts else {}
+        return [
+            {
+                "concept_id": concept.get("concept_id")
+                or f"assist2017_concept:{inference_input.concept_ids[-1]}",
+                "concept_name": concept.get("concept_name")
+                or f"ASSIST2017 concept {inference_input.concept_ids[-1]}",
+                "forgetting_risk": risk,
+                "prediction_probability": prediction_probability,
+                "risk_source": "dgekt_prediction_proxy",
+            }
+        ]
+
     def update_from_event(
         self,
         progress: KTLearningProgress,
@@ -458,6 +549,11 @@ class DGEKTStateEngine(KTStateEngine):
         target_question_id: str | None = None,
     ) -> KTDiagnosis:
         inference_input = self.build_inference_input(progress)
+        prediction_probability = (
+            self._prediction_probability(inference_input, target_question_id)
+            if inference_input
+            else None
+        )
         evidence = [
             "DGEKT checkpoint loaded and model is in eval mode.",
             (
@@ -472,11 +568,31 @@ class DGEKTStateEngine(KTStateEngine):
             )
         else:
             evidence.append("No graded answer history available for DGEKT inference input yet.")
+        weak_concepts = (
+            self._prediction_weak_concepts(inference_input, prediction_probability)
+            if inference_input and prediction_probability is not None
+            else list(progress.weak_concepts)
+        )
+        forgetting_risks = (
+            self._prediction_forgetting_risks(inference_input, prediction_probability)
+            if inference_input and prediction_probability is not None
+            else list(progress.forgetting_risks)
+        )
         return KTDiagnosis(
-            weak_concepts=list(progress.weak_concepts),
-            forgetting_risks=list(progress.forgetting_risks),
-            prediction_probability=None,
+            weak_concepts=weak_concepts,
+            forgetting_risks=forgetting_risks,
+            prediction_probability=prediction_probability,
             evidence=evidence,
+            metadata={
+                "engine_name": self.engine_name,
+                "model_provenance": dict(self.metadata),
+                "prediction_facts": {
+                    "prediction_probability": prediction_probability,
+                    "weak_concepts": weak_concepts,
+                    "forgetting_risks": forgetting_risks,
+                },
+                "inference_input": inference_input.summary() if inference_input else None,
+            },
         )
 
     def explain_prediction(

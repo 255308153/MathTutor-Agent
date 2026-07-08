@@ -134,12 +134,19 @@ class MathTutorLearningLoop:
         state.teaching_trace.append(
             self._trace(
                 stage="diagnose",
-                content="MockKT 已产出权威学习诊断事实。",
+                content=f"{self._kt_engine_name()} 已产出权威学习诊断事实。",
                 metadata={
+                    "kt_engine": self._kt_engine_name(),
+                    "kt_engine_diagnostics": self._kt_engine_diagnostics(),
                     "target_question_id": target_question_id,
                     "weak_concept_count": len(state.kt_diagnosis.weak_concepts),
                     "forgetting_risk_count": len(state.kt_diagnosis.forgetting_risks),
                     "prediction_probability": state.kt_diagnosis.prediction_probability,
+                    "prediction_facts": {
+                        "prediction_probability": state.kt_diagnosis.prediction_probability,
+                        "weak_concepts": state.kt_diagnosis.weak_concepts,
+                        "forgetting_risks": state.kt_diagnosis.forgetting_risks,
+                    },
                     "evidence": state.kt_diagnosis.evidence,
                     "attribution_evidence": (
                         state.attribution_evidence.model_dump()
@@ -149,6 +156,15 @@ class MathTutorLearningLoop:
                 },
             )
         )
+
+    def _kt_engine_name(self) -> str:
+        return str(getattr(self.kt_engine, "engine_name", self.kt_engine.__class__.__name__))
+
+    def _kt_engine_diagnostics(self) -> dict[str, Any]:
+        diagnostics = getattr(self.kt_engine, "diagnostics", None)
+        if isinstance(diagnostics, dict):
+            return diagnostics
+        return {"engine_name": self._kt_engine_name()}
 
     def _plan(self, state: MathTutorState) -> None:
         ranked_questions: list[dict[str, Any]] = []

@@ -41,13 +41,15 @@ class RiskPrioritizedRecommender:
             "weak_concept_match": self._weak_concept_match(question, diagnosis),
             "difficulty_fit": self._difficulty_fit(question, progress),
             "forgetting_urgency": self._forgetting_urgency(question, progress, diagnosis),
+            "prediction_risk": self._prediction_risk(question, diagnosis),
             "novelty": self._novelty(question, progress),
             "preference_fit": self._preference_fit(question, preferences),
         }
         score = round(
             factors["weak_concept_match"] * 0.35
-            + factors["difficulty_fit"] * 0.2
+            + factors["difficulty_fit"] * 0.15
             + factors["forgetting_urgency"] * 0.2
+            + factors["prediction_risk"] * 0.1
             + factors["novelty"] * 0.15
             + factors["preference_fit"] * 0.1,
             4,
@@ -94,6 +96,15 @@ class RiskPrioritizedRecommender:
                 return round(state.forgetting_risk, 4)
         return 0.2
 
+    def _prediction_risk(self, question: dict[str, Any], diagnosis: KTDiagnosis) -> float:
+        probability = diagnosis.prediction_probability
+        if probability is None:
+            return 0.0
+        weak_concept_ids = {item.get("concept_id") for item in diagnosis.weak_concepts}
+        if weak_concept_ids and question["concept_id"] not in weak_concept_ids:
+            return 0.0
+        return round(max(0.0, 1.0 - float(probability)), 4)
+
     def _novelty(self, question: dict[str, Any], progress: KTLearningProgress) -> float:
         question_id = question["question_id"]
         recent_question_ids = {
@@ -132,6 +143,8 @@ class RiskPrioritizedRecommender:
             reason_parts.append("匹配当前薄弱知识点")
         if factors["forgetting_urgency"] >= 0.5:
             reason_parts.append("遗忘风险较高")
+        if factors.get("prediction_risk", 0.0) >= 0.5:
+            reason_parts.append("DGEKT 预测答对概率偏低")
         if factors["novelty"] < 0.2:
             reason_parts.append("近期做过，因此降权")
         else:

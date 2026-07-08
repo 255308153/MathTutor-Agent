@@ -14,6 +14,8 @@ from ..schemas.learning import (
 class MockKTStateEngine(KTStateEngine):
     """Deterministic placeholder for wiring the agent loop before DGEKT is connected."""
 
+    engine_name = "mock"
+
     def update_from_event(
         self,
         progress: KTLearningProgress,
@@ -56,6 +58,7 @@ class MockKTStateEngine(KTStateEngine):
             forgetting_risks=risks[:3],
             prediction_probability=0.58 if target_question_id else None,
             evidence=["MockKTStateEngine used for V1 loop wiring."],
+            metadata={"engine_name": self.engine_name},
         )
 
     def explain_prediction(

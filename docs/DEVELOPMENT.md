@@ -567,6 +567,12 @@ data/
   - concept 映射优先读取 `assist2017_concept_id` / `dgekt_concept_id`；未提供时由 Q-matrix 对应题目行推导第一个 concept。
   - 如果题目 ID 不能映射为 ASSIST2017 整数、超出 1..3162、Q-matrix 缺题、题目没有 concept，或显式 concept 与 Q-matrix 不一致，会抛出明确映射错误，不返回伪诊断。
 - 当前支持范围：V1.2 只支持本地 ASSIST2017 checkpoint + `Dataset/assist2017` + `Dataset/H/2017.csv`。小型 demo 内容集仍使用自己的 `question_id`，若要走真实 DGEKT 输入，需要在事件 payload 或后续内容映射表中提供 ASSIST2017 题目 ID。
+- DGEKT prediction facts 规范化：
+  - `diagnose` 会在 `eval()` / `no_grad` 下读取 ensemble logits，输出 numeric `prediction_probability`。
+  - `prediction_probability < 0.6` 会生成 weak concept proxy，`1 - prediction_probability >= 0.4` 会生成 forgetting risk proxy。
+  - 如果事件同时带有 MathTutor `concept_id` / `concept_name`，weak/risk facts 使用 MathTutor 概念 ID，推荐器可直接参与现有 risk-prioritized ranking。
+  - TeachingTrace 的 `diagnose` 阶段会记录 `kt_engine`、`kt_engine_diagnostics` 和 `prediction_facts`；`KTDiagnosis.metadata` 包含 DGEKT model provenance 和 inference input 摘要。
+  - RAG 和 StudentMemory 仍只影响解释、偏好和策略，不覆盖 DGEKT 产生的 mastery / risk / prediction facts。
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 
