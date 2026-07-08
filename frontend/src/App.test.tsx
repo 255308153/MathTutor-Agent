@@ -100,8 +100,13 @@ const baseResponse: MathTutorEventResponse = {
       rag_sources: [
         {
           doc_id: "rag_fraction_addition",
+          doc_type: "concept_note",
           title: "异分母分数加法",
-          source: "demo-rag/fraction_addition.md"
+          source: "demo-rag/fraction_addition.md",
+          concept_id: "c_fraction_addition",
+          question_id: "q_frac_001",
+          assist2017_question_id: 3,
+          assist2017_concept_id: 2
         }
       ],
       planner_decision: { decision: "recommend" },
@@ -135,6 +140,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("TeachingTrace")).toBeInTheDocument();
     expect(screen.getByText("读取上下文")).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
+    expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2")).toBeInTheDocument();
     expect(screen.getByText("模型证据")).toBeInTheDocument();
     expect(screen.getByText("KT 预测")).toBeInTheDocument();
     expect(screen.getByText("DGEKT attribution")).toBeInTheDocument();

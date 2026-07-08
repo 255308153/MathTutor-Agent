@@ -797,12 +797,19 @@ RAG 不能只是“查资料回答概念”，必须进入规划节点。
 ```text
 chunk_id
 doc_type: concept_note | question_explanation | mistake_pattern | learning_strategy
-concepts
+concept_id
 question_id
+assist2017_question_id
+assist2017_concept_id
+canonical_mapping
+provenance
+coverage
 difficulty
 source
 updated_at
 ```
+
+`canonical_mapping` 保存 MathTutor question/concept 到 ASSIST2017 question/concept 和 Q-matrix 的对齐摘要；`coverage` 标记 `question`、`concept`、`global`、`unmapped_question` 或 `unmapped_concept`，用于可见化 RAG 缺口。
 
 不同意图召回：
 
@@ -824,8 +831,8 @@ RAG 强化标准：
 
 ```text
 分类型索引
-元数据过滤
-引用溯源
+canonical metadata 过滤
+引用溯源到 question / concept / ASSIST2017 id
 进入规划节点
 ```
 

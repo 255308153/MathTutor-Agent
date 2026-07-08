@@ -25,6 +25,10 @@ interface HistoryItem {
   response: MathTutorEventResponse;
 }
 
+type RagSource = NonNullable<
+  MathTutorEventResponse["teaching_trace_summary"]["expert_evidence"]["rag_sources"]
+>[number];
+
 export default function App() {
   const [studentId, setStudentId] = useState(DEFAULT_STUDENT_ID);
   const [message, setMessage] = useState("我下一步应该练什么？");
@@ -353,6 +357,7 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <p key={`${source.doc_id}-${source.source}`}>
               <strong>{source.title}</strong>
               <span>{source.source}</span>
+              <small>{ragSourceTarget(source)}</small>
             </p>
           ))}
           {ragSources.length === 0 && <p className="muted">本轮没有 RAG 引用。</p>}
@@ -427,9 +432,20 @@ function factorName(name: string) {
     weak_concept_match: "薄弱匹配",
     difficulty_fit: "难度贴合",
     forgetting_urgency: "遗忘风险",
+    canonical_alignment: "映射",
     novelty: "新鲜度",
     preference_fit: "偏好"
   }[name] ?? name;
+}
+
+function ragSourceTarget(source: RagSource) {
+  const parts = [
+    source.question_id ? `题 ${source.question_id}` : "",
+    source.concept_id ? `知识点 ${source.concept_id}` : "",
+    source.assist2017_question_id ? `ASSIST2017 Q${source.assist2017_question_id}` : "",
+    source.assist2017_concept_id ? `C${source.assist2017_concept_id}` : ""
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "全局学习策略";
 }
 
 function stageName(stage: string) {

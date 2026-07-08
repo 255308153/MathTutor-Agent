@@ -5,6 +5,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..mapping.assist2017_mapping import CanonicalMappingRepository, DEFAULT_MAPPING_PATH
 from .schema import RAGDocument, RAGSearchResult
 
 
@@ -25,7 +26,16 @@ class LocalKnowledgeRAG:
     @cached_property
     def documents(self) -> list[RAGDocument]:
         raw_documents = json.loads(RAG_PATH.read_text(encoding="utf-8"))
-        return [RAGDocument.model_validate(document) for document in raw_documents]
+        return [
+            self._with_canonical_metadata(RAGDocument.model_validate(document))
+            for document in raw_documents
+        ]
+
+    @cached_property
+    def canonical_mapping(self) -> CanonicalMappingRepository | None:
+        if not DEFAULT_MAPPING_PATH.is_file():
+            return None
+        return CanonicalMappingRepository.from_path(DEFAULT_MAPPING_PATH)
 
     def search(
         self,
@@ -56,6 +66,12 @@ class LocalKnowledgeRAG:
             return False
         question_id = filters.get("question_id")
         if question_id and document.question_id != question_id:
+            return False
+        assist_question_id = filters.get("assist2017_question_id")
+        if assist_question_id and str(document.assist2017_question_id) != str(assist_question_id):
+            return False
+        assist_concept_id = filters.get("assist2017_concept_id")
+        if assist_concept_id and str(document.assist2017_concept_id) != str(assist_concept_id):
             return False
         return True
 
@@ -95,7 +111,86 @@ class LocalKnowledgeRAG:
             source=document.source,
             concept_id=document.concept_id,
             question_id=document.question_id,
+            assist2017_question_id=document.assist2017_question_id,
+            assist2017_concept_id=document.assist2017_concept_id,
+            canonical_mapping=document.canonical_mapping,
+            provenance=document.provenance,
+            coverage=document.coverage,
             score=score,
+        )
+
+    def _with_canonical_metadata(self, document: RAGDocument) -> RAGDocument:
+        repository = self.canonical_mapping
+        question_mapping = None
+        concept_mapping = None
+        if repository is not None and document.question_id:
+            question_mapping = repository.get_by_mathtutor_question_id(document.question_id)
+        if repository is not None and document.concept_id:
+            concept_mapping = repository.concept_for_mathtutor_concept_id(document.concept_id)
+
+        assist_question_id = document.assist2017_question_id
+        assist_concept_id = document.assist2017_concept_id
+        canonical_mapping: dict[str, Any] = dict(document.canonical_mapping)
+        if question_mapping is not None:
+            assist_question_id = question_mapping.assist2017_question_id
+            assist_concept_id = question_mapping.assist2017_concept_id
+            canonical_mapping.update(
+                {
+                    "question_id": question_mapping.question_id,
+                    "concept_id": question_mapping.concept_id,
+                    "concept_name": question_mapping.concept_name,
+                    "teaching_type": question_mapping.teaching_type,
+                    "assist2017_question_id": question_mapping.assist2017_question_id,
+                    "assist2017_concept_id": question_mapping.assist2017_concept_id,
+                    "q_matrix_reference": question_mapping.q_matrix_reference.model_dump(),
+                    "source": question_mapping.source_provenance.source,
+                }
+            )
+        elif concept_mapping is not None:
+            assist_concept_id = concept_mapping.assist2017_concept_id
+            canonical_mapping.update(
+                {
+                    "concept_id": concept_mapping.concept_id,
+                    "concept_name": concept_mapping.concept_name,
+                    "teaching_type": concept_mapping.teaching_type,
+                    "assist2017_concept_id": concept_mapping.assist2017_concept_id,
+                    "source": concept_mapping.source_provenance.source,
+                }
+            )
+
+        coverage_type = "global"
+        missing_reason = None
+        if document.question_id:
+            coverage_type = "question" if question_mapping is not None else "unmapped_question"
+            if question_mapping is None:
+                missing_reason = "RAG doc question_id is not present in canonical mapping."
+        elif document.concept_id:
+            coverage_type = "concept" if concept_mapping is not None else "unmapped_concept"
+            if concept_mapping is None:
+                missing_reason = "RAG doc concept_id is not present in canonical mapping."
+
+        provenance = {
+            "rag_source": "data/rag/demo_knowledge.json",
+            "source": document.source,
+            "mapping_source": canonical_mapping.get("source"),
+            "enrichment": "runtime_canonical_mapping",
+        } | document.provenance
+        coverage = {
+            "coverage_type": coverage_type,
+            "doc_type": document.doc_type,
+            "question_aligned": question_mapping is not None,
+            "concept_aligned": (question_mapping is not None or concept_mapping is not None),
+            "missing_reason": missing_reason,
+        } | document.coverage
+
+        return document.model_copy(
+            update={
+                "assist2017_question_id": assist_question_id,
+                "assist2017_concept_id": assist_concept_id,
+                "canonical_mapping": canonical_mapping,
+                "provenance": provenance,
+                "coverage": coverage,
+            }
         )
 
 

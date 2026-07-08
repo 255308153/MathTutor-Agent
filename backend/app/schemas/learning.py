@@ -129,8 +129,16 @@ class MathTutorState(BaseModel):
                 "rag_sources": [
                     {
                         "doc_id": item.get("doc_id"),
+                        "doc_type": item.get("doc_type"),
                         "title": item.get("title"),
                         "source": item.get("source"),
+                        "concept_id": item.get("concept_id"),
+                        "question_id": item.get("question_id"),
+                        "assist2017_question_id": item.get("assist2017_question_id"),
+                        "assist2017_concept_id": item.get("assist2017_concept_id"),
+                        "canonical_mapping": item.get("canonical_mapping"),
+                        "provenance": item.get("provenance"),
+                        "coverage": item.get("coverage"),
                     }
                     for item in self.rag_context
                 ],

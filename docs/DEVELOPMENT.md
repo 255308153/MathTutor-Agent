@@ -480,9 +480,26 @@ RAG 文档 schema：
   "source": "demo-rag/fraction_addition.md",
   "concept_id": "c_fraction_addition",
   "question_id": null,
+  "assist2017_question_id": null,
+  "assist2017_concept_id": 2,
+  "canonical_mapping": {
+    "concept_id": "c_fraction_addition",
+    "assist2017_concept_id": 2,
+    "source": "assist2017_curated_metadata.fixture.json"
+  },
+  "provenance": {
+    "rag_source": "data/rag/demo_knowledge.json",
+    "enrichment": "runtime_canonical_mapping"
+  },
+  "coverage": {
+    "coverage_type": "concept",
+    "concept_aligned": true
+  },
   "keywords": ["分数", "通分", "异分母"]
 }
 ```
+
+`data/rag/demo_knowledge.json` 保持小型可读 fixture，可以只手写 `doc_id`、`doc_type`、`title`、`content`、`source`、`concept_id`、`question_id` 和 `keywords`。`LocalKnowledgeRAG` 读取时会根据 `data/mapping/assist2017_canonical_mapping.fixture.json` 做 runtime enrichment，补齐 ASSIST2017 id、Q-matrix reference、provenance 和 coverage；未映射时 `coverage.coverage_type` 会标记为 `unmapped_question` 或 `unmapped_concept` 并带 `missing_reason`。
 
 四类知识：
 
@@ -499,7 +516,8 @@ RAG 文档 schema：
 - 支持 `doc_types` 多类型过滤。
 - 支持 `concept_id` 过滤。
 - 支持 `question_id` 过滤。
-- 返回 `title`、`source`、`content` 和 `score`，供 response 和 TeachingTrace 引用。
+- 支持 `assist2017_question_id` / `assist2017_concept_id` 过滤。
+- 返回 `title`、`source`、`content`、`score`、canonical mapping、provenance 和 coverage，供 response、TeachingTrace、LearningContextLayer 和 dashboard 引用。
 
 主循环接入：
 
@@ -508,13 +526,15 @@ RAG 文档 schema：
 - 答题提交按 `question_id` / `concept_id` 检索题解和错因。
 - 下一步建议检索概念说明和学习策略。
 - 学生回答中会附简短 `参考：title（source）` citation。
-- TeachingTrace 记录 `rag_query`、`rag_filters` 和 `rag_sources`。
+- TeachingTrace 记录 `rag_query`、`rag_filters` 和 canonical `rag_sources`，包括 `question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id` 和 coverage。
+- dashboard 的 `RAG 引用` 区会显示引用对应的真实题目 / 知识点，例如 `题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2`。
 
 边界：
 
 ```text
 RAG 支持解释和 citation。
 RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probability。
+RAG 缺失时只进入 assembled_context.evidence_gaps，不能伪造 knowledge_resource。
 ```
 
 后续替换为 Chroma / VikingDB：

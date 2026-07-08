@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,11 @@ class RAGDocument(BaseModel):
     source: str
     concept_id: str | None = None
     question_id: str | None = None
+    assist2017_question_id: int | None = None
+    assist2017_concept_id: int | None = None
+    canonical_mapping: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    coverage: dict[str, Any] = Field(default_factory=dict)
     keywords: list[str] = Field(default_factory=list)
 
 
@@ -27,4 +32,9 @@ class RAGSearchResult(BaseModel):
     source: str
     concept_id: str | None = None
     question_id: str | None = None
+    assist2017_question_id: int | None = None
+    assist2017_concept_id: int | None = None
+    canonical_mapping: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    coverage: dict[str, Any] = Field(default_factory=dict)
     score: float = 0.0
