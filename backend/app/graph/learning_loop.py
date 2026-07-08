@@ -108,7 +108,17 @@ class MathTutorLearningLoop:
                     "rag_filters": rag_filters,
                     "rag_fallback_used": rag_fallback_used,
                     "rag_sources": [
-                        {"title": item["title"], "source": item["source"]}
+                        {
+                            "doc_id": item.get("doc_id"),
+                            "doc_type": item.get("doc_type"),
+                            "title": item.get("title"),
+                            "source": item.get("source"),
+                            "concept_id": item.get("concept_id"),
+                            "question_id": item.get("question_id"),
+                            "assist2017_question_id": item.get("assist2017_question_id"),
+                            "assist2017_concept_id": item.get("assist2017_concept_id"),
+                            "coverage": item.get("coverage"),
+                        }
                         for item in state.rag_context
                     ],
                     "grading_source": state.learning_event.payload.get("grading_source"),
@@ -543,6 +553,10 @@ class MathTutorLearningLoop:
                 if state.kt_diagnosis and state.kt_diagnosis.weak_concepts
                 else None
             )
+            if weak_concept_id is None and state.learning_event.payload.get("preferred_concept_id"):
+                weak_concept_id = str(state.learning_event.payload["preferred_concept_id"])
+            if weak_concept_id is None and state.kt_progress.weak_concepts:
+                weak_concept_id = str(state.kt_progress.weak_concepts[0].get("concept_id"))
             filters = {"doc_types": ["concept_note", "learning_strategy"]}
             if weak_concept_id:
                 filters["concept_id"] = weak_concept_id

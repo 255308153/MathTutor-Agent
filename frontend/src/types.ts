@@ -84,7 +84,19 @@ export interface TeachingTraceSummary {
       key_history: Array<Record<string, unknown>>;
       weak_concepts: Array<Record<string, unknown>>;
     } | null;
-    rag_sources?: Array<{ doc_id?: string; title?: string; source?: string }>;
+    rag_sources?: Array<{
+      doc_id?: string;
+      doc_type?: string;
+      title?: string;
+      source?: string;
+      concept_id?: string | null;
+      question_id?: string | null;
+      assist2017_question_id?: number | string | null;
+      assist2017_concept_id?: number | string | null;
+      canonical_mapping?: Record<string, unknown> | null;
+      provenance?: Record<string, unknown> | null;
+      coverage?: Record<string, unknown> | null;
+    }>;
     student_memories?: Array<Record<string, unknown>>;
     context_assets?: Array<Record<string, unknown>>;
     assembled_context?: Record<string, unknown> | null;

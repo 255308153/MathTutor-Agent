@@ -207,6 +207,12 @@ python -m backend.app.mapping.build_assist2017_mapping \
 
 推荐排序会轻微优先选择已具备 curated ASSIST2017 question/concept/Q-matrix 对齐的题，避免 DGEKT 或诊断对象只停留在内部 ID。未映射题仍可作为本地 fallback，但会在 `canonical_mapping.source = local_sequence_fallback` 和 `content_availability` 中显式暴露。若题干、标准答案或解析缺失，API 返回可读 fallback / error，并在 TeachingTrace 中保留缺口，不能静默伪造教学内容。
 
+### V1.3 canonical RAG alignment
+
+#22 起，本地 RAG fallback 会把 `data/rag/demo_knowledge.json` 中的 concept notes、question explanations、mistake patterns 和 learning strategies 对齐到 canonical `question_id` / `concept_id`。文档 schema 支持 `assist2017_question_id`、`assist2017_concept_id`、`canonical_mapping`、`provenance` 和 `coverage`；小型 JSON fixture 不需要手写全部字段，`LocalKnowledgeRAG` 会在读取时根据 `data/mapping/assist2017_canonical_mapping.fixture.json` 做 runtime enrichment。
+
+`rag_sources`、`assembled_context.normalized_context.knowledge_resource`、TeachingTrace 和 dashboard RAG 引用都会显示引用对应的真实 question / concept。RAG 缺失时只产生 evidence gap，不伪造知识资源，也不能覆盖 KT facts。
+
 ## V1.4 LearningContextLayer 最小切片
 
 V1.4 新增最小 LearningContextLayer，用来统一组织本轮学习事件需要的上下文资产。它不是新的学习事实来源，也不是 VikingDB / OpenViking Runtime；默认使用本地内存 fallback，不需要 Mem0、VikingDB、OpenViking 或外部 provider 凭据。
@@ -234,6 +240,7 @@ V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context�
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；checkpoint 和原始数据不提交 Git。
 - Demo 内容集现在优先读取 V1.3 canonical mapping fixture；未映射题仍回退到 dashboard smoke id。当前 fixture 只覆盖小样本，不等同完整题库语义对齐。
 - 推荐题已返回 mapped teaching content、provenance 和缺失内容诊断；当前仍只覆盖 demo 内容集和小型 mapping fixture，全量 ASSISTments2017 题干 / 答案 / 解析需要后续导入。
+- RAG 文档已 runtime 对齐 canonical question / concept，但当前 demo 知识库仍是精选小样本；coverage 会显式标记 `question`、`concept`、`global` 或未映射缺口。
 - Attribution evidence 当前是在线 partial evidence：包含历史题、目标题、概念关系和 path weight，但没有运行原 DGEKT 离线 path scorer。
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。

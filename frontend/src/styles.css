@@ -384,6 +384,13 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.citation-list small {
+  display: block;
+  color: #7d6c43;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
 pre {
   max-height: 360px;
   overflow: auto;
