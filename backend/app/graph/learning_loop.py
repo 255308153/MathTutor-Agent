@@ -311,6 +311,7 @@ class MathTutorLearningLoop:
             diagnosis=state.kt_diagnosis,
             rag_context=state.rag_context,
             recommended_questions=state.recommended_questions,
+            assembled_context=state.assembled_context,
         )
         state.next_action = state.teaching_plan["selected_action"]
 
@@ -332,6 +333,8 @@ class MathTutorLearningLoop:
                         state.assembled_context or {}
                     ).get("context_id"),
                     "context_asset_count": len(state.context_assets),
+                    "context_rationale": self._context_rationale(state),
+                    "evidence_gaps": (state.assembled_context or {}).get("evidence_gaps", []),
                     "recommendation_candidates": [
                         {
                             "question_id": question["question_id"],
@@ -354,7 +357,7 @@ class MathTutorLearningLoop:
             question = state.recommended_questions[0]
             action_label = state.next_action["label"] if state.next_action else "下一步练习"
             instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
-            state.response = f"我已经查看你的学习状态。{self._memory_preface(state)}下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。教学动作：{action_label}。{instruction} 推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
+            state.response = f"我已经查看你的学习状态。{self._context_preface(state)}下一步先练：{question['stem']} 这题来自「{question['concept_name']}」。教学动作：{action_label}。{instruction} 推荐理由：{question['reason']}。{self._citation_sentence(state)}做完后我会用标准答案确定性判题。"
         else:
             state.response = self._knowledge_response(state)
 
@@ -471,28 +474,32 @@ class MathTutorLearningLoop:
 
     def _planning_preferences(self, state: MathTutorState) -> dict[str, Any]:
         preferences = dict(state.learning_event.payload)
-        for memory in state.student_memories:
-            if memory["memory_type"] != "preference":
-                continue
-            evidence = memory.get("evidence", {})
-            for key in ("preferred_teaching_type", "preferred_concept_id"):
-                if key not in preferences and evidence.get(key):
-                    preferences[key] = evidence[key]
+        normalized = self._normalized_context(state)
+        strategy_hints = normalized.get("strategy_hints", {})
+        for key in ("preferred_teaching_type", "preferred_concept_id"):
+            if key not in preferences and strategy_hints.get(key):
+                preferences[key] = strategy_hints[key]
+        preferences["context_included_reasons"] = self._context_included_reasons(state)
+        preferences["context_gap_reasons"] = self._context_gap_reasons(state)
+        preferences["knowledge_doc_types"] = normalized.get("knowledge_hints", {}).get("doc_types", [])
         return preferences
 
     def _memory_preface(self, state: MathTutorState) -> str:
-        preferences = self._planning_preferences(state)
-        if preferences.get("preferred_concept_id") or preferences.get("preferred_teaching_type"):
+        return self._context_preface(state)
+
+    def _context_preface(self, state: MathTutorState) -> str:
+        reasons = self._context_included_reasons(state)
+        if any(reason in reasons for reason in ("参考学生偏好", "参考有效策略", "参考重复错因")):
             return "我会参考你之前的学习偏好，"
+        if "参考相关知识资源" in reasons:
+            return "我会参考相关知识资源，"
         return ""
 
     def _citation_sentence(self, state: MathTutorState) -> str:
-        if not state.rag_context:
+        sources = self._knowledge_sources(state)
+        if not sources:
             return ""
-        sources = "；".join(
-            f"{item['title']}（{item['source']}）" for item in state.rag_context[:2]
-        )
-        return f"参考：{sources}。"
+        return f"参考：{'；'.join(sources[:2])}。"
 
     def _next_question_sentence(self, state: MathTutorState) -> str:
         if not state.recommended_questions:
@@ -614,6 +621,45 @@ class MathTutorLearningLoop:
     def _target_question_id(self, event: LearningEvent) -> str | None:
         question_id = event.payload.get("question_id")
         return str(question_id) if question_id else None
+
+    def _normalized_context(self, state: MathTutorState) -> dict[str, Any]:
+        assembled = state.assembled_context or {}
+        normalized = assembled.get("normalized_context")
+        return normalized if isinstance(normalized, dict) else {}
+
+    def _context_included_reasons(self, state: MathTutorState) -> list[str]:
+        normalized = self._normalized_context(state)
+        reasons: list[str] = []
+        for group_name in ("student_memory", "knowledge_resource"):
+            for item in normalized.get(group_name, []):
+                if item.get("included_reason"):
+                    reasons.append(str(item["included_reason"]))
+        return list(dict.fromkeys(reasons))
+
+    def _context_gap_reasons(self, state: MathTutorState) -> list[str]:
+        assembled = state.assembled_context or {}
+        return [
+            str(gap["reason"])
+            for gap in assembled.get("evidence_gaps", [])
+            if gap.get("reason")
+        ]
+
+    def _context_rationale(self, state: MathTutorState) -> dict[str, Any]:
+        return {
+            "included_reasons": self._context_included_reasons(state),
+            "gap_reasons": self._context_gap_reasons(state),
+        }
+
+    def _knowledge_sources(self, state: MathTutorState) -> list[str]:
+        normalized = self._normalized_context(state)
+        sources: list[str] = []
+        for item in normalized.get("knowledge_resource", []):
+            metadata = item.get("metadata", {})
+            source = metadata.get("source") if isinstance(metadata, dict) else None
+            if source:
+                summary = item.get("summary") or "知识资源"
+                sources.append(f"{summary}（{source}）")
+        return sources
 
     def _trace(
         self,

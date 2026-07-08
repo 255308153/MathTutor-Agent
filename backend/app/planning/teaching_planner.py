@@ -62,6 +62,7 @@ class TeachingPlanner:
         diagnosis: KTDiagnosis | None,
         rag_context: list[dict[str, Any]],
         recommended_questions: list[dict[str, Any]],
+        assembled_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         mistake_diagnosis = self.diagnoser.diagnose(event, rag_context)
         teaching_type = self._teaching_type(event, recommended_questions, mistake_diagnosis)
@@ -71,7 +72,13 @@ class TeachingPlanner:
             "selected_action": action,
             "teaching_type": teaching_type,
             "mistake_diagnosis": mistake_diagnosis,
-            "evidence": self._evidence(event, diagnosis, rag_context, recommended_questions),
+            "evidence": self._evidence(
+                event,
+                diagnosis,
+                rag_context,
+                recommended_questions,
+                assembled_context,
+            ),
         }
 
     def _teaching_type(
@@ -146,13 +153,23 @@ class TeachingPlanner:
         diagnosis: KTDiagnosis | None,
         rag_context: list[dict[str, Any]],
         recommended_questions: list[dict[str, Any]],
+        assembled_context: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        assembled_context = assembled_context or {}
         return {
             "event_type": event.type,
             "question_id": event.payload.get("question_id"),
             "is_correct": event.payload.get("is_correct"),
             "kt_weak_concepts": diagnosis.weak_concepts if diagnosis else [],
             "kt_forgetting_risks": diagnosis.forgetting_risks if diagnosis else [],
+            "assembled_context_id": assembled_context.get("context_id"),
+            "normalized_context": assembled_context.get("normalized_context", {}),
+            "context_included_reasons": _context_included_reasons(assembled_context),
+            "context_gap_reasons": [
+                gap.get("reason")
+                for gap in assembled_context.get("evidence_gaps", [])
+                if gap.get("reason")
+            ],
             "rag_sources": [
                 {"doc_id": item.get("doc_id"), "doc_type": item.get("doc_type"), "source": item.get("source")}
                 for item in rag_context
@@ -161,6 +178,16 @@ class TeachingPlanner:
                 question.get("question_id") for question in recommended_questions
             ],
         }
+
+
+def _context_included_reasons(assembled_context: dict[str, Any]) -> list[str]:
+    normalized = assembled_context.get("normalized_context", {})
+    reasons: list[str] = []
+    for group_name in ("student_memory", "knowledge_resource"):
+        for item in normalized.get(group_name, []):
+            if item.get("included_reason"):
+                reasons.append(str(item["included_reason"]))
+    return list(dict.fromkeys(reasons))
 
 
 teaching_planner = TeachingPlanner()

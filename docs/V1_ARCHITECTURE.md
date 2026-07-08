@@ -189,7 +189,8 @@ Context can assemble evidence, not decide learning facts.
 - LangGraph / Planner 决定教学动作。
 - RAG 提供知识点讲解、题目解析、错因和学习策略证据。
 - Mem0 风格记忆提供个人偏好、反思和历史策略效果。
-- LearningContextLayer 统一组织 context assets 和 assembled_context，但不决定学习事实。
+- LearningContextLayer 统一组织 context assets 和 assembled_context，但不决定学习事实。next-step advice 中，planner / recommender / response 只读取 `assembled_context.normalized_context` 的 student_memory、knowledge_resource、task_state 和 evidence gaps，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
+- 缺少学生记忆或 RAG 资源时，LearningContextLayer 记录 evidence gap，而不是伪造 asset 或覆盖 KT facts。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 
 ## 5. 双输入模型
