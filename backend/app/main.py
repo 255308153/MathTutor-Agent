@@ -7,6 +7,7 @@ from .kt.dgekt_engine import (
     DGEKTCheckpointError,
     DGEKTConfigurationError,
     DGEKTMappingError,
+    DGEKTUnsupportedTargetError,
 )
 
 
@@ -24,9 +25,26 @@ def create_app() -> FastAPI:
         _request: Request,
         exc: DGEKTMappingError,
     ) -> JSONResponse:
+        code = (
+            "unsupported_dgekt_target"
+            if isinstance(exc, DGEKTUnsupportedTargetError)
+            else "missing_mapping"
+        )
+        category = code
+        detail = "DGEKT 目标题不受支持" if code == "unsupported_dgekt_target" else "DGEKT 映射失败"
         return JSONResponse(
             status_code=400,
-            content={"detail": f"DGEKT 映射失败：{exc}"},
+            content={
+                "detail": f"{detail}：{exc}",
+                "error": {
+                    "code": code,
+                    "category": category,
+                    "stage": "diagnose",
+                    "message": f"{detail}：{exc}",
+                    "recoverable": True,
+                    "actionable_hint": "检查 canonical mapping、ASSIST2017 question/concept id 和 Q-matrix。",
+                },
+            },
         )
 
     @app.exception_handler(DGEKTConfigurationError)
@@ -37,7 +55,17 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=503,
-            content={"detail": f"DGEKT 引擎不可用：{exc}"},
+            content={
+                "detail": f"DGEKT 引擎不可用：{exc}",
+                "error": {
+                    "code": "dgekt_runtime_unavailable",
+                    "category": "scorer_failure",
+                    "stage": "startup",
+                    "message": f"DGEKT 引擎不可用：{exc}",
+                    "recoverable": True,
+                    "actionable_hint": "检查 DGEKT checkpoint、dataset_dir、Q-matrix 路径，或切回默认 mock 模式。",
+                },
+            },
         )
 
     return app

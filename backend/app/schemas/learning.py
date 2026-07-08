@@ -107,6 +107,7 @@ class MathTutorState(BaseModel):
     response: str = ""
     teaching_trace: list[TeachingTraceEvent] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    error_records: list[dict[str, Any]] = Field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -122,6 +123,7 @@ class MathTutorState(BaseModel):
             "mistake_diagnosis": self.teaching_plan.get("mistake_diagnosis") if self.teaching_plan else None,
             "next_action": self.next_action,
             "errors": self.errors,
+            "error_records": self.error_records,
         }
 
     def trace_summary(self) -> TeachingTraceSummary:
@@ -156,6 +158,8 @@ class MathTutorState(BaseModel):
                 "student_memories": self.student_memories,
                 "context_assets": self.context_assets,
                 "assembled_context": self.assembled_context,
+                "evidence_gaps": (self.assembled_context or {}).get("evidence_gaps", []),
+                "error_records": self.error_records,
                 "planner_decision": self.teaching_plan,
                 "recommendations": self.recommended_questions,
             },

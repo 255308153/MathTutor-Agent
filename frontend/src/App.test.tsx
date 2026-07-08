@@ -28,7 +28,8 @@ const baseResponse: MathTutorEventResponse = {
     forgetting_risks: [{ concept_id: "c_fraction_addition", concept_name: "异分母分数加法" }],
     mistake_diagnosis: null,
     next_action: { type: "recommend_next_question" },
-    errors: []
+    errors: [],
+    error_records: []
   },
   recommended_questions: [
     {
@@ -110,7 +111,9 @@ const baseResponse: MathTutorEventResponse = {
         }
       ],
       planner_decision: { decision: "recommend" },
-      recommendations: []
+      recommendations: [],
+      evidence_gaps: [],
+      error_records: []
     },
     invariants: ["KT facts are authoritative."],
     errors: []
@@ -166,6 +169,52 @@ describe("学习驾驶舱", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("网络不可用");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("后端返回可恢复 evidence gap 时在顶部展示处理提示", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+      ...baseResponse,
+      state_summary: {
+        ...baseResponse.state_summary,
+        errors: ["q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。"],
+        error_records: [
+          {
+            code: "missing_standard_answer",
+            category: "missing_content",
+            stage: "load_context",
+            message: "q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。",
+            actionable_hint: "补齐题目的 standard_answer 后再用于完整练习。",
+            severity: "warning",
+            recoverable: true
+          }
+        ]
+      },
+      teaching_trace_summary: {
+        ...baseResponse.teaching_trace_summary,
+        expert_evidence: {
+          ...baseResponse.teaching_trace_summary.expert_evidence,
+          evidence_gaps: [
+            {
+              gap_type: "missing_content",
+              reason: "q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。"
+            }
+          ],
+          error_records: [
+            {
+              category: "missing_content",
+              message: "q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。"
+            }
+          ]
+        }
+      }
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("q_missing_answer 缺少标准答案");
+    expect(screen.getByRole("alert")).toHaveTextContent("补齐题目的 standard_answer");
+    expect(screen.getByText("Evidence gaps")).toBeInTheDocument();
+    expect(screen.getByText("2 项")).toBeInTheDocument();
   });
 
   it("后端返回 DGEKT detail 时展示可理解错误", async () => {

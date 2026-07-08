@@ -183,6 +183,9 @@ def test_missing_rag_citation_reports_gap_without_overwriting_kt(
 
     assert expert["rag_sources"] == []
     assert any(gap["reason"] == "RAG 未找到相关知识资源" for gap in gaps)
+    assert any(gap["gap_type"] == "missing_rag_citation" for gap in gaps)
+    assert body["state_summary"]["error_records"][0]["category"] == "missing_rag_citation"
+    assert expert["error_records"][0]["category"] == "missing_rag_citation"
     assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
     assert expert["kt_diagnosis"]["prediction_probability"] == 0.58
 

@@ -539,6 +539,20 @@ RAG 不覆盖 KT mastery、weak_concepts、forgetting_risk、prediction_probabil
 RAG 缺失时只进入 assembled_context.evidence_gaps，不能伪造 knowledge_resource。
 ```
 
+### 6.1 V1.3 evidence gap / error model
+
+#24 起，学习事件响应会同时保留兼容字段 `state_summary.errors` 和结构化 `state_summary.error_records`。Dashboard 顶部读取 warning 级 `error_records`，TeachingTrace / 模型证据读取 `teaching_trace_summary.expert_evidence.evidence_gaps` 与 `error_records`。
+
+| category | 常见 code | 阶段 | 含义 | 处理方式 |
+| --- | --- | --- | --- | --- |
+| `missing_mapping` | `missing_question_id` / `missing_mapping` | `load_context` / `diagnose` | 缺 ASSIST2017 / canonical mapping，或 concept 与 Q-matrix 不一致。 | 补 mapping artifact 或修正事件 payload。 |
+| `missing_content` | `missing_standard_answer` / `missing_teaching_content` | `load_context` | 题干、标准答案或解析缺失；标准答案缺失时不能确定性判题。 | 补 `data/content/demo_teaching_content.json` 或外部内容导入。 |
+| `missing_rag_citation` | `missing_rag_citation` | `load_context` | RAG 未召回 canonical question / concept 对齐文档。 | 补 `data/rag/demo_knowledge.json` 或放宽过滤条件。 |
+| `unsupported_dgekt_target` | `unsupported_dgekt_target` | `diagnose` | 显式 DGEKT target 超出 ASSIST2017 / Q-matrix 支持范围。 | 检查 target question id 和 Q-matrix 行。 |
+| `scorer_failure` | `scorer_failure` | `diagnose` | attribution scorer 运行失败。 | 检查 scorer 输入、checkpoint、Q-matrix 或回退到 partial evidence。 |
+
+这些记录是诊断与审计信息，不是新的学习事实来源。KT facts 仍只能来自 `KTDiagnosis`；RAG / Memory / Context 不能覆盖 mastery、weak concepts、forgetting risk 或 prediction probability。
+
 后续替换为 Chroma / VikingDB：
 
 1. 保持 `KnowledgeRAG.search(query, filters, limit)` 接口不变。

@@ -213,6 +213,18 @@ python -m backend.app.mapping.build_assist2017_mapping \
 
 `rag_sources`、`assembled_context.normalized_context.knowledge_resource`、TeachingTrace 和 dashboard RAG 引用都会显示引用对应的真实 question / concept。RAG 缺失时只产生 evidence gap，不伪造知识资源，也不能覆盖 KT facts。
 
+### V1.3 visible evidence gaps
+
+#24 起，API 和 dashboard 会把 V1.3 常见数据缺口归一为可读 `error_records` / `evidence_gaps`，而不是崩溃、静默降级或伪造证据。当前分类包括：
+
+- `missing_mapping`：事件缺少 canonical / ASSIST2017 question 或 concept 映射，或与 Q-matrix 不一致。
+- `missing_content`：题干、标准答案或解析缺失；缺少标准答案时只记录未判题答案，不写 KT facts。
+- `missing_rag_citation`：RAG 未找到 canonical question / concept 对齐的知识资源。
+- `unsupported_dgekt_target`：显式 DGEKT target 超出 ASSIST2017 / Q-matrix 支持范围。
+- `scorer_failure`：DGEKT attribution scorer 或运行时证据生成失败。
+
+`state_summary.error_records` 面向 API 和 dashboard 顶部提示；`TeachingTrace` 的 `load_context` / `diagnose` metadata 与 `teaching_trace_summary.expert_evidence.evidence_gaps` 面向研究者审计。partial attribution 会继续显示 `partial_evidence=true` 和 `partial_evidence_reason`，不会伪装为完整路径证据。
+
 ## V1.4 LearningContextLayer 最小切片
 
 V1.4 新增最小 LearningContextLayer，用来统一组织本轮学习事件需要的上下文资产。它不是新的学习事实来源，也不是 VikingDB / OpenViking Runtime；默认使用本地内存 fallback，不需要 Mem0、VikingDB、OpenViking 或外部 provider 凭据。
