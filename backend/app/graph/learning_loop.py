@@ -75,14 +75,18 @@ class MathTutorLearningLoop:
             )
         ]
         rag_query, rag_filters = self._build_rag_request(state)
-        state.rag_context = [
-            result.model_dump()
-            for result in self.rag.search(query=rag_query, filters=rag_filters, limit=3)
-        ]
+        rag_results = self.rag.search(query=rag_query, filters=rag_filters, limit=3)
+        rag_fallback_used = False
+        if not rag_results and rag_filters.get("question_id"):
+            fallback_filters = dict(rag_filters)
+            fallback_filters.pop("question_id", None)
+            rag_results = self.rag.search(query=rag_query, filters=fallback_filters, limit=3)
+            rag_fallback_used = True
+        state.rag_context = [result.model_dump() for result in rag_results]
         state.teaching_trace.append(
             self._trace(
                 stage="load_context",
-                content="已读取学生学习进度、长期记忆占位和 RAG 上下文占位。",
+                content="已读取学生学习进度、长期记忆和 RAG 上下文。",
                 metadata={
                     "progress_version_before": state.kt_progress.version,
                     "memory_count": len(state.student_memories),
@@ -98,6 +102,7 @@ class MathTutorLearningLoop:
                     "rag_context_count": len(state.rag_context),
                     "rag_query": rag_query,
                     "rag_filters": rag_filters,
+                    "rag_fallback_used": rag_fallback_used,
                     "rag_sources": [
                         {"title": item["title"], "source": item["source"]}
                         for item in state.rag_context
@@ -166,6 +171,24 @@ class MathTutorLearningLoop:
                     )
                 )
                 return
+            ranked_questions = self.recommender.recommend(
+                progress=state.kt_progress,
+                diagnosis=state.kt_diagnosis,
+                preferences=self._planning_preferences(state),
+                limit=len(self.content.list_questions()),
+            )
+            state.recommended_questions = ranked_questions[:3]
+            first_question = self.content.get_question(state.recommended_questions[0]["question_id"])
+            state.kt_progress.pending_question = first_question
+            state.kt_progress.recommendation_history.extend(
+                {
+                    "question_id": question["question_id"],
+                    "score": question["score"],
+                    "reason": question["reason"],
+                }
+                for question in state.recommended_questions
+            )
+            state.kt_progress.recommendation_history = state.kt_progress.recommendation_history[-30:]
         elif state.intent == "next_step_advice":
             state.next_action = {
                 "type": "recommend_next_question",
@@ -254,13 +277,13 @@ class MathTutorLearningLoop:
         is_correct = state.learning_event.payload.get("is_correct")
         if is_correct is True:
             instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
-            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。{instruction}{self._citation_sentence(state)}"
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为正确。我会把这次作答计入学习进度，并继续推荐下一步巩固练习。{instruction}{self._next_question_sentence(state)}{self._citation_sentence(state)}"
         if is_correct is False:
             correct_answer = state.learning_event.payload.get("correct_answer", "标准答案")
             diagnosis_text = self._mistake_diagnosis_sentence(state)
             action_label = state.next_action["label"] if state.next_action else "错因讲解"
             instruction = state.next_action.get("student_instruction", "") if state.next_action else ""
-            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}。错因诊断：{diagnosis_text}。教学动作：{action_label}。{instruction}{self._citation_sentence(state)}"
+            return f"收到，你提交的 {question_id} 已由服务端标准答案判定为不正确。正确答案是 {correct_answer}。错因诊断：{diagnosis_text}。教学动作：{action_label}。{instruction}{self._next_question_sentence(state)}{self._citation_sentence(state)}"
         return f"收到，你提交了 {question_id} 的答案，但我还没有在内容集中找到这道题，暂时只记录事件。"
 
     def _mistake_diagnosis_sentence(self, state: MathTutorState) -> str:
@@ -376,6 +399,12 @@ class MathTutorLearningLoop:
             f"{item['title']}（{item['source']}）" for item in state.rag_context[:2]
         )
         return f"参考：{sources}。"
+
+    def _next_question_sentence(self, state: MathTutorState) -> str:
+        if not state.recommended_questions:
+            return ""
+        question = state.recommended_questions[0]
+        return f"下一题建议：{question['stem']} 推荐理由：{question['reason']}。"
 
     def _build_rag_request(self, state: MathTutorState) -> tuple[str, dict[str, Any]]:
         if state.learning_event.type == "answer_submitted":

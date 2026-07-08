@@ -140,14 +140,39 @@ http://127.0.0.1:5173
 VITE_MATHTUTOR_API_BASE=http://127.0.0.1:8000 npm run dev
 ```
 
-## Demo 操作路径
+## 一分钟演示路径
 
 1. 启动后端：`uvicorn backend.app.main:app --reload`。
 2. 启动前端：`cd frontend && npm run dev`。
 3. 打开 `http://127.0.0.1:5173`，页面会自动请求“我下一步应该练什么？”。
-4. 在“推荐题”里输入答案并提交，例如对 `q_frac_001` 输入 `3/4`。
-5. 查看 Agent 回复中的正确 / 错误反馈和下一步建议。
-6. 展开 `TeachingTrace`、`RAG 引用`、`模型证据`，检查 KT facts、RAG 来源、planner decision 和 attribution evidence。
+4. 看“今日建议”“推荐题”“薄弱概念”“遗忘风险”，确认 Agent 给出下一步练习。
+5. 在第一道推荐题输入一个错误答案并提交，查看错因诊断、概念状态变化和新的推荐题。
+6. 再对下一道推荐题输入正确答案，查看巩固反馈和后续推荐。
+7. 展开 `TeachingTrace`、`RAG 引用`、`模型证据`，检查 KT facts、RAG 来源、planner decision 和 attribution evidence。
+
+V1.1 演示验收点：
+
+- 答题提交由服务端本地内容集确定性判题，不依赖 LLM 记答案。
+- 答对 / 答错后都会返回新的推荐题，便于连续演示。
+- TeachingTrace 使用学生可读主流程 + 专家证据层，研究者可以看到 KT / RAG / memory / recommendation evidence。
+- 推荐题、题解、错因和 citation 使用本地 demo 数据，便于后续替换为真实 ASSISTments2017 / DGEKT 产物。
+
+## V1.1 已知限制与下一阶段优先级
+
+当前仍是本地可演示版本：
+
+- `MockKTStateEngine` 只模拟知识追踪事实，不代表真实 DGEKT 预测。
+- 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
+- RAG 使用本地 JSON fallback，不是生产向量库。
+- Demo 内容集是小型人工整理题库，不是完整 ASSISTments2017 导入结果。
+- 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
+
+下一阶段真实集成优先级：
+
+1. `DGEKTStateEngine`：接入真实 mastery、prediction probability、weak-concept hit 和 attribution evidence。
+2. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
+3. `VikingDB` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
+4. `ASSISTments2017` 数据导入：建立题目、知识点、历史作答和 RAG 文档的稳定映射。
 
 ## 测试与检查
 

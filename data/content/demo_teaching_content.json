@@ -16,7 +16,7 @@
       "concept_name": "乘法口诀事实",
       "difficulty": 0.2,
       "mistake_patterns": ["乘法事实记忆不稳", "相邻口诀混淆"],
-      "rag_doc_ids": ["rag_multiplication_facts"]
+      "rag_doc_ids": ["rag_multiplication_facts", "rag_q_mem_003_solution", "rag_multiplication_high_fact_mistake"]
     },
     {
       "question_id": "q_mem_002",
@@ -27,7 +27,7 @@
       "concept_name": "乘法口诀事实",
       "difficulty": 0.2,
       "mistake_patterns": ["乘法事实记忆不稳", "口诀结果混淆"],
-      "rag_doc_ids": ["rag_multiplication_facts"]
+      "rag_doc_ids": ["rag_multiplication_facts", "rag_q_mem_005_solution", "rag_multiplication_square_mistake"]
     },
     {
       "question_id": "q_mem_003",

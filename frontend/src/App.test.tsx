@@ -123,7 +123,10 @@ describe("学习驾驶舱", () => {
     expect(await screen.findByText("学习驾驶舱")).toBeInTheDocument();
     expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
     expect(screen.getByText("TeachingTrace")).toBeInTheDocument();
+    expect(screen.getByText("读取上下文")).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
+    expect(screen.getByText("模型证据")).toBeInTheDocument();
+    expect(screen.getByText("KT 预测")).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
     await userEvent.click(screen.getByLabelText("提交答案"));
@@ -133,6 +136,15 @@ describe("学习驾驶舱", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1][1]?.body).toContain("\"answer\":\"3/4\"");
+  });
+
+  it("后端不可达时展示中文错误和重试入口", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("网络不可用"));
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("网络不可用");
+    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
 });
 

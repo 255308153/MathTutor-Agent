@@ -66,7 +66,8 @@ def test_answer_submitted_updates_progress_and_returns_trace() -> None:
     assert body["state_summary"]["next_action"]["type"] == "worked_example_steps_after_mistake"
     assert body["state_summary"]["mistake_diagnosis"]["concept"]["concept_id"] == "c_fraction_addition"
     assert body["state_summary"]["progress_version"] == 1
-    assert body["recommended_questions"] == []
+    assert len(body["recommended_questions"]) == 3
+    assert "下一题建议" in body["response"]
     assert_core_trace([event["stage"] for event in body["teaching_trace"]])
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
     assert body["teaching_trace"][0]["metadata"]["grading_source"] == "demo_teaching_content"
@@ -107,6 +108,8 @@ def test_recommended_question_then_correct_answer_updates_state() -> None:
     assert "判定为正确" in body["response"]
     assert body["state_summary"]["progress_version"] == 2
     assert body["state_summary"]["next_action"]["type"] == "reinforce_mastery"
+    assert len(body["recommended_questions"]) == 3
+    assert "下一题建议" in body["response"]
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is True
 
 
@@ -145,5 +148,7 @@ def test_recommended_question_then_wrong_answer_updates_state() -> None:
     assert body["state_summary"]["progress_version"] == 2
     assert body["state_summary"]["next_action"]["type"].endswith("_after_mistake")
     assert body["state_summary"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
+    assert len(body["recommended_questions"]) == 3
+    assert body["recommended_questions"][0]["question_id"] != question["question_id"]
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
     assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 1

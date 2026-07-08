@@ -20,6 +20,46 @@
     "keywords": ["乘法", "口诀", "错因", "混淆"]
   },
   {
+    "doc_id": "rag_q_mem_003_solution",
+    "doc_type": "question_explanation",
+    "title": "q_mem_003 题解",
+    "content": "8 × 9 可以看成 8 个 9，也可以从 9 × 8 对称回忆；口诀是八九七十二，所以答案是 72。",
+    "source": "demo-rag/question_solutions.md#q_mem_003",
+    "concept_id": "c_multiplication_facts",
+    "question_id": "q_mem_003",
+    "keywords": ["8×9", "八九七十二", "72", "题解"]
+  },
+  {
+    "doc_id": "rag_multiplication_high_fact_mistake",
+    "doc_type": "mistake_pattern",
+    "title": "常见错因：高位乘法口诀记忆不稳",
+    "content": "8 × 9、7 × 8、9 × 9 这类较大的口诀更容易和相邻结果混淆。错后适合先快速回忆口诀，再做一题同类短练。",
+    "source": "demo-rag/multiplication_mistakes.md#high-facts",
+    "concept_id": "c_multiplication_facts",
+    "question_id": "q_mem_003",
+    "keywords": ["8×9", "乘法", "口诀", "错因", "高位"]
+  },
+  {
+    "doc_id": "rag_q_mem_005_solution",
+    "doc_type": "question_explanation",
+    "title": "q_mem_005 题解",
+    "content": "9 × 9 是平方口诀，九九八十一，所以答案是 81。可以把它和 9 × 8 = 72 区分记忆。",
+    "source": "demo-rag/question_solutions.md#q_mem_005",
+    "concept_id": "c_multiplication_facts",
+    "question_id": "q_mem_005",
+    "keywords": ["9×9", "九九八十一", "81", "题解"]
+  },
+  {
+    "doc_id": "rag_multiplication_square_mistake",
+    "doc_type": "mistake_pattern",
+    "title": "常见错因：平方口诀和相邻口诀混淆",
+    "content": "9 × 9 容易被误记成 72 或 90，说明平方口诀和相邻口诀边界还不够清楚。复习时把 9×8=72、9×9=81、9×10=90 放在一起区分。",
+    "source": "demo-rag/multiplication_mistakes.md#square-facts",
+    "concept_id": "c_multiplication_facts",
+    "question_id": "q_mem_005",
+    "keywords": ["9×9", "平方口诀", "错因", "81"]
+  },
+  {
     "doc_id": "rag_fraction_addition_basic",
     "doc_type": "concept_note",
     "title": "异分母分数加法：先通分再相加",

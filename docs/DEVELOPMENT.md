@@ -76,15 +76,31 @@ http://127.0.0.1:5173
 
 Vite 开发服务器会把 `/api` 代理到 `http://127.0.0.1:8000`。演示时先启动后端，再启动前端。
 
-Demo 路径：
+一分钟演示路径：
 
 1. 页面加载后自动发起“我下一步应该练什么？”。
 2. 查看“今日建议”“概念状态”“薄弱概念”“遗忘风险”和“推荐题”。
-3. 在推荐题输入答案并提交，后端会用本地内容集确定性判题。
-4. 查看 Agent 回复中的正确 / 错误反馈和下一步教学动作。
-5. 展开 `TeachingTrace` 查看阶段、actor 和学生 / 专家可见性。
-6. 展开 `RAG 引用` 查看引用来源。
-7. 展开 `模型证据` 查看 KT diagnosis、planner decision 和 attribution evidence。
+3. 在第一道推荐题输入错误答案并提交，后端会用本地内容集确定性判题。
+4. 查看错因诊断、概念状态变化、新推荐题和下一步教学动作。
+5. 对下一道推荐题输入正确答案，确认反馈变成巩固掌握，并继续给出推荐。
+6. 展开 `TeachingTrace` 查看阶段、actor、学生 / 专家可见性和 evidence refs。
+7. 展开 `RAG 引用` 查看引用来源。
+8. 展开 `模型证据` 查看 KT diagnosis、planner decision、recommendations 和 attribution evidence。
+
+V1.1 已知限制：
+
+- `MockKTStateEngine` 是演示用 KT 实现，真实预测需要后续 DGEKT adapter。
+- 本地 memory store 默认进程内保存，服务重启后不保留长期记忆。
+- 本地 RAG 使用 JSON fallback，citation 形状稳定但不是生产向量库。
+- Demo 内容集只覆盖少量数学题，不等同完整 ASSISTments2017 内容导入。
+- 前端仅用于单学习者演示，不包含登录、班级和教师端。
+
+下一阶段真实集成优先级：
+
+1. `DGEKTStateEngine`：接入真实 mastery、prediction probability、weak-concept hit、top paths 和 key history。
+2. `Mem0` adapter：将本地学生记忆替换为可持久化检索记忆。
+3. `VikingDB` adapter：将本地 JSON RAG fallback 替换成向量检索。
+4. `ASSISTments2017` 数据导入：补齐题目、知识点、历史作答、题解和错因文档映射。
 
 前端环境变量：
 

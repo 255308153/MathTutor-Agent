@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleHelp,
   ClipboardCheck,
+  RefreshCw,
   MessageCircle,
   Send,
   ShieldCheck,
@@ -146,7 +147,15 @@ export default function App() {
         />
       </section>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button onClick={() => void requestNextStep()} disabled={isLoading}>
+            <RefreshCw size={16} />
+            重试
+          </button>
+        </div>
+      )}
 
       <section className="main-grid">
         <div className="left-stack">
@@ -212,7 +221,10 @@ export default function App() {
                       placeholder="输入答案"
                       aria-label={`${question.question_id} 答案`}
                     />
-                    <button aria-label="提交答案" disabled={isLoading}>
+                    <button
+                      aria-label="提交答案"
+                      disabled={isLoading || !(answerByQuestion[question.question_id] ?? "").trim()}
+                    >
                       <Send size={17} />
                     </button>
                   </form>
@@ -238,10 +250,11 @@ export default function App() {
                 onChange={(event) => setMessage(event.target.value)}
                 placeholder="问一个概念，或输入：我下一步应该练什么？"
               />
-              <button aria-label="发送消息" disabled={isLoading}>
+              <button aria-label="发送消息" disabled={isLoading || !message.trim()}>
                 <Send size={17} />
               </button>
             </form>
+            {isLoading && <p className="loading-line">正在处理学习事件...</p>}
           </article>
 
           <TracePanel response={current} />
@@ -294,29 +307,36 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const evidence = response?.teaching_trace_summary.expert_evidence;
   const ragSources = evidence?.rag_sources ?? [];
   const attribution = evidence?.attribution_evidence;
+  const ktDiagnosis = evidence?.kt_diagnosis;
+  const plannerDecision = evidence?.planner_decision;
+  const recommendations = evidence?.recommendations ?? [];
 
   return (
     <article className="panel trace-panel">
       <details open>
         <summary>
           <span><ChevronDown size={17} /> TeachingTrace</span>
-          <small>{response?.teaching_trace.length ?? 0} stages</small>
+          <small>{response?.teaching_trace.length ?? 0} 个阶段</small>
         </summary>
         <div className="trace-list">
           {(response?.teaching_trace ?? []).map((event) => (
             <div className="trace-event" key={event.id}>
-              <span>{event.stage}</span>
+              <span>{stageName(event.stage)}</span>
               <b>{event.actor} · {visibilityName(event.visibility)}</b>
               <p>{event.content}</p>
+              {event.evidence_refs.length > 0 && (
+                <small>证据引用：{event.evidence_refs.join("、")}</small>
+              )}
             </div>
           ))}
+          {!response && <p className="muted">等待第一轮事件生成 TeachingTrace。</p>}
         </div>
       </details>
 
       <details>
         <summary>
           <span><ChevronDown size={17} /> RAG 引用</span>
-          <small>{ragSources.length} sources</small>
+          <small>{ragSources.length} 条引用</small>
         </summary>
         <div className="citation-list">
           {ragSources.map((source) => (
@@ -332,12 +352,27 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
       <details>
         <summary>
           <span><ChevronDown size={17} /> 模型证据</span>
-          <small>{attribution?.prediction_probability ?? "mock"}</small>
+          <small>{formatProbability(attribution?.prediction_probability)}</small>
         </summary>
+        <div className="evidence-grid">
+          <p>
+            <strong>KT 预测</strong>
+            <span>{formatProbability(ktDiagnosis?.prediction_probability)}</span>
+          </p>
+          <p>
+            <strong>推荐候选</strong>
+            <span>{recommendations.length} 道</span>
+          </p>
+          <p>
+            <strong>教学动作</strong>
+            <span>{actionLabel(plannerDecision)}</span>
+          </p>
+        </div>
         <pre>{JSON.stringify({
-          kt_diagnosis: evidence?.kt_diagnosis,
+          kt_diagnosis: ktDiagnosis,
           attribution_evidence: attribution,
-          planner_decision: evidence?.planner_decision
+          planner_decision: plannerDecision,
+          recommendations
         }, null, 2)}</pre>
       </details>
     </article>
@@ -363,6 +398,33 @@ function factorName(name: string) {
   }[name] ?? name;
 }
 
+function stageName(stage: string) {
+  return {
+    load_context: "读取上下文",
+    diagnose: "KT 诊断",
+    plan: "教学规划",
+    generate_response: "生成回复",
+    memory_update: "记忆更新"
+  }[stage] ?? stage;
+}
+
 function visibilityName(visibility: string) {
   return visibility === "student" ? "学生可见" : "专家证据";
+}
+
+function formatProbability(value: number | null | undefined) {
+  return typeof value === "number" ? `${Math.round(value * 100)}%` : "mock";
+}
+
+function actionLabel(plannerDecision: Record<string, unknown> | null | undefined) {
+  const selectedAction = plannerDecision?.selected_action;
+  if (
+    selectedAction &&
+    typeof selectedAction === "object" &&
+    "label" in selectedAction &&
+    typeof selectedAction.label === "string"
+  ) {
+    return selectedAction.label;
+  }
+  return "等待规划";
 }
