@@ -396,7 +396,7 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
           </p>
           <p>
             <strong>Path strength</strong>
-            <span>{formatNumber(topPath?.path_weight ?? topPath?.weight)}</span>
+            <span>{formatNumber(topPath?.path_strength ?? topPath?.path_weight ?? topPath?.weight)}</span>
           </p>
           <p>
             <strong>Key history</strong>

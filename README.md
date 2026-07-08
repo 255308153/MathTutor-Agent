@@ -241,7 +241,7 @@ V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context�
 - Demo 内容集现在优先读取 V1.3 canonical mapping fixture；未映射题仍回退到 dashboard smoke id。当前 fixture 只覆盖小样本，不等同完整题库语义对齐。
 - 推荐题已返回 mapped teaching content、provenance 和缺失内容诊断；当前仍只覆盖 demo 内容集和小型 mapping fixture，全量 ASSISTments2017 题干 / 答案 / 解析需要后续导入。
 - RAG 文档已 runtime 对齐 canonical question / concept，但当前 demo 知识库仍是精选小样本；coverage 会显式标记 `question`、`concept`、`global` 或未映射缺口。
-- Attribution evidence 当前是在线 partial evidence：包含历史题、目标题、概念关系和 path weight，但没有运行原 DGEKT 离线 path scorer。
+- Attribution evidence 当前是在线 partial evidence：`dgekt_online_graph_proxy_scorer` 会基于 recent history、canonical / Q-matrix target、weak concept proxy 输出 `key_history`、`top_paths`、`path_strength`、`relation_strength`、`relation_source`、`weak_concept_hit` 和 `partial_evidence_reason`。它没有运行原 DGEKT 离线 path scorer，因此不能解读为完整双图归因。
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
 - 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
@@ -250,7 +250,7 @@ V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context�
 下一阶段真实集成优先级：
 
 1. `ASSISTments2017` 完整内容导入：建立题目、知识点、历史作答和 RAG 文档的稳定语义映射。
-2. 原 DGEKT explainability scorer 在线化：把离线 `attribution_paths.csv` / `key_history.csv` 级别证据接入 `AttributionEvidence`。
+2. 原 DGEKT explainability 离线结果接入：把 `attribution_paths.csv` / `key_history.csv` 级别证据接入 `AttributionEvidence`，替换当前 online partial scorer 的代理关系强度。
 3. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
 4. `VikingDB` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
 
@@ -303,7 +303,7 @@ DGEKT checkpoint 读取说明：
 - PyTorch 2.6+ 默认 `weights_only=True` 会拒绝该历史 checkpoint 中的 numpy 标量 metadata；本项目仅在显式启用 `MATHTUTOR_KT_ENGINE=dgekt` 且用户信任本地文件时使用 `weights_only=False`。
 - DGEKT 输入转换读取最近已判题的 `answer_submitted` 事件，使用 payload 中的 `assist2017_question_id` / `dgekt_question_id` 构造原 DGEKT one-hot 序列；concept 来自 `assist2017_concept_id` / `dgekt_concept_id` 或 Q-matrix。映射缺失或与 Q-matrix 不一致时会明确失败，不返回伪结果。
 - DGEKT 诊断会把模型预测规范化为 `KTDiagnosis.prediction_probability`、weak concept proxy 和 forgetting risk proxy；推荐器和 TeachingTrace 读取这些 KT facts，但 RAG / Memory 不会覆盖它们。
-- DGEKT attribution evidence 会进入 `AttributionEvidence` 和 TeachingTrace expert evidence：`prediction_probability` 是模型预测答对概率，`key_history` 是最近进入 DGEKT 序列的已判题交互，`top_paths` 记录 history question 到 target question 的 Q-matrix 概念关系、recency strength、path weight 和 `partial_evidence=true`。当前在线 adapter 尚未运行原工程离线 path scorer，因此这些路径标注为 partial evidence，不能解读为完整双图归因。
+- DGEKT attribution evidence 会进入 `AttributionEvidence` 和 TeachingTrace expert evidence：`prediction_probability` 是模型预测答对概率，`raw_model_target` 记录 DGEKT 使用的 ASSIST2017 question / concept，`mapped_teaching_content` 记录映射后的 MathTutor 教学内容，`key_history` 是最近进入 DGEKT 序列的已判题交互，`top_paths` 记录 history question 到 target question 的 Q-matrix 概念关系、`path_strength` / `relation_strength` / `relation_source`、`weak_concept_hit` 和 `partial_evidence_reason`。`diagnose` 阶段 TeachingTrace 会额外写入 `attribution_chain`，展示 raw model target -> mapped teaching content -> attribution evidence。当前在线 adapter 尚未运行原工程离线 path scorer，因此这些路径标注为 partial evidence，不能解读为完整双图归因。
 
 ## Agent 工作方式
 

@@ -71,7 +71,18 @@ class KTDiagnosis(BaseModel):
 
 class AttributionEvidence(BaseModel):
     target_question_id: str
+    target_concept_id: str | None = None
+    target_assist2017_question_id: int | None = None
+    target_assist2017_concept_id: int | None = None
     prediction_probability: float | None = None
+    evidence_status: str | None = None
+    partial_evidence: bool = False
+    partial_evidence_reason: str | None = None
+    raw_model_target: dict[str, Any] = Field(default_factory=dict)
+    mapped_teaching_content: dict[str, Any] = Field(default_factory=dict)
+    canonical_mapping: dict[str, Any] = Field(default_factory=dict)
+    scorer: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
     top_paths: list[dict[str, Any]] = Field(default_factory=list)
     key_history: list[dict[str, Any]] = Field(default_factory=list)
     weak_concepts: list[dict[str, Any]] = Field(default_factory=list)
