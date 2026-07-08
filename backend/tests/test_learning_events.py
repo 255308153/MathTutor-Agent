@@ -7,6 +7,7 @@ from backend.app.api import events as events_api
 from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.main import create_app
 from backend.app.planning.recommender import RiskPrioritizedRecommender
+from backend.app.schemas.learning import KTDiagnosis, KTLearningProgress, LearningEvent
 from backend.app.storage.content_repository import DemoTeachingContentRepository
 from backend.app.storage.content_repository import content_repository
 from backend.app.storage.progress_store import InMemoryProgressStore
@@ -240,9 +241,57 @@ def test_api_returns_visible_fallback_when_standard_answer_is_missing(
     assert body["state_summary"]["errors"] == [
         "q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。"
     ]
+    assert body["state_summary"]["error_records"][0]["category"] == "missing_content"
+    assert body["state_summary"]["error_records"][0]["code"] == "missing_standard_answer"
     assert body["teaching_trace"][0]["metadata"]["grading_source"] == "missing_teaching_content"
+    assert body["teaching_trace"][0]["metadata"]["evidence_gap_records"][0]["category"] == (
+        "missing_content"
+    )
     assert body["teaching_trace"][0]["metadata"]["is_correct"] is None
     assert body["recommended_questions"] == []
+
+
+def test_api_reports_scorer_failure_without_overwriting_kt(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=ScorerFailureKTStateEngine(),
+            store=InMemoryProgressStore(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-scorer-failure-001",
+            "student_id": "student-scorer-failure-001",
+            "type": "answer_submitted",
+            "message": "提交触发 scorer failure 的答案",
+            "payload": {
+                "question_id": "q_frac_001",
+                "answer": "__wrong_demo_answer__",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    error_record = body["state_summary"]["error_records"][0]
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    attribution = expert["attribution_evidence"]
+
+    assert error_record["category"] == "scorer_failure"
+    assert "解释证据 scorer 失败" in error_record["message"]
+    assert body["teaching_trace"][1]["metadata"]["failure_stage"] == "diagnose"
+    assert expert["kt_diagnosis"]["prediction_probability"] == 0.41
+    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
+    assert attribution["evidence_status"] == "unavailable"
+    assert attribution["top_paths"][0]["path_id"] == "scorer-failure"
+    assert attribution["top_paths"][0]["partial_evidence"] is True
 
 
 class MissingAnswerTeachingContentRepository(DemoTeachingContentRepository):
@@ -267,3 +316,60 @@ class MissingAnswerTeachingContentRepository(DemoTeachingContentRepository):
     @cached_property
     def canonical_mapping(self) -> None:
         return None
+
+
+class ScorerFailureKTStateEngine:
+    engine_name = "fake-scorer-failure"
+
+    @property
+    def diagnostics(self) -> dict[str, str]:
+        return {"engine_name": self.engine_name}
+
+    def update_from_event(
+        self,
+        progress: KTLearningProgress,
+        event: LearningEvent,
+    ) -> KTLearningProgress:
+        progress.current_session_id = event.session_id
+        progress.recent_events.append(event)
+        progress.version += 1
+        return progress
+
+    def diagnose(
+        self,
+        progress: KTLearningProgress,
+        target_question_id: str | None = None,
+    ) -> KTDiagnosis:
+        return KTDiagnosis(
+            weak_concepts=[
+                {
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "mastery": 0.41,
+                }
+            ],
+            forgetting_risks=[],
+            prediction_probability=0.41,
+            evidence=["fake KT diagnosis for scorer failure test"],
+            metadata={
+                "engine_name": self.engine_name,
+                "prediction_facts": {
+                    "prediction_probability": 0.41,
+                    "weak_concepts": [
+                        {
+                            "concept_id": "c_fraction_addition",
+                            "concept_name": "异分母分数加法",
+                            "mastery": 0.41,
+                        }
+                    ],
+                    "forgetting_risks": [],
+                },
+            },
+        )
+
+    def explain_prediction(
+        self,
+        progress: KTLearningProgress,
+        target_question_id: str,
+    ):
+        raise RuntimeError("synthetic scorer failure")

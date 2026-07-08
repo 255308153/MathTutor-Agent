@@ -10,6 +10,7 @@ from backend.app.kt.dgekt_engine import (
     DGEKTConfigurationError,
     DGEKTRuntime,
     DGEKTStateEngine,
+    DGEKTUnsupportedTargetError,
 )
 from backend.app.kt.factory import create_kt_engine
 from backend.app.kt.mock_engine import MockKTStateEngine
@@ -276,6 +277,38 @@ def test_dgekt_online_scorer_marks_no_history_partial_reason(
     )
     assert evidence.top_paths[0]["path_strength"] == 0.0
     assert evidence.key_history == []
+
+
+def test_dgekt_explicit_unsupported_target_fails_with_typed_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-unsupported-target",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-unsupported-target",
+                student_id="student-dgekt-unsupported-target",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_001",
+                    "assist2017_question_id": 1,
+                    "is_correct": True,
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(DGEKTUnsupportedTargetError, match="out of range"):
+        engine.diagnose(progress, target_question_id="assist2017:9999")
 
 
 def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
@@ -624,9 +657,19 @@ def test_dgekt_mapping_error_returns_readable_api_error(
         },
     )
 
-    assert response.status_code == 400
-    assert "DGEKT 映射失败" in response.json()["detail"]
-    assert "inconsistent with Q-matrix" in response.json()["detail"]
+    assert response.status_code == 200
+    body = response.json()
+    error_record = body["state_summary"]["error_records"][0]
+    diagnose_event = body["teaching_trace"][1]
+    assert error_record["category"] == "missing_mapping"
+    assert error_record["code"] == "missing_mapping"
+    assert "DGEKT 映射失败" in error_record["message"]
+    assert "inconsistent with Q-matrix" in error_record["message"]
+    assert diagnose_event["metadata"]["failure_stage"] == "diagnose"
+    assert diagnose_event["metadata"]["error_records"][0]["category"] == "missing_mapping"
+    assert body["teaching_trace_summary"]["expert_evidence"]["error_records"][0]["category"] == (
+        "missing_mapping"
+    )
 
 
 @pytest.mark.skipif(

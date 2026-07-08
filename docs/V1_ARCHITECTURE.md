@@ -819,6 +819,27 @@ updated_at
 
 `canonical_mapping` 保存 MathTutor question/concept 到 ASSIST2017 question/concept 和 Q-matrix 的对齐摘要；`coverage` 标记 `question`、`concept`、`global`、`unmapped_question` 或 `unmapped_concept`，用于可见化 RAG 缺口。
 
+### V1.3 Evidence Gap Model
+
+V1.3 的缺口可见化采用统一 `error_records` / `evidence_gaps`，覆盖：
+
+```text
+missing_mapping
+missing_content
+missing_rag_citation
+unsupported_dgekt_target
+scorer_failure
+```
+
+这些记录写入 `state_summary.error_records`、`teaching_trace[*].metadata.error_records`、`teaching_trace_summary.expert_evidence.evidence_gaps` 和 `teaching_trace_summary.expert_evidence.error_records`。
+
+边界：
+
+- `missing_content` 可以阻止确定性判题，但不能写入伪 KT facts。
+- `missing_rag_citation` 只能说明没有知识资源证据，不能生成假的 citation。
+- `scorer_failure` 只影响 attribution evidence；`KTDiagnosis.prediction_probability`、`weak_concepts`、`forgetting_risks` 仍以 KT engine 输出为准。
+- dashboard 可以展示这些缺口和重试入口，但不能把它们作为 mastery / risk 的来源。
+
 不同意图召回：
 
 ```text

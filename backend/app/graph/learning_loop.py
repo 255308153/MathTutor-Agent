@@ -4,12 +4,15 @@ from typing import Any, Literal
 
 from ..context.learning_context import LearningContextLayer, context_layer as default_context_layer
 from ..kt.engine import KTStateEngine
+from ..kt.dgekt_engine import DGEKTMappingError, DGEKTUnsupportedTargetError
 from ..kt.factory import create_kt_engine
 from ..memory.store import StudentMemory, StudentMemoryStore, memory_store
 from ..planning.recommender import RiskPrioritizedRecommender, recommender
 from ..planning.teaching_planner import TeachingPlanner, teaching_planner
 from ..rag.knowledge_rag import KnowledgeRAG, knowledge_rag
 from ..schemas.learning import (
+    AttributionEvidence,
+    KTDiagnosis,
     LearningEvent,
     MathTutorEventResponse,
     MathTutorState,
@@ -87,6 +90,19 @@ class MathTutorLearningLoop:
             rag_results = self.rag.search(query=rag_query, filters=fallback_filters, limit=3)
             rag_fallback_used = True
         state.rag_context = [result.model_dump() for result in rag_results]
+        if not state.rag_context:
+            self._record_issue(
+                state,
+                code="missing_rag_citation",
+                category="missing_rag_citation",
+                stage="load_context",
+                message="RAG 未找到相关知识资源",
+                actionable_hint="补充 canonical question/concept 对齐的 RAG 文档，或放宽检索过滤条件。",
+                severity="info",
+                recoverable=True,
+                append_to_errors=False,
+                details={"rag_query": rag_query, "rag_filters": rag_filters},
+            )
         state.teaching_trace.append(
             self._trace(
                 stage="load_context",
@@ -124,6 +140,7 @@ class MathTutorLearningLoop:
                     "grading_source": state.learning_event.payload.get("grading_source"),
                     "is_correct": state.learning_event.payload.get("is_correct"),
                     "correct_answer_available": "correct_answer" in state.learning_event.payload,
+                    "evidence_gap_records": list(state.error_records),
                 },
             )
         )
@@ -134,21 +151,75 @@ class MathTutorLearningLoop:
 
     def _diagnose(self, state: MathTutorState) -> None:
         target_question_id = self._target_question_id(state.learning_event)
-        state.kt_diagnosis = self.kt_engine.diagnose(
-            state.kt_progress,
-            target_question_id=target_question_id,
-        )
-        if target_question_id:
-            state.attribution_evidence = self.kt_engine.explain_prediction(
+        diagnosis_failed = False
+        try:
+            state.kt_diagnosis = self.kt_engine.diagnose(
                 state.kt_progress,
                 target_question_id=target_question_id,
             )
+        except DGEKTUnsupportedTargetError as exc:
+            diagnosis_failed = True
+            self._record_issue(
+                state,
+                code="unsupported_dgekt_target",
+                category="unsupported_dgekt_target",
+                stage="diagnose",
+                message=f"DGEKT 目标题不受支持：{exc}",
+                actionable_hint="检查 target question 是否在 ASSIST2017 Q-matrix 范围内。",
+                severity="warning",
+                recoverable=True,
+            )
+            state.kt_diagnosis = self._failed_kt_diagnosis(state, exc)
+        except DGEKTMappingError as exc:
+            diagnosis_failed = True
+            self._record_issue(
+                state,
+                code="missing_mapping",
+                category="missing_mapping",
+                stage="diagnose",
+                message=f"DGEKT 映射失败：{exc}",
+                actionable_hint="补齐 canonical mapping，或修正事件中的 ASSIST2017 question/concept id。",
+                severity="warning",
+                recoverable=True,
+            )
+            state.kt_diagnosis = self._failed_kt_diagnosis(state, exc)
+        if target_question_id and not diagnosis_failed:
+            try:
+                state.attribution_evidence = self.kt_engine.explain_prediction(
+                    state.kt_progress,
+                    target_question_id=target_question_id,
+                )
+            except Exception as exc:
+                self._record_issue(
+                    state,
+                    code="scorer_failure",
+                    category="scorer_failure",
+                    stage="diagnose",
+                    message=f"解释证据 scorer 失败：{exc}",
+                    actionable_hint="检查 DGEKT attribution scorer 输入、Q-matrix 和 checkpoint 配置。",
+                    severity="warning",
+                    recoverable=True,
+                )
+                state.attribution_evidence = self._failed_attribution_evidence(
+                    target_question_id=target_question_id,
+                    diagnosis=state.kt_diagnosis,
+                    exc=exc,
+                )
         state.kt_progress.weak_concepts = state.kt_diagnosis.weak_concepts
         state.kt_progress.forgetting_risks = state.kt_diagnosis.forgetting_risks
+        diagnose_failures = [
+            record
+            for record in state.error_records
+            if record.get("stage") == "diagnose" and record.get("severity") != "info"
+        ]
         state.teaching_trace.append(
             self._trace(
                 stage="diagnose",
-                content=f"{self._kt_engine_name()} 已产出权威学习诊断事实。",
+                content=(
+                    f"{self._kt_engine_name()} 诊断遇到可恢复证据缺口，已记录 failure stage。"
+                    if diagnose_failures
+                    else f"{self._kt_engine_name()} 已产出权威学习诊断事实。"
+                ),
                 metadata={
                     "kt_engine": self._kt_engine_name(),
                     "kt_engine_diagnostics": self._kt_engine_diagnostics(),
@@ -162,6 +233,8 @@ class MathTutorLearningLoop:
                         "forgetting_risks": state.kt_diagnosis.forgetting_risks,
                     },
                     "evidence": state.kt_diagnosis.evidence,
+                    "failure_stage": "diagnose" if diagnose_failures else None,
+                    "error_records": list(state.error_records),
                     "attribution_evidence": (
                         state.attribution_evidence.model_dump()
                         if state.attribution_evidence
@@ -180,6 +253,91 @@ class MathTutorLearningLoop:
         if isinstance(diagnostics, dict):
             return diagnostics
         return {"engine_name": self._kt_engine_name()}
+
+    def _record_issue(
+        self,
+        state: MathTutorState,
+        *,
+        code: str,
+        category: str,
+        stage: str,
+        message: str,
+        actionable_hint: str,
+        severity: str = "warning",
+        recoverable: bool = True,
+        append_to_errors: bool = True,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        record = {
+            "code": code,
+            "category": category,
+            "stage": stage,
+            "message": message,
+            "actionable_hint": actionable_hint,
+            "severity": severity,
+            "recoverable": recoverable,
+            "details": details or {},
+        }
+        state.error_records.append(record)
+        if append_to_errors and message not in state.errors:
+            state.errors.append(message)
+        return record
+
+    def _failed_kt_diagnosis(self, state: MathTutorState, exc: Exception) -> KTDiagnosis:
+        weak_concepts = list(state.kt_progress.weak_concepts)
+        forgetting_risks = list(state.kt_progress.forgetting_risks)
+        return KTDiagnosis(
+            weak_concepts=weak_concepts,
+            forgetting_risks=forgetting_risks,
+            prediction_probability=None,
+            evidence=[f"{self._kt_engine_name()} diagnosis unavailable: {exc}"],
+            metadata={
+                "engine_name": self._kt_engine_name(),
+                "failure": state.error_records[-1] if state.error_records else None,
+                "prediction_facts": {
+                    "prediction_probability": None,
+                    "weak_concepts": weak_concepts,
+                    "forgetting_risks": forgetting_risks,
+                },
+            },
+        )
+
+    def _failed_attribution_evidence(
+        self,
+        *,
+        target_question_id: str,
+        diagnosis: KTDiagnosis | None,
+        exc: Exception,
+    ) -> AttributionEvidence:
+        reason = f"Attribution scorer failed before producing paths: {exc}"
+        return AttributionEvidence(
+            target_question_id=target_question_id,
+            prediction_probability=diagnosis.prediction_probability if diagnosis else None,
+            evidence_status="unavailable",
+            partial_evidence=True,
+            partial_evidence_reason=reason,
+            scorer={
+                "name": "attribution_scorer",
+                "evidence_status": "unavailable",
+                "partial_evidence": True,
+                "partial_evidence_reason": reason,
+            },
+            top_paths=[
+                {
+                    "path_id": "scorer-failure",
+                    "evidence_status": "unavailable",
+                    "partial_evidence": True,
+                    "partial_evidence_reason": reason,
+                    "path_strength": 0.0,
+                    "relation_strength": 0.0,
+                    "relation_source": "unavailable",
+                    "weak_concept_hit": False,
+                    "weak_concept_evidence": [],
+                }
+            ],
+            key_history=[],
+            weak_concepts=diagnosis.weak_concepts if diagnosis else [],
+        )
 
     def _attribution_chain(self, state: MathTutorState) -> dict[str, Any] | None:
         if state.attribution_evidence is None:
@@ -231,6 +389,9 @@ class MathTutorLearningLoop:
             kt_facts=kt_facts,
             token_budget=1200,
         )
+        evidence_gaps = list(assembled.evidence_gaps)
+        self._attach_runtime_evidence_gaps(evidence_gaps, state)
+        assembled.evidence_gaps = evidence_gaps
         context_record = self.context_layer.record_context_trace(
             session_id=state.session_id,
             student_id=state.student_id,
@@ -262,6 +423,32 @@ class MathTutorLearningLoop:
                 concept.concept_id: concept.mastery for concept in state.kt_progress.concept_states
             },
         }
+
+    def _attach_runtime_evidence_gaps(
+        self,
+        evidence_gaps: list[dict[str, Any]],
+        state: MathTutorState,
+    ) -> None:
+        existing = {
+            (gap.get("gap_type"), gap.get("reason"))
+            for gap in evidence_gaps
+        }
+        for record in state.error_records:
+            key = (record["category"], record["message"])
+            if key in existing:
+                continue
+            evidence_gaps.append(
+                {
+                    "gap_type": record["category"],
+                    "reason": record["message"],
+                    "impact": record["actionable_hint"],
+                    "severity": record["severity"],
+                    "recoverable": record["recoverable"],
+                    "stage": record["stage"],
+                    "code": record["code"],
+                }
+            )
+            existing.add(key)
 
     def _context_concept_id(self, state: MathTutorState) -> str | None:
         if state.learning_event.payload.get("concept_id"):
@@ -366,6 +553,7 @@ class MathTutorLearningLoop:
                     "context_asset_count": len(state.context_assets),
                     "context_rationale": self._context_rationale(state),
                     "evidence_gaps": (state.assembled_context or {}).get("evidence_gaps", []),
+                    "error_records": list(state.error_records),
                     "recommendation_candidates": [
                         {
                             "question_id": question["question_id"],
@@ -608,20 +796,41 @@ class MathTutorLearningLoop:
             state.learning_event.payload["question_id"] = question_id
 
         if not question_id:
-            state.errors.append("answer_submitted missing question_id")
+            self._record_issue(
+                state,
+                code="missing_question_id",
+                category="missing_mapping",
+                stage="load_context",
+                message="answer_submitted missing question_id",
+                actionable_hint="在答题提交事件中提供 question_id，或先通过推荐题建立 pending_question。",
+            )
             return
 
         question = self.content.get_question(str(question_id))
         if question is None:
-            state.errors.append(f"unknown question_id: {question_id}")
+            self._record_issue(
+                state,
+                code="missing_teaching_content",
+                category="missing_content",
+                stage="load_context",
+                message=f"unknown question_id: {question_id}",
+                actionable_hint="补充本地 teaching content，或使用已映射推荐题提交答案。",
+            )
             return
 
         availability = question.get("content_availability") or self.content.content_availability(question)
         if "standard_answer" in availability.get("missing_fields", []):
             state.learning_event.payload["grading_source"] = "missing_teaching_content"
-            state.errors.append(
-                availability.get("fallback_message")
-                or f"{question_id} 缺少标准答案，无法进行服务端确定性判题。"
+            self._record_issue(
+                state,
+                code="missing_standard_answer",
+                category="missing_content",
+                stage="load_context",
+                message=(
+                    availability.get("fallback_message")
+                    or f"{question_id} 缺少标准答案，无法进行服务端确定性判题。"
+                ),
+                actionable_hint="补齐题目的 standard_answer 后再用于完整练习。",
             )
             return
 
@@ -630,7 +839,14 @@ class MathTutorLearningLoop:
             submitted_answer=state.learning_event.payload.get("answer"),
         )
         if grade is None:
-            state.errors.append(f"unknown question_id: {question_id}")
+            self._record_issue(
+                state,
+                code="missing_teaching_content",
+                category="missing_content",
+                stage="load_context",
+                message=f"unknown question_id: {question_id}",
+                actionable_hint="补充本地 teaching content，或使用已映射推荐题提交答案。",
+            )
             return
 
         state.learning_event.payload.update(

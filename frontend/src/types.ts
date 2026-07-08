@@ -100,6 +100,8 @@ export interface TeachingTraceSummary {
     student_memories?: Array<Record<string, unknown>>;
     context_assets?: Array<Record<string, unknown>>;
     assembled_context?: Record<string, unknown> | null;
+    evidence_gaps?: Array<Record<string, unknown>>;
+    error_records?: Array<Record<string, unknown>>;
     planner_decision?: Record<string, unknown> | null;
     recommendations?: RecommendedQuestion[];
   };
@@ -121,6 +123,7 @@ export interface MathTutorEventResponse {
     mistake_diagnosis?: Record<string, unknown> | null;
     next_action?: Record<string, unknown> | null;
     errors: string[];
+    error_records: Array<Record<string, unknown>>;
   };
   recommended_questions: RecommendedQuestion[];
   teaching_trace: TeachingTraceEvent[];

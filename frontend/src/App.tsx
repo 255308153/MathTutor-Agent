@@ -47,6 +47,7 @@ export default function App() {
   const conceptStates = current?.state_summary.concept_states ?? [];
   const recommendations = current?.recommended_questions ?? [];
   const topQuestion = recommendations[0];
+  const responseIssue = visibleResponseIssue(current);
 
   const todaySuggestion = useMemo(() => {
     if (!current) return "正在读取学习状态...";
@@ -158,9 +159,9 @@ export default function App() {
         />
       </section>
 
-      {error && (
+      {(error || responseIssue) && (
         <div className="error-banner" role="alert">
-          <span>{error}</span>
+          <span>{error || responseIssue}</span>
           <button onClick={() => void requestNextStep()} disabled={isLoading}>
             <RefreshCw size={16} />
             重试
@@ -323,6 +324,8 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const recommendations = evidence?.recommendations ?? [];
   const topPath = attribution?.top_paths?.[0];
   const keyHistory = attribution?.key_history?.[0];
+  const evidenceGaps = evidenceGapItems(evidence?.evidence_gaps ?? evidence?.assembled_context?.evidence_gaps);
+  const errorRecords = evidenceGapItems(evidence?.error_records);
   const evidenceStatus = topPath?.partial_evidence ? "partial evidence" : "完整证据";
 
   return (
@@ -387,6 +390,10 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <span>{attribution ? evidenceStatus : "暂无"}</span>
           </p>
           <p>
+            <strong>Evidence gaps</strong>
+            <span>{evidenceGaps.length + errorRecords.length} 项</span>
+          </p>
+          <p>
             <strong>Top path</strong>
             <span>
               {topPath
@@ -416,6 +423,24 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
       </details>
     </article>
   );
+}
+
+function visibleResponseIssue(response: MathTutorEventResponse | null) {
+  const records = response?.state_summary.error_records ?? [];
+  const warning = records.find((record) => record.severity !== "info");
+  if (warning?.message) {
+    const hint = warning.actionable_hint ? `；${String(warning.actionable_hint)}` : "";
+    return `${String(warning.message)}${hint}`;
+  }
+  return response?.state_summary.errors?.[0] ?? "";
+}
+
+function evidenceGapItems(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function teachingTypeName(type: string) {

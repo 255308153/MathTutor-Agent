@@ -35,6 +35,10 @@ class DGEKTMappingError(ValueError):
     """Raised when MathTutor events cannot be mapped into ASSIST2017 ids."""
 
 
+class DGEKTUnsupportedTargetError(DGEKTMappingError):
+    """Raised when an explicit DGEKT prediction target cannot be scored."""
+
+
 @dataclass(frozen=True)
 class DGEKTPaths:
     checkpoint_path: Path
@@ -494,7 +498,28 @@ class DGEKTStateEngine(KTStateEngine):
     ) -> int:
         if target_question_id:
             try:
-                return self._parse_assist2017_id(target_question_id, field_name="target_question_id")
+                target_id = self._parse_assist2017_id(
+                    target_question_id,
+                    field_name="target_question_id",
+                )
+                if target_id < 1 or target_id > ASSIST2017_QUESTION_COUNT:
+                    raise DGEKTUnsupportedTargetError(
+                        f"ASSIST2017 target question_id {target_id} is out of range 1.."
+                        f"{ASSIST2017_QUESTION_COUNT}."
+                    )
+                if target_id not in self.question_concept_map:
+                    raise DGEKTUnsupportedTargetError(
+                        f"ASSIST2017 target question_id {target_id} is missing from the "
+                        "configured Q-matrix."
+                    )
+                if not self.question_concept_map[target_id]:
+                    raise DGEKTUnsupportedTargetError(
+                        f"ASSIST2017 target question_id {target_id} has no concept in the "
+                        "configured Q-matrix."
+                    )
+                return target_id
+            except DGEKTUnsupportedTargetError:
+                raise
             except DGEKTMappingError:
                 pass
         return inference_input.question_ids[-1]
