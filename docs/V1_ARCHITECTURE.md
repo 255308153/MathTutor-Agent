@@ -840,6 +840,32 @@ scorer_failure
 - `scorer_failure` 只影响 attribution evidence；`KTDiagnosis.prediction_probability`、`weak_concepts`、`forgetting_risks` 仍以 KT engine 输出为准。
 - dashboard 可以展示这些缺口和重试入口，但不能把它们作为 mastery / risk 的来源。
 
+### V1.3 End-To-End Acceptance Chain
+
+#25 不新增新的事实来源，而是验证真实语义对齐链路已经闭合：
+
+```text
+next-step advice
+-> mapped recommendation
+-> answer submission
+-> DGEKT diagnosis
+-> RAG explanation / citation
+-> mistake diagnosis
+-> attribution evidence
+-> TeachingTrace
+```
+
+验收 smoke 至少要证明同一 canonical concept 同时出现在：
+
+- `KTDiagnosis.weak_concepts` / `forgetting_risks`。
+- 推荐题的 `concept_id`、`reason`、`canonical_mapping` 和 `selected_canonical_targets`。
+- RAG citation 的 `concept_id` / `question_id` / ASSIST2017 metadata。
+- `mistake_diagnosis.concept`。
+- `AttributionEvidence.key_history`、`top_paths.weak_concept_evidence` 和 `diagnose.attribution_chain`。
+- `assembled_context.normalized_context.knowledge_resource` 与 evidence gaps。
+
+这里的 context、RAG 和 TeachingTrace 只负责组装和展示证据；DGEKT / KT engine 输出的 prediction facts 仍是权威事实。
+
 不同意图召回：
 
 ```text

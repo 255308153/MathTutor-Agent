@@ -225,6 +225,25 @@ python -m backend.app.mapping.build_assist2017_mapping \
 
 `state_summary.error_records` 面向 API 和 dashboard 顶部提示；`TeachingTrace` 的 `load_context` / `diagnose` metadata 与 `teaching_trace_summary.expert_evidence.evidence_gaps` 面向研究者审计。partial attribution 会继续显示 `partial_evidence=true` 和 `partial_evidence_reason`，不会伪装为完整路径证据。
 
+### V1.3 end-to-end acceptance path
+
+#25 的验收路径是同一 canonical concept 贯穿完整学习闭环：
+
+```text
+next-step advice
+-> mapped recommendation
+-> answer submission
+-> DGEKT diagnosis
+-> RAG explanation / citation
+-> mistake diagnosis
+-> attribution evidence
+-> TeachingTrace
+```
+
+本地默认测试使用小型 fake DGEKT runtime 和 fixture Q-matrix，不读取真实 checkpoint。smoke case 锁定 `q_frac_001` / `c_fraction_addition`：推荐题返回 ASSIST2017 Q3 / C2、答错后 DGEKT 产生 `prediction_probability=0.2`、RAG citation 指向同一题或知识点、错因诊断指向同一 concept，TeachingTrace 的 `diagnose` / `context_assemble` / `plan` 会同时展示 attribution chain、knowledge_resource、selected canonical target 和 memory evidence gap。
+
+真实 checkpoint 演示仍需显式设置 `MATHTUTOR_KT_ENGINE=dgekt` 与本地 ASSIST2017 路径；大数据、checkpoint、`.pkl` 和生成 artifact 不提交 Git。
+
 ## V1.4 LearningContextLayer 最小切片
 
 V1.4 新增最小 LearningContextLayer，用来统一组织本轮学习事件需要的上下文资产。它不是新的学习事实来源，也不是 VikingDB / OpenViking Runtime；默认使用本地内存 fallback，不需要 Mem0、VikingDB、OpenViking 或外部 provider 凭据。
@@ -244,7 +263,7 @@ V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context�
 - RAG 没命中时不伪造 knowledge_resource，也不覆盖 KT facts，而是在 evidence gaps 标记“RAG 未找到相关知识资源”。
 - planner / recommender / response 读取 `assembled_context` 中的 normalized context，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
 
-## V1.2 已知限制与下一阶段优先级
+## V1.3 / V1.4 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：
 

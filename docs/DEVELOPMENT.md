@@ -100,7 +100,27 @@ uvicorn backend.app.main:app --reload
 
 前端仍按同一条 dashboard 路径操作。DGEKT 模式下应在 `模型证据` 看到 engine、checkpoint provenance、prediction facts、DGEKT attribution、Top path、Path strength 和 Key history。
 
-V1.2 已知限制：
+V1.3 端到端验收路径：
+
+```text
+下一步建议 -> mapped 推荐题 -> 答题提交 -> DGEKT diagnosis -> RAG 解释
+-> 错因诊断 -> attribution evidence -> TeachingTrace
+```
+
+本地 CI 不读取真实 checkpoint，而是用 fake DGEKT runtime、fixture Q-matrix 和 `q_frac_001` / `c_fraction_addition` smoke case 验证链路。验收点包括：
+
+- 推荐题携带 canonical mapping、ASSIST2017 Q3 / C2、Q-matrix reference 和 content provenance。
+- 答错后 `KTDiagnosis.prediction_probability`、`weak_concepts`、`forgetting_risks` 仍来自 DGEKT / KT engine。
+- RAG citation、mistake diagnosis、attribution `key_history`、`top_paths`、TeachingTrace `selected_canonical_targets` 都能看到同一 canonical concept。
+- 新用户没有长期记忆时，`assembled_context.evidence_gaps` 显示“无可用记忆”，不伪造 memory asset。
+
+可单独运行：
+
+```bash
+python3 -m pytest backend/tests/test_kt_engine_config.py::test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path -q
+```
+
+V1.3 / V1.4 已知限制：
 
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖 checkpoint。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；大模型和原始数据只通过本地路径引用。
