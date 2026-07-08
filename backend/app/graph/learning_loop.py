@@ -167,6 +167,7 @@ class MathTutorLearningLoop:
                         if state.attribution_evidence
                         else None
                     ),
+                    "attribution_chain": self._attribution_chain(state),
                 },
             )
         )
@@ -179,6 +180,26 @@ class MathTutorLearningLoop:
         if isinstance(diagnostics, dict):
             return diagnostics
         return {"engine_name": self._kt_engine_name()}
+
+    def _attribution_chain(self, state: MathTutorState) -> dict[str, Any] | None:
+        if state.attribution_evidence is None:
+            return None
+        evidence = state.attribution_evidence.model_dump()
+        top_paths = evidence.get("top_paths", [])
+        return {
+            "raw_model_target": evidence.get("raw_model_target"),
+            "mapped_teaching_content": evidence.get("mapped_teaching_content"),
+            "attribution_evidence": {
+                "scorer": evidence.get("scorer"),
+                "evidence_status": evidence.get("evidence_status"),
+                "partial_evidence": evidence.get("partial_evidence"),
+                "partial_evidence_reason": evidence.get("partial_evidence_reason"),
+                "top_path_count": len(top_paths),
+                "weak_concept_hit_count": sum(
+                    1 for path in top_paths if path.get("weak_concept_hit")
+                ),
+            },
+        }
 
     def _assemble_context(self, state: MathTutorState) -> None:
         kt_facts = self._authoritative_kt_facts(state)

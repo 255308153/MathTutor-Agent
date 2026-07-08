@@ -188,9 +188,94 @@ def test_dgekt_engine_matches_kt_contract_shape(
     assert dgekt_evidence.top_paths[0]["target_assist2017_question_id"] == 2
     assert "concept_relation_strength" in dgekt_evidence.top_paths[0]
     assert "path_weight" in dgekt_evidence.top_paths[0]
+    assert dgekt_evidence.top_paths[0]["path_strength"] == dgekt_evidence.top_paths[0]["path_weight"]
+    assert "relation_strength" in dgekt_evidence.top_paths[0]
+    assert dgekt_evidence.top_paths[0]["relation_source"] == "q_matrix_recent_history_proxy"
     assert dgekt_evidence.key_history[0]["assist2017_question_id"] == 1
+    assert "ASSIST2017 Q1" in dgekt_evidence.key_history[0]["readable_summary"]
     assert dgekt_evidence.prediction_probability == 0.2
     assert dgekt_diagnosis.prediction_probability == 0.2
+
+
+def test_dgekt_online_scorer_evidence_shape_and_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-scorer",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-scorer",
+                student_id="student-dgekt-scorer",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "assist2017_question_id": 1,
+                    "is_correct": False,
+                },
+            )
+        ],
+    )
+
+    evidence = engine.explain_prediction(progress, target_question_id="assist2017:3")
+    top_path = evidence.top_paths[0]
+
+    assert evidence.scorer["name"] == "dgekt_online_graph_proxy_scorer"
+    assert evidence.scorer["relation_source"] == "q_matrix_recent_history_proxy"
+    assert evidence.provenance["offline_path_scorer_available"] is False
+    assert evidence.raw_model_target["assist2017_question_id"] == 3
+    assert evidence.canonical_mapping["q_matrix_reference"]["concept_columns"] == [1]
+    assert evidence.mapped_teaching_content["mapping_status"] == "q_matrix_only"
+    assert evidence.partial_evidence is True
+    assert "offline DGEKT explainability path scorer" in evidence.partial_evidence_reason
+    assert top_path["scorer_name"] == "dgekt_online_graph_proxy_scorer"
+    assert top_path["path_strength"] == top_path["path_weight"]
+    assert top_path["relation_strength"] == 1.0
+    assert top_path["relation_source"] == "q_matrix_recent_history_proxy"
+    assert top_path["weak_concept_hit"] is True
+    assert top_path["weak_concept_evidence"][0]["concept_id"] == "c_fraction_addition"
+    assert top_path["partial_evidence"] is True
+    assert "offline DGEKT explainability path scorer" in top_path["partial_evidence_reason"]
+    assert "ASSIST2017 Q1" in evidence.key_history[0]["readable_summary"]
+
+
+def test_dgekt_online_scorer_marks_no_history_partial_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+    )
+
+    evidence = engine.explain_prediction(
+        KTLearningProgress(student_id="student-dgekt-no-history"),
+        target_question_id="assist2017:1",
+    )
+
+    assert evidence.partial_evidence is True
+    assert evidence.evidence_status == "partial"
+    assert evidence.partial_evidence_reason == "No graded ASSIST2017 answer history is available."
+    assert evidence.scorer["name"] == "dgekt_online_graph_proxy_scorer"
+    assert evidence.top_paths[0]["partial_evidence_reason"] == (
+        "No graded ASSIST2017 answer history is available."
+    )
+    assert evidence.top_paths[0]["path_strength"] == 0.0
+    assert evidence.key_history == []
 
 
 def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
@@ -354,7 +439,19 @@ def test_api_answer_submission_can_use_dgekt_engine(
     assert attribution["prediction_probability"] == 0.2
     assert attribution["top_paths"][0]["partial_evidence"] is True
     assert attribution["top_paths"][0]["evidence_status"] == "partial"
+    assert attribution["top_paths"][0]["path_strength"] == attribution["top_paths"][0]["path_weight"]
+    assert attribution["top_paths"][0]["relation_source"] == "q_matrix_recent_history_proxy"
+    assert attribution["top_paths"][0]["weak_concept_hit"] is True
     assert attribution["key_history"][0]["assist2017_question_id"] == 1
+    assert "ASSIST2017 Q1" in attribution["key_history"][0]["readable_summary"]
+    attribution_chain = body["teaching_trace"][1]["metadata"]["attribution_chain"]
+    assert attribution_chain["raw_model_target"]["assist2017_question_id"] == 1
+    assert attribution_chain["mapped_teaching_content"]["question_id"] == "q_frac_001"
+    assert (
+        attribution_chain["attribution_evidence"]["scorer"]["name"]
+        == "dgekt_online_graph_proxy_scorer"
+    )
+    assert attribution_chain["attribution_evidence"]["weak_concept_hit_count"] == 1
     assert "partial_evidence" not in body["response"]
     assert "top_paths" not in body["response"]
     assert "DGEKT inference input built" in body["teaching_trace"][1]["metadata"]["evidence"][2]

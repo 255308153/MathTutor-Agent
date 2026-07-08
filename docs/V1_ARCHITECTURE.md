@@ -609,6 +609,14 @@ MockKTStateEngine
 DGEKTStateEngine
 读取真实模型、Q-matrix、序列数据、解释信号。
 
+V1.3 起，DGEKTStateEngine 在显式启用时还会输出 online partial attribution evidence：
+
+- `raw_model_target`：DGEKT 使用的 ASSIST2017 question / concept target。
+- `mapped_teaching_content`：映射回 MathTutor question / concept / teaching_type 的教学内容引用。
+- `key_history`：最近进入 one-hot 序列的已判题历史。
+- `top_paths`：基于 recent history + Q-matrix 的 partial attribution path，包含 `path_strength`、`relation_strength`、`relation_source`、`weak_concept_hit` 和 `partial_evidence_reason`。
+- `scorer.name=dgekt_online_graph_proxy_scorer`：说明这是在线代理 scorer，不是原工程离线 `attribution_paths.csv` / `key_history.csv` 的完整双图归因。
+
 未来可扩展：
 SAFKTStateEngine
 BKTStateEngine
@@ -935,6 +943,7 @@ TeachingTrace
 ├─ intent
 ├─ retrieved_context
 ├─ kt_diagnosis
+├─ attribution_chain
 ├─ planner_decision
 ├─ selected_action
 ├─ recommended_questions
@@ -1129,7 +1138,7 @@ RAG 引用溯源
 MockKTStateEngine
 KTDiagnosis
 AttributionEvidence schema
-DGEKTStateEngine 接口预留
+DGEKTStateEngine + online partial attribution scorer
 ```
 
 ### Milestone 5：教学规划

@@ -14,6 +14,13 @@ ASSIST2017_QUESTION_COUNT = 3162
 ASSIST2017_HIDDEN_DIM = 128
 ASSIST2017_LAYERS = 1
 ASSIST2017_MAX_STEP = 50
+DGEKT_ONLINE_SCORER_NAME = "dgekt_online_graph_proxy_scorer"
+DGEKT_ONLINE_SCORER_VERSION = "v1.3-partial"
+DGEKT_RELATION_SOURCE = "q_matrix_recent_history_proxy"
+DGEKT_PARTIAL_ATTRIBUTION_REASON = (
+    "Online MathTutor has the DGEKT prediction, recent ASSIST2017 sequence, and Q-matrix "
+    "links, but does not yet run the original offline DGEKT explainability path scorer."
+)
 
 
 class DGEKTConfigurationError(RuntimeError):
@@ -608,12 +615,39 @@ class DGEKTStateEngine(KTStateEngine):
             return AttributionEvidence(
                 target_question_id=target_question_id,
                 prediction_probability=None,
+                evidence_status="partial",
+                partial_evidence=True,
+                partial_evidence_reason="No graded ASSIST2017 answer history is available.",
+                raw_model_target={
+                    "target_question_id": target_question_id,
+                    "dataset": self.dataset,
+                    "model_vocabulary": "DGEKT ASSIST2017 question id",
+                    "mapping_status": "no_history",
+                },
+                mapped_teaching_content={
+                    "question_id": target_question_id,
+                    "mapping_status": "unavailable",
+                    "missing_reason": "No graded ASSIST2017 answer history is available.",
+                },
+                scorer=self._scorer_metadata(
+                    evidence_status="partial",
+                    partial_evidence_reason="No graded ASSIST2017 answer history is available.",
+                ),
+                provenance=self._attribution_provenance(),
                 top_paths=[
                     {
                         "path_id": "dgekt-partial-no-history",
                         "engine": "dgekt",
+                        "scorer_name": DGEKT_ONLINE_SCORER_NAME,
+                        "scorer_version": DGEKT_ONLINE_SCORER_VERSION,
                         "evidence_status": "partial",
                         "partial_evidence": True,
+                        "partial_evidence_reason": "No graded ASSIST2017 answer history is available.",
+                        "relation_source": DGEKT_RELATION_SOURCE,
+                        "relation_strength": 0.0,
+                        "path_strength": 0.0,
+                        "weak_concept_hit": False,
+                        "weak_concept_evidence": [],
                         "description": (
                             "No graded ASSIST2017 answer history is available, so DGEKT cannot "
                             "build online attribution paths for this turn."
@@ -635,19 +669,127 @@ class DGEKTStateEngine(KTStateEngine):
         ]
         target_concept_id = target_concepts[0]
         key_history = self._attribution_key_history(progress, inference_input)
-        top_paths = self._partial_attribution_paths(
+        mapped_teaching_content = self._mapped_target_content(
             key_history=key_history,
             target_question_id=target_question_id,
             target_assist2017_id=target_assist2017_id,
             target_concept_id=target_concept_id,
         )
+        top_paths = self._partial_attribution_paths(
+            key_history=key_history,
+            target_question_id=target_question_id,
+            target_assist2017_id=target_assist2017_id,
+            target_concept_id=target_concept_id,
+            weak_concepts=weak_concepts,
+        )
         return AttributionEvidence(
             target_question_id=target_question_id,
+            target_concept_id=mapped_teaching_content.get("concept_id"),
+            target_assist2017_question_id=target_assist2017_id,
+            target_assist2017_concept_id=target_concept_id,
             prediction_probability=prediction_probability,
+            evidence_status="partial",
+            partial_evidence=True,
+            partial_evidence_reason=DGEKT_PARTIAL_ATTRIBUTION_REASON,
+            raw_model_target={
+                "target_question_id": target_question_id,
+                "assist2017_question_id": target_assist2017_id,
+                "assist2017_concept_id": target_concept_id,
+                "dataset": self.dataset,
+                "model_vocabulary": "DGEKT ASSIST2017 question/concept ids",
+            },
+            mapped_teaching_content=mapped_teaching_content,
+            canonical_mapping={
+                "assist2017_question_id": target_assist2017_id,
+                "assist2017_concept_id": target_concept_id,
+                "q_matrix_reference": {
+                    "question_row": target_assist2017_id,
+                    "concept_columns": target_concepts,
+                    "relation_source": DGEKT_RELATION_SOURCE,
+                },
+                "source": mapped_teaching_content.get("mapping_status"),
+            },
+            scorer=self._scorer_metadata(
+                evidence_status="partial",
+                partial_evidence_reason=DGEKT_PARTIAL_ATTRIBUTION_REASON,
+            ),
+            provenance=self._attribution_provenance(),
             top_paths=top_paths,
             key_history=key_history,
             weak_concepts=weak_concepts,
         )
+
+    def _scorer_metadata(
+        self,
+        *,
+        evidence_status: str,
+        partial_evidence_reason: str,
+    ) -> dict[str, Any]:
+        return {
+            "name": DGEKT_ONLINE_SCORER_NAME,
+            "version": DGEKT_ONLINE_SCORER_VERSION,
+            "engine": "dgekt",
+            "dataset": self.dataset,
+            "relation_source": DGEKT_RELATION_SOURCE,
+            "evidence_status": evidence_status,
+            "partial_evidence": evidence_status == "partial",
+            "partial_evidence_reason": partial_evidence_reason,
+            "vocabulary": [
+                "DGEKT",
+                "ASSIST2017 question_id",
+                "ASSIST2017 concept_id",
+                "Q-matrix",
+                "recent history",
+                "top attribution paths",
+            ],
+        }
+
+    def _attribution_provenance(self) -> dict[str, Any]:
+        return {
+            "checkpoint_path": str(self.paths.checkpoint_path),
+            "dataset_dir": str(self.paths.dataset_dir),
+            "q_matrix_path": str(self.paths.q_matrix_path),
+            "model_epoch": self.metadata.get("epoch"),
+            "model_auc": self.metadata.get("auc"),
+            "model_acc": self.metadata.get("acc"),
+            "source": "online_dgekt_adapter",
+            "offline_path_scorer_available": False,
+        }
+
+    def _mapped_target_content(
+        self,
+        *,
+        key_history: list[dict[str, Any]],
+        target_question_id: str,
+        target_assist2017_id: int,
+        target_concept_id: int,
+    ) -> dict[str, Any]:
+        for history in reversed(key_history):
+            if (
+                history.get("question_id") == target_question_id
+                or history.get("assist2017_question_id") == target_assist2017_id
+            ):
+                return {
+                    "question_id": history.get("question_id") or target_question_id,
+                    "concept_id": history.get("concept_id")
+                    or f"assist2017_concept:{target_concept_id}",
+                    "concept_name": history.get("concept_name")
+                    or f"ASSIST2017 concept {target_concept_id}",
+                    "assist2017_question_id": target_assist2017_id,
+                    "assist2017_concept_id": target_concept_id,
+                    "mapping_status": "recent_history_canonical_payload",
+                    "relation_source": DGEKT_RELATION_SOURCE,
+                }
+
+        return {
+            "question_id": target_question_id,
+            "concept_id": f"assist2017_concept:{target_concept_id}",
+            "concept_name": f"ASSIST2017 concept {target_concept_id}",
+            "assist2017_question_id": target_assist2017_id,
+            "assist2017_concept_id": target_concept_id,
+            "mapping_status": "q_matrix_only",
+            "relation_source": DGEKT_RELATION_SOURCE,
+        }
 
     def _attribution_key_history(
         self,
@@ -679,6 +821,11 @@ class DGEKTStateEngine(KTStateEngine):
                     "concept_name": concept.get("concept_name"),
                     "assist2017_concept_id": concept_id,
                     "influence_source": "recent_dgekt_input",
+                    "readable_summary": (
+                        f"ASSIST2017 Q{question_id} | "
+                        f"{'correct' if answer == 1 else 'incorrect'} | "
+                        f"concept {concept_id}"
+                    ),
                 }
             )
         return key_history[-5:]
@@ -690,6 +837,7 @@ class DGEKTStateEngine(KTStateEngine):
         target_question_id: str,
         target_assist2017_id: int,
         target_concept_id: int,
+        weak_concepts: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         paths: list[dict[str, Any]] = []
         for rank, history in enumerate(reversed(key_history), start=1):
@@ -699,11 +847,17 @@ class DGEKTStateEngine(KTStateEngine):
                 1.0 if history.get("assist2017_question_id") == target_assist2017_id else 0.0
             )
             recency_strength = round(1.0 / rank, 6)
+            relation_strength = max(concept_relation_strength, question_relation_strength)
             path_weight = round(
                 (0.55 * recency_strength)
                 + (0.30 * concept_relation_strength)
                 + (0.15 * question_relation_strength),
                 6,
+            )
+            weak_concept_evidence = self._weak_concept_hit_evidence(
+                weak_concepts=weak_concepts,
+                target_concept_id=target_concept_id,
+                history_concept_id=history_concept_id,
             )
             paths.append(
                 {
@@ -712,14 +866,18 @@ class DGEKTStateEngine(KTStateEngine):
                         f"{target_assist2017_id}-{rank}"
                     ),
                     "engine": "dgekt",
+                    "scorer_name": DGEKT_ONLINE_SCORER_NAME,
+                    "scorer_version": DGEKT_ONLINE_SCORER_VERSION,
                     "path_type": "recent_history_to_target_concept",
                     "evidence_status": "partial",
                     "partial_evidence": True,
+                    "partial_evidence_reason": DGEKT_PARTIAL_ATTRIBUTION_REASON,
                     "rank": rank,
                     "history_question_id": history.get("question_id"),
                     "history_assist2017_question_id": history.get("assist2017_question_id"),
                     "history_answer": history.get("answer"),
                     "history_is_correct": history.get("is_correct"),
+                    "history_readable_summary": history.get("readable_summary"),
                     "history_position": history.get("history_position"),
                     "history_concept_id": history.get("concept_id"),
                     "history_assist2017_concept_id": history_concept_id,
@@ -733,9 +891,14 @@ class DGEKTStateEngine(KTStateEngine):
                     ),
                     "concept_relation_strength": concept_relation_strength,
                     "question_relation_strength": question_relation_strength,
+                    "relation_strength": relation_strength,
+                    "relation_source": DGEKT_RELATION_SOURCE,
                     "recency_strength": recency_strength,
                     "path_weight": path_weight,
-                    "graph_source": "q_matrix_recent_history_proxy",
+                    "path_strength": path_weight,
+                    "graph_source": DGEKT_RELATION_SOURCE,
+                    "weak_concept_hit": bool(weak_concept_evidence),
+                    "weak_concept_evidence": weak_concept_evidence,
                     "limitations": (
                         "Online MathTutor currently exposes recent sequence and Q-matrix concept "
                         "links, not the original offline DGEKT path scorer; treat this as partial "
@@ -744,3 +907,38 @@ class DGEKTStateEngine(KTStateEngine):
                 }
             )
         return sorted(paths, key=lambda path: path["path_weight"], reverse=True)[:5]
+
+    def _weak_concept_hit_evidence(
+        self,
+        *,
+        weak_concepts: list[dict[str, Any]],
+        target_concept_id: int,
+        history_concept_id: Any,
+    ) -> list[dict[str, Any]]:
+        hit_concept_ids = {
+            str(target_concept_id),
+            f"assist2017_concept:{target_concept_id}",
+        }
+        if history_concept_id is not None:
+            hit_concept_ids.add(str(history_concept_id))
+            hit_concept_ids.add(f"assist2017_concept:{history_concept_id}")
+
+        evidence: list[dict[str, Any]] = []
+        for weak in weak_concepts:
+            assist_concept = weak.get("assist2017_concept_id")
+            concept_id = weak.get("concept_id")
+            if (
+                (assist_concept is not None and str(assist_concept) in hit_concept_ids)
+                or (concept_id is not None and str(concept_id) in hit_concept_ids)
+            ):
+                evidence.append(
+                    {
+                        "concept_id": concept_id,
+                        "concept_name": weak.get("concept_name"),
+                        "assist2017_concept_id": assist_concept,
+                        "mastery": weak.get("mastery"),
+                        "prediction_probability": weak.get("prediction_probability"),
+                        "hit_source": "dgekt_weak_concept_proxy",
+                    }
+                )
+        return evidence
