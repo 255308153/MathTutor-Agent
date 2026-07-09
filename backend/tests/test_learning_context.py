@@ -112,6 +112,83 @@ def test_context_asset_store_filters_and_orders_assets() -> None:
     assert store.search(student_id="student-store", question_id="q_frac_001")[0].asset_id == "ctx-fresh"
 
 
+def test_context_asset_store_filters_source_freshness_confidence_and_relevance() -> None:
+    store = InMemoryContextAssetStore()
+    exact = store.write(
+        ContextAsset(
+            asset_id="ctx-exact",
+            asset_type="task_state",
+            source_type="learning_loop_event",
+            source_ref="event:exact",
+            summary="current exact question task",
+            student_id="student-filter",
+            session_id="session-filter",
+            concept_id="c_fraction_addition",
+            question_id="q_frac_001",
+            confidence=0.7,
+            freshness="fresh",
+        )
+    )
+    higher_confidence_but_less_relevant = store.write(
+        ContextAsset(
+            asset_id="ctx-concept",
+            asset_type="student_memory",
+            source_type="student_memory_store",
+            source_ref="memory:concept",
+            summary="concept memory",
+            student_id="student-filter",
+            session_id="session-filter",
+            concept_id="c_fraction_addition",
+            confidence=0.95,
+            freshness="fresh",
+        )
+    )
+    store.write(
+        ContextAsset(
+            asset_id="ctx-stale",
+            asset_type="student_memory",
+            source_type="student_memory_store",
+            source_ref="memory:stale",
+            summary="stale memory",
+            student_id="student-filter",
+            session_id="session-filter",
+            concept_id="c_fraction_addition",
+            confidence=0.99,
+            freshness="stale",
+        )
+    )
+    store.write(
+        ContextAsset(
+            asset_id="ctx-low",
+            asset_type="knowledge_resource",
+            source_type="local_rag",
+            source_ref="rag:low",
+            summary="low confidence doc",
+            student_id="student-filter",
+            session_id="session-filter",
+            concept_id="c_fraction_addition",
+            confidence=0.2,
+            freshness="fresh",
+        )
+    )
+
+    results = store.search(
+        student_id="student-filter",
+        session_id="session-filter",
+        source_types=["learning_loop_event", "student_memory_store"],
+        freshness=["fresh"],
+        min_confidence=0.6,
+        concept_id="c_fraction_addition",
+        question_id="q_frac_001",
+        intent="answer_submission",
+    )
+
+    assert [asset.asset_id for asset in results] == [
+        exact.asset_id,
+        higher_confidence_but_less_relevant.asset_id,
+    ]
+
+
 def test_learning_context_layer_assembles_context_without_overwriting_kt_facts() -> None:
     layer = LearningContextLayer(store=InMemoryContextAssetStore())
     kt_facts = {
@@ -215,6 +292,137 @@ def test_learning_context_layer_normalizes_memory_rag_and_evidence_gaps() -> Non
     ]
 
 
+def test_context_assembler_trims_budget_and_reports_included_excluded_reasons() -> None:
+    layer = LearningContextLayer(store=InMemoryContextAssetStore())
+    assets = [
+        ContextAsset(
+            asset_id="ctx-task-budget",
+            asset_type="task_state",
+            source_type="learning_loop_state",
+            source_ref="progress:budget",
+            summary="current task",
+            included_reason="纳入当前任务状态快照",
+            confidence=1.0,
+            freshness="fresh",
+        ),
+        ContextAsset(
+            asset_id="ctx-memory-budget",
+            asset_type="student_memory",
+            source_type="student_memory_store",
+            source_ref="memory:budget",
+            summary="学生偏好步骤化讲解。",
+            metadata={"memory_type": "preference", "normalized_kind": "preference"},
+            included_reason="参考学生偏好",
+            confidence=0.9,
+            freshness="recent",
+        ),
+        ContextAsset(
+            asset_id="ctx-knowledge-budget",
+            asset_type="knowledge_resource",
+            source_type="local_rag",
+            source_ref="rag:budget",
+            summary="very large knowledge resource",
+            content_preview="知识资源 " * 80,
+            metadata={"doc_type": "concept_note", "normalized_kind": "concept_note"},
+            included_reason="参考相关知识资源",
+            confidence=0.8,
+            freshness="fresh",
+        ),
+    ]
+
+    assembled = layer.assemble_context(
+        intent="next_step_advice",
+        assets=assets,
+        kt_facts={"prediction_probability": 0.58},
+        token_budget=6,
+    )
+
+    selected_ids = {
+        summary["asset_id"]
+        for summary in assembled.asset_summaries
+        if summary["selection_status"] == "included"
+    }
+    excluded = {
+        summary["asset_id"]: summary
+        for summary in assembled.asset_summaries
+        if summary["selection_status"] == "excluded"
+    }
+    assert selected_ids == {"ctx-task-budget", "ctx-memory-budget"}
+    assert excluded["ctx-knowledge-budget"]["excluded_reason"] == (
+        "超出上下文预算，已裁剪低优先级资产"
+    )
+    assert assembled.budget_used <= assembled.budget_limit == 6
+    assert assembled.compression_summary["excluded_asset_count"] == 1
+    assert assembled.normalized_context["student_memory"][0]["summary"] == "学生偏好步骤化讲解。"
+    assert any(gap["gap_type"] == "context_budget" for gap in assembled.evidence_gaps)
+
+
+def test_context_assembler_reports_stale_low_confidence_and_provider_gaps() -> None:
+    layer = LearningContextLayer(store=InMemoryContextAssetStore())
+    assets = [
+        ContextAsset(
+            asset_id="ctx-stale-task",
+            asset_type="task_state",
+            source_type="learning_loop_state",
+            source_ref="progress:stale",
+            summary="old task state",
+            confidence=0.9,
+            freshness="stale",
+        ),
+        ContextAsset(
+            asset_id="ctx-memory-gap",
+            asset_type="student_memory",
+            source_type="student_memory_store",
+            source_ref="memory:gap",
+            summary="学生偏好图示。",
+            confidence=0.9,
+            freshness="recent",
+        ),
+        ContextAsset(
+            asset_id="ctx-low-observation",
+            asset_type="tool_observation",
+            source_type="rag",
+            source_ref="rag:low-confidence",
+            summary="low confidence retrieval",
+            confidence=0.3,
+            freshness="fresh",
+        ),
+        ContextAsset(
+            asset_id="ctx-provider-failure",
+            asset_type="knowledge_resource",
+            source_type="vikingdb_failure",
+            source_ref="provider:vikingdb",
+            summary="provider failure placeholder",
+            metadata={"provider_error": "timeout"},
+            excluded_reason="provider failure",
+            confidence=0.1,
+            freshness="fresh",
+        ),
+    ]
+
+    assembled = layer.assemble_context(
+        intent="answer_submission",
+        assets=assets,
+        kt_facts={"prediction_probability": 0.58},
+        token_budget=64,
+    )
+
+    gap_types = {gap["gap_type"] for gap in assembled.evidence_gaps}
+    assert {
+        "knowledge_resource",
+        "stale_task_state",
+        "low_confidence_observation",
+        "provider_failure",
+    }.issubset(gap_types)
+    omitted = [
+        summary
+        for summary in assembled.asset_summaries
+        if summary["asset_id"] == "ctx-provider-failure"
+    ][0]
+    assert omitted["selection_status"] == "excluded"
+    assert omitted["excluded_reason"] == "provider failure"
+
+
 def test_next_step_api_generates_assembled_context_and_preserves_kt_facts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -258,6 +466,9 @@ def test_next_step_api_generates_assembled_context_and_preserves_kt_facts(
 
     assert "context_assemble" in body["teaching_trace_summary"]["stages"]
     assert expert["context_assets"]
+    assert assembled["budget_used"] <= assembled["budget_limit"]
+    assert assembled["compression_summary"]["strategy"] == "priority_budget_summary"
+    assert assembled["asset_summaries"][0]["selection_status"] == "included"
     assert assembled["authoritative_kt_facts"]["weak_concepts"] == kt_diagnosis["weak_concepts"]
     assert assembled["authoritative_kt_facts"]["forgetting_risks"] == kt_diagnosis["forgetting_risks"]
     assert (
@@ -601,6 +812,14 @@ def test_answer_submission_records_task_tool_and_trace_context_assets_for_wrong_
     assert expert["context_asset_selection"]["selected"]
     assert expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"] == (
         expert["kt_diagnosis"]["prediction_probability"]
+    )
+    assert expert["assembled_context"]["budget_used"] <= expert["assembled_context"]["budget_limit"]
+    assert expert["assembled_context"]["compression_summary"]["strategy"] == (
+        "priority_budget_summary"
+    )
+    assert all(
+        "selection_status" in summary
+        for summary in expert["assembled_context"]["asset_summaries"]
     )
     assert body["state_summary"]["weak_concepts"] == expert["kt_diagnosis"]["weak_concepts"]
 

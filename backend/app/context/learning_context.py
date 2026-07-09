@@ -49,6 +49,9 @@ class AssembledContext(BaseModel):
     asset_summaries: list[dict[str, Any]] = Field(default_factory=list)
     evidence_gaps: list[dict[str, Any]] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
+    budget_used: int = 0
+    budget_limit: int = 0
+    compression_summary: dict[str, Any] = Field(default_factory=dict)
     budget: dict[str, Any] = Field(default_factory=dict)
     compression: dict[str, Any] = Field(default_factory=dict)
     context_invariants: dict[str, str] = Field(
@@ -102,21 +105,38 @@ class InMemoryContextAssetStore:
         student_id: str | None = None,
         session_id: str | None = None,
         asset_types: list[ContextAssetType] | None = None,
+        source_types: list[str] | None = None,
         concept_id: str | None = None,
         question_id: str | None = None,
+        freshness: list[Freshness] | None = None,
+        min_confidence: float | None = None,
+        intent: str | None = None,
         limit: int = 10,
     ) -> list[ContextAsset]:
         allowed_types = set(asset_types or [])
+        allowed_sources = set(source_types or [])
+        allowed_freshness = set(freshness or [])
         results = [
             asset
             for asset in self._assets
             if (student_id is None or asset.student_id == student_id)
             and (session_id is None or asset.session_id == session_id)
             and (not allowed_types or asset.asset_type in allowed_types)
+            and (not allowed_sources or asset.source_type in allowed_sources)
             and (concept_id is None or asset.concept_id in (None, concept_id))
             and (question_id is None or asset.question_id in (None, question_id))
+            and (not allowed_freshness or asset.freshness in allowed_freshness)
+            and (min_confidence is None or asset.confidence >= min_confidence)
         ]
-        results.sort(key=self._sort_key)
+        results.sort(
+            key=lambda asset: self._sort_key(
+                asset,
+                intent=intent,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+            )
+        )
         return results[:limit]
 
     def record_assembly(
@@ -157,9 +177,28 @@ class InMemoryContextAssetStore:
             :limit
         ]
 
-    def _sort_key(self, asset: ContextAsset) -> tuple[int, float, str, str]:
+    def _sort_key(
+        self,
+        asset: ContextAsset,
+        *,
+        intent: str | None = None,
+        session_id: str | None = None,
+        concept_id: str | None = None,
+        question_id: str | None = None,
+    ) -> tuple[int, int, int, int, float, float, str]:
+        type_rank = _asset_priority(asset.asset_type, intent=intent)
+        session_rank = 0 if session_id is not None and asset.session_id == session_id else 1
+        target_rank = _target_match_rank(asset, concept_id=concept_id, question_id=question_id)
         freshness_rank = {"fresh": 0, "recent": 1, "stale": 2}[asset.freshness]
-        return (freshness_rank, -asset.confidence, asset.created_at, asset.asset_id)
+        return (
+            target_rank,
+            session_rank,
+            type_rank,
+            freshness_rank,
+            -asset.confidence,
+            _newest_first_sort_value(asset.updated_at),
+            asset.asset_id,
+        )
 
 
 class LearningContextLayer:
@@ -562,16 +601,24 @@ class LearningContextLayer:
         student_id: str,
         session_id: str | None = None,
         asset_types: list[ContextAssetType] | None = None,
+        source_types: list[str] | None = None,
         concept_id: str | None = None,
         question_id: str | None = None,
+        freshness: list[Freshness] | None = None,
+        min_confidence: float | None = None,
+        intent: str | None = None,
         top_k: int = 8,
     ) -> list[ContextAsset]:
         session_assets = self.store.search(
             student_id=student_id,
             session_id=session_id,
             asset_types=asset_types,
+            source_types=source_types,
             concept_id=concept_id,
             question_id=question_id,
+            freshness=freshness,
+            min_confidence=min_confidence,
+            intent=intent,
             limit=top_k,
         )
         if session_id is None or len(session_assets) >= top_k:
@@ -579,12 +626,25 @@ class LearningContextLayer:
         broader_assets = self.store.search(
             student_id=student_id,
             asset_types=asset_types,
+            source_types=source_types,
             concept_id=concept_id,
             question_id=question_id,
+            freshness=freshness,
+            min_confidence=min_confidence,
+            intent=intent,
             limit=top_k,
         )
         combined = {asset.asset_id: asset for asset in [*session_assets, *broader_assets]}
-        return sorted(combined.values(), key=self.store._sort_key)[:top_k]
+        return sorted(
+            combined.values(),
+            key=lambda asset: self.store._sort_key(
+                asset,
+                intent=intent,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+            ),
+        )[:top_k]
 
     def assemble_context(
         self,
@@ -594,28 +654,54 @@ class LearningContextLayer:
         kt_facts: dict[str, Any],
         token_budget: int = 1200,
     ) -> AssembledContext:
-        selected_assets = assets[:8]
+        ranked_assets = sorted(
+            assets,
+            key=lambda asset: self.store._sort_key(asset, intent=intent),
+        )
+        selected_assets, excluded_summaries, budget_used = self._select_assets_for_budget(
+            ranked_assets,
+            token_budget=token_budget,
+        )
         asset_summaries = [
-            {
-                "asset_id": asset.asset_id,
-                "asset_type": asset.asset_type,
-                "source_type": asset.source_type,
-                "source_ref": asset.source_ref,
-                "summary": asset.summary,
-                "content_preview": asset.content_preview,
-                "metadata": asset.metadata,
-                "concept_id": asset.concept_id,
-                "question_id": asset.question_id,
-                "confidence": asset.confidence,
-                "freshness": asset.freshness,
-                "included_reason": asset.included_reason,
-                "excluded_reason": asset.excluded_reason,
-                "evidence_refs": asset.evidence_refs,
-            }
+            self._asset_summary(
+                asset,
+                selection_status="included",
+                budget_cost=self._asset_budget_cost(asset),
+                included_reason=asset.included_reason
+                or _default_included_reason(asset.asset_type),
+            )
             for asset in selected_assets
-        ]
+        ] + excluded_summaries
         normalized_context = self._normalize_assets(selected_assets)
-        evidence_gaps = self._evidence_gaps(normalized_context)
+        evidence_gaps = self._evidence_gaps(
+            normalized_context,
+            candidate_assets=ranked_assets,
+            selected_assets=selected_assets,
+            excluded_summaries=excluded_summaries,
+        )
+        compression_summary = {
+            "strategy": "priority_budget_summary",
+            "budget_used": budget_used,
+            "budget_limit": token_budget,
+            "candidate_asset_count": len(ranked_assets),
+            "selected_asset_count": len(selected_assets),
+            "excluded_asset_count": len(excluded_summaries),
+            "priority_order": [
+                "kt_facts",
+                "task_state",
+                "tool_observation",
+                "student_memory",
+                "knowledge_resource",
+                "trace_reference",
+            ],
+            "excluded_reasons": list(
+                dict.fromkeys(
+                    str(summary["excluded_reason"])
+                    for summary in excluded_summaries
+                    if summary.get("excluded_reason")
+                )
+            ),
+        }
         return AssembledContext(
             intent=intent,
             authoritative_kt_facts=dict(kt_facts),
@@ -623,25 +709,92 @@ class LearningContextLayer:
             asset_summaries=asset_summaries,
             evidence_gaps=evidence_gaps,
             evidence_refs=list(
-                dict.fromkeys(ref for asset in selected_assets for ref in asset.evidence_refs if ref)
+                dict.fromkeys(
+                    ref for asset in selected_assets for ref in asset.evidence_refs if ref
+                )
             ),
+            budget_used=budget_used,
+            budget_limit=token_budget,
+            compression_summary=compression_summary,
             budget={
                 "token_budget": token_budget,
+                "budget_limit": token_budget,
+                "budget_used": budget_used,
                 "selected_asset_count": len(selected_assets),
                 "candidate_asset_count": len(assets),
+                "excluded_asset_count": len(excluded_summaries),
             },
-            compression={
-                "strategy": "summary_only_local_fallback",
-                "full_payload_copied": False,
-                "priority_order": [
-                    "kt_facts",
-                    "task_state",
-                    "student_memory",
-                    "knowledge_resource",
-                    "trace_reference",
-                ],
-            },
+            compression=compression_summary | {"full_payload_copied": False},
         )
+
+    def _select_assets_for_budget(
+        self,
+        assets: list[ContextAsset],
+        *,
+        token_budget: int,
+    ) -> tuple[list[ContextAsset], list[dict[str, Any]], int]:
+        selected: list[ContextAsset] = []
+        excluded: list[dict[str, Any]] = []
+        budget_used = 0
+        for asset in assets:
+            cost = self._asset_budget_cost(asset)
+            if asset.excluded_reason:
+                excluded.append(
+                    self._asset_summary(
+                        asset,
+                        selection_status="excluded",
+                        budget_cost=cost,
+                        excluded_reason=asset.excluded_reason,
+                    )
+                )
+                continue
+            if budget_used + cost > token_budget:
+                excluded.append(
+                    self._asset_summary(
+                        asset,
+                        selection_status="excluded",
+                        budget_cost=cost,
+                        excluded_reason="超出上下文预算，已裁剪低优先级资产",
+                    )
+                )
+                continue
+            selected.append(asset)
+            budget_used += cost
+        return selected, excluded, budget_used
+
+    def _asset_budget_cost(self, asset: ContextAsset) -> int:
+        preview = asset.content_preview or ""
+        metadata_hint = " ".join(str(ref) for ref in asset.evidence_refs[:3])
+        raw_size = len(asset.summary) + len(preview) + len(metadata_hint)
+        return max(1, (raw_size + 15) // 16)
+
+    def _asset_summary(
+        self,
+        asset: ContextAsset,
+        *,
+        selection_status: str,
+        budget_cost: int,
+        included_reason: str | None = None,
+        excluded_reason: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "asset_id": asset.asset_id,
+            "asset_type": asset.asset_type,
+            "source_type": asset.source_type,
+            "source_ref": asset.source_ref,
+            "summary": asset.summary,
+            "content_preview": asset.content_preview,
+            "metadata": asset.metadata,
+            "concept_id": asset.concept_id,
+            "question_id": asset.question_id,
+            "confidence": asset.confidence,
+            "freshness": asset.freshness,
+            "included_reason": included_reason if selection_status == "included" else None,
+            "excluded_reason": excluded_reason,
+            "selection_status": selection_status,
+            "budget_cost": budget_cost,
+            "evidence_refs": asset.evidence_refs,
+        }
 
     def record_context_trace(
         self,
@@ -747,8 +900,18 @@ class LearningContextLayer:
             ),
         }
 
-    def _evidence_gaps(self, normalized_context: dict[str, Any]) -> list[dict[str, Any]]:
+    def _evidence_gaps(
+        self,
+        normalized_context: dict[str, Any],
+        *,
+        candidate_assets: list[ContextAsset] | None = None,
+        selected_assets: list[ContextAsset] | None = None,
+        excluded_summaries: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         gaps: list[dict[str, Any]] = []
+        candidate_assets = candidate_assets or []
+        selected_assets = selected_assets or []
+        excluded_summaries = excluded_summaries or []
         if not normalized_context.get("student_memory"):
             gaps.append(
                 {
@@ -765,7 +928,110 @@ class LearningContextLayer:
                     "impact": "no knowledge_resource asset was fabricated",
                 }
             )
+        selected_task_assets = [
+            asset for asset in selected_assets if asset.asset_type == "task_state"
+        ]
+        if selected_task_assets and all(
+            asset.freshness == "stale" for asset in selected_task_assets
+        ):
+            gaps.append(
+                {
+                    "gap_type": "stale_task_state",
+                    "reason": "task_state 上下文已过期",
+                    "impact": "planner should prefer current event/progress state",
+                }
+            )
+        low_confidence_observations = [
+            asset
+            for asset in candidate_assets
+            if asset.asset_type == "tool_observation" and asset.confidence < 0.5
+        ]
+        if low_confidence_observations:
+            gaps.append(
+                {
+                    "gap_type": "low_confidence_observation",
+                    "reason": "存在低置信度 tool_observation",
+                    "impact": "low confidence observations are evidence only, not KT facts",
+                    "asset_ids": [
+                        asset.asset_id for asset in low_confidence_observations[:5]
+                    ],
+                }
+            )
+        provider_failures = [
+            asset
+            for asset in candidate_assets
+            if asset.metadata.get("provider_error")
+            or asset.metadata.get("provider_failure")
+            or asset.source_type.endswith("_failure")
+        ]
+        if provider_failures:
+            gaps.append(
+                {
+                    "gap_type": "provider_failure",
+                    "reason": "上下文 provider 返回失败记录",
+                    "impact": "local fallback continues without fabricating provider evidence",
+                    "asset_ids": [asset.asset_id for asset in provider_failures[:5]],
+                }
+            )
+        if any(
+            summary.get("excluded_reason") == "超出上下文预算，已裁剪低优先级资产"
+            for summary in excluded_summaries
+        ):
+            gaps.append(
+                {
+                    "gap_type": "context_budget",
+                    "reason": "部分上下文资产因预算限制被裁剪",
+                    "impact": "lower priority context remains visible in asset_summaries",
+                }
+            )
         return gaps
+
+
+def _asset_priority(asset_type: ContextAssetType, *, intent: str | None = None) -> int:
+    priority = {
+        "task_state": 0,
+        "tool_observation": 1,
+        "student_memory": 2,
+        "knowledge_resource": 3,
+        "trace_reference": 4,
+    }
+    if intent == "next_step_advice":
+        priority["student_memory"] = 1
+        priority["tool_observation"] = 2
+    return priority[asset_type]
+
+
+def _target_match_rank(
+    asset: ContextAsset,
+    *,
+    concept_id: str | None = None,
+    question_id: str | None = None,
+) -> int:
+    if question_id is not None and asset.question_id == question_id:
+        return 0
+    if concept_id is not None and asset.concept_id == concept_id:
+        return 1
+    if asset.question_id is None and asset.concept_id is None:
+        return 2
+    return 3
+
+
+def _default_included_reason(asset_type: ContextAssetType) -> str:
+    reasons = {
+        "task_state": "纳入当前任务状态快照",
+        "tool_observation": "纳入工具观察快照",
+        "student_memory": "纳入学生记忆上下文",
+        "knowledge_resource": "纳入知识资源上下文",
+        "trace_reference": "纳入 trace 引用路径",
+    }
+    return reasons[asset_type]
+
+
+def _newest_first_sort_value(value: str) -> float:
+    try:
+        return -datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def _concept_id_from(value: Any) -> str | None:
