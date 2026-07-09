@@ -357,28 +357,61 @@ python3 scripts/check_repository_safety.py
 
 该脚本会检查当前 Git tracked 文件中是否混入 raw train/test、checkpoint、cache/build 输出或非 fixture generated artifact。
 
-## V1.3 / V1.4 已知限制与下一阶段优先级
+### V1.5 artifact contract
+
+导入命令一次写出 5 个稳定 JSON artifact，后端只通过这些 artifact 或默认 demo fixture 读取内容，不直接从 raw train/test 文件进入 runtime：
+
+| 文件 | schema_version | 用途 |
+| --- | --- | --- |
+| `canonical_mapping.json` | `assist2017-canonical-mapping/v1` | canonical question/concept 与 ASSISTments2017 question/concept、Q-matrix row/column 的对齐表。 |
+| `content_import.json` | `assist2017-content-import/v1` | `ContentRepository` 可读取的题干、标准答案、解析、难度、错因、教学类型、provenance 和 `content_availability`。 |
+| `rag_documents.json` | `assist2017-rag-documents/v1` | `KnowledgeRAG` 可读取的 `concept_note`、`question_explanation`、`mistake_pattern`、`learning_strategy` 文档。 |
+| `coverage_report.json` | `assist2017-coverage-report/v1` | mapping、content、RAG、Q-matrix 的覆盖率和 gap 诊断。 |
+| `smoke_dataset.json` | `assist2017-smoke-dataset/v1` | 固定学习路径 smoke，验证推荐、答题、RAG、Context 和 TeachingTrace 使用同一 canonical question/concept。 |
+
+所有 artifact 都带 `metadata.generated_at`、`metadata.source_paths`、`metadata.row_counts`、`metadata.coverage_summary` 和 `metadata.validation_errors`。`ContentRepository` 读取 imported 内容时只认 `content_import.json`；`KnowledgeRAG` 读取 imported RAG 时只认 `rag_documents.json`；KT facts 仍来自 KT engine。
+
+### demo / smoke fixture / full data 区别
+
+| 模式 | 入口 | 使用场景 | Git 规则 |
+| --- | --- | --- | --- |
+| demo | 默认 `MATHTUTOR_CONTENT_SOURCE=demo`、`MATHTUTOR_RAG_SOURCE=demo`、`MATHTUTOR_KT_ENGINE=mock` | 本地启动、默认测试、dashboard 演示。 | 提交小型 `data/content`、`data/rag`、`data/mapping/*.fixture.*`。 |
+| imported fixture / smoke | `data/imported/assist2017_fixture/*.json` + 显式 `MATHTUTOR_CONTENT_SOURCE=imported` / `MATHTUTOR_RAG_SOURCE=imported` | CI 和本地 smoke 验证真实导入 contract。 | 只提交小型 fixture artifact。 |
+| full | `--dataset-mode full --source-rows ... --q-matrix ...` | 研究者在本机用完整 ASSISTments2017 构建 artifact。 | raw train/test、checkpoint 和 full generated artifact 不提交，输出到 Git 外部或 ignored 目录。 |
+
+### coverage report 解读
+
+`coverage_report.json` 的 `summary` 分四组：
+
+- `mapping`：`mapped_question_ids` / `mapped_concept_ids` 表示已对齐；`unmapped_question_ids` / `unmapped_concept_ids` 表示 Q-matrix 中存在但 source rows 或 concept metadata 未覆盖。
+- `content`：`complete_question_count`、`partial_question_count` 和 `missing_teaching_content` 用来区分映射成功但题干、标准答案或解析仍不完整的题。
+- `rag`：`doc_type_counts` 和 `missing_rag_docs` 说明四类 RAG 文档是否覆盖 canonical question/concept。
+- `q_matrix`：`mismatches` 记录 source row 声明的 concept 与 Q-matrix row 不一致，属于 error 级导入问题。
+
+gap category 固定为：`missing_question_mapping`、`missing_concept_mapping`、`q_matrix_mismatch`、`missing_teaching_content`、`missing_rag_doc`。这些 gap 只用于诊断与 TeachingTrace 可见化；RAG 和 Context 不会据此改写 mastery、weak concepts、forgetting risk 或 prediction probability。
+
+## V1.5 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：
 
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖大模型文件。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；checkpoint 和原始数据不提交 Git。
-- Demo 内容集现在优先读取 V1.3 canonical mapping fixture；未映射题仍回退到 dashboard smoke id。当前 fixture 只覆盖小样本，不等同完整题库语义对齐。
-- 推荐题已返回 mapped teaching content、provenance 和缺失内容诊断；当前仍只覆盖 demo 内容集和小型 mapping fixture，全量 ASSISTments2017 题干 / 答案 / 解析需要后续导入。
-- RAG 文档已 runtime 对齐 canonical question / concept，但当前 demo 知识库仍是精选小样本；coverage 会显式标记 `question`、`concept`、`global` 或未映射缺口。
+- Demo 内容集现在优先读取 V1.3 canonical mapping fixture；V1.5 imported fixture 只在显式配置或 smoke tests 中启用。
+- V1.5 已提供 ASSISTments2017 source rows + Q-matrix 到 imported artifact 的构建链路；完整数据是否覆盖充分取决于本地 full source rows、题解和 RAG 文档质量，coverage report 会显式暴露缺口。
+- RAG 文档已支持 imported artifact 和 runtime canonical 对齐；当前提交的 demo / fixture 仍是小样本，不把缺失 citation 伪造成知识资源。
 - Attribution evidence 当前是在线 partial evidence：`dgekt_online_graph_proxy_scorer` 会基于 recent history、canonical / Q-matrix target、weak concept proxy 输出 `key_history`、`top_paths`、`path_strength`、`relation_strength`、`relation_source`、`weak_concept_hit` 和 `partial_evidence_reason`。它没有运行原 DGEKT 离线 path scorer，因此不能解读为完整双图归因。
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
 - 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
 - LearningContextLayer E2E 当前覆盖 demo canonical question / concept 和小型本地 context assets，尚未接入真实 Mem0 / VikingDB / OpenViking provider adapter。
-- 当前 mapping 已知缺口会通过 coverage 诊断显式暴露：fixture 中仍有缺失 question、缺失 concept、缺失 teaching content 和缺失 RAG doc，用于驱动后续 V1.3 导入切片。
+- 当前 V1.5 fixture 故意保留缺失 question、缺失 concept、缺失 teaching content 和缺失 RAG doc，用于测试 coverage 诊断；这不是 full data 质量承诺。
 
 下一阶段真实集成优先级：
 
-1. `ASSISTments2017` 完整内容导入：建立题目、知识点、历史作答和 RAG 文档的稳定语义映射。
-2. 原 DGEKT explainability 离线结果接入：把 `attribution_paths.csv` / `key_history.csv` 级别证据接入 `AttributionEvidence`，替换当前 online partial scorer 的代理关系强度。
-3. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
-4. `VikingDB` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
+1. 原 DGEKT explainability 离线结果接入：把 `attribution_paths.csv` / `key_history.csv` 级别证据接入 `AttributionEvidence`，替换当前 online partial scorer 的代理关系强度。
+2. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
+3. `VikingDB` / `OpenViking` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
+4. Full-data artifact 存储和分发策略：如果 full generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程，而不是直接提交到仓库。
 
 ## 测试与检查
 
