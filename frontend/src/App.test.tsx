@@ -328,6 +328,55 @@ const baseProviderHealthResponse: ProviderHealthResponse = {
   ]
 };
 
+const degradedProviderHealthResponse: ProviderHealthResponse = {
+  ...baseProviderHealthResponse,
+  status: "not_configured",
+  summary: "Memory/RAG live provider 存在配置缺口；默认学习流程仍可继续。",
+  components: baseProviderHealthResponse.components.map((component) => {
+    if (component.component === "memory") {
+      return {
+        ...component,
+        mode: "live_provider",
+        provider: "mem0",
+        configured: false,
+        status: "degraded",
+        severity: "warning",
+        actionable_hint: "Mem0 live provider 可诊断但当前降级；请检查 MATHTUTOR_MEM0_API_KEY。",
+        evidence_gaps: [
+          {
+            gap_type: "provider_configuration_missing",
+            reason: "mem0 readiness 缺少必要配置。",
+            severity: "warning",
+            recoverable: true,
+            actionable_hint: "请补齐 Mem0 API key 或切回默认 local_fallback。"
+          }
+        ]
+      };
+    }
+    if (component.component === "rag") {
+      return {
+        ...component,
+        mode: "live_provider",
+        provider: "openviking",
+        configured: false,
+        status: "unavailable",
+        severity: "error",
+        actionable_hint: "OpenViking live RAG 不可用；检查 endpoint、collection 和 API key。",
+        evidence_gaps: [
+          {
+            gap_type: "provider_auth_error",
+            reason: "openviking readiness 无法完成认证。",
+            severity: "error",
+            recoverable: true,
+            actionable_hint: "请确认 OpenViking API key 仍有效。"
+          }
+        ]
+      };
+    }
+    return component;
+  })
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -354,6 +403,29 @@ describe("学习驾驶舱", () => {
     expect(screen.queryByText(/raw_provider_payload/)).not.toBeInTheDocument();
     expect(screen.queryByText(/embedding_vector/)).not.toBeInTheDocument();
     expect(screen.queryByText(/provider_debug/)).not.toBeInTheDocument();
+  });
+
+  it("展示 Memory/RAG readiness 的降级、不可用、未配置和严重程度，不阻断推荐题", async () => {
+    mockMathTutorApi({
+      providerHealthResponse: degradedProviderHealthResponse
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
+    expect(screen.getByText("Memory/RAG live provider 存在配置缺口；默认学习流程仍可继续。")).toBeInTheDocument();
+    expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
+    expect(screen.getByText("Memory / 长期记忆")).toBeInTheDocument();
+    expect(screen.getByText("RAG / 知识检索")).toBeInTheDocument();
+    expect(screen.getByText("mem0")).toBeInTheDocument();
+    expect(screen.getByText("openviking")).toBeInTheDocument();
+    expect(screen.getAllByText("live_provider").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("降级")).toBeInTheDocument();
+    expect(screen.getByText("不可用")).toBeInTheDocument();
+    expect(screen.getByText("警告")).toBeInTheDocument();
+    expect(screen.getByText("错误")).toBeInTheDocument();
+    expect(screen.getByText(/MATHTUTOR_MEM0_API_KEY/)).toBeInTheDocument();
+    expect(screen.getByText(/OpenViking live RAG 不可用/)).toBeInTheDocument();
   });
 
   it("可以加载建议、提交推荐题答案，并展示 trace 与证据", async () => {

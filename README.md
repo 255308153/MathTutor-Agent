@@ -126,6 +126,14 @@ curl http://127.0.0.1:8000/api/health
 {"status":"ok"}
 ```
 
+V1.8 Provider Health 只读诊断：
+
+```bash
+curl http://127.0.0.1:8000/api/provider-health
+```
+
+默认会显示 Memory / RAG / KT / Content/RAG artifact / LearningContextLayer 的本地 fallback、mock 或 demo 状态可运行。Mem0、VikingDB、OpenViking 和真实 DGEKT 仍然是显式 opt-in；缺少 live provider 配置时只返回中文 readiness 诊断，不影响默认本地学习流程。
+
 启动 React 学习驾驶舱：
 
 ```bash

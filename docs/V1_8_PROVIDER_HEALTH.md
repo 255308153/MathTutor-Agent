@@ -1,6 +1,6 @@
 # V1.8 Provider Health 与可观测性
 
-本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99：保留简单 liveness，并新增只读 provider readiness 合约与学习驾驶舱状态面板。
+本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99 与 #100：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG provider readiness 诊断。
 
 ## API
 
@@ -41,6 +41,28 @@ Provider Health 响应固定使用以下状态词：
 | `learning_context` | `local_fallback` / `in_memory_context_layer` | `healthy` |
 
 显式选择 live provider 时，当前基线只做配置字段存在性诊断，不创建 provider adapter、不访问外部网络、不运行 live smoke。
+
+## #100 Memory / RAG Readiness
+
+Memory readiness 覆盖三种模式：
+
+| mode | provider | 默认状态 | 说明 |
+| --- | --- | --- | --- |
+| `local_fallback` | `local_fallback` | `healthy` | 默认本地长期记忆路径可运行，不需要 Mem0。 |
+| `fake_provider` | `fake_mem0_fixture` | `healthy` | 用于 contract / UI 测试，无网络、无密钥也可诊断。 |
+| `live_provider` | `mem0` | `healthy` 或 `not_configured` | 只有显式启用时检查 `MATHTUTOR_MEM0_API_KEY` 是否存在。 |
+
+RAG readiness 覆盖三种模式：
+
+| mode | provider | 默认状态 | 说明 |
+| --- | --- | --- | --- |
+| `local_fallback` | `local_fallback` | `healthy` | 默认本地 RAG 路径可运行，不需要 VikingDB / OpenViking。 |
+| `fake_provider` | `fake_vikingdb_fixture` | `healthy` | 用于 contract / UI 测试，无网络、无密钥也可诊断。 |
+| `live_provider` | `vikingdb` / `openviking` | `healthy` 或 `not_configured` | 只有显式启用时检查 provider、endpoint、collection 和对应 API key。 |
+
+显式启用 live provider 但配置缺失时，`/api/provider-health` 不会崩溃，也不会把缺失伪装成健康。组件会返回结构化 `evidence_gaps`，其中只包含缺失字段名、provider、operation、中文 reason / message / actionable_hint，不包含凭据值、SDK 原始响应或 provider debug payload。
+
+默认测试和本地 demo 不访问真实 Mem0、VikingDB 或 OpenViking，也不要求 credentials。Provider Health 的缺配置状态只用于诊断与运营可见性；学习事件主流程仍使用可用的本地 fallback 继续运行，不能把 provider 缺失写成 mastery、prediction facts 或学习进度事实。
 
 ## 只读边界
 
