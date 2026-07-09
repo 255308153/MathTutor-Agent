@@ -134,14 +134,14 @@ V1.3 / V1.4 历史限制（V1.5 之前）：
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；大模型和原始数据只通过本地路径引用。
 - Demo 内容集优先读取 V1.3 canonical mapping fixture；未映射题会生成稳定 ASSIST2017 smoke question id，确保 dashboard 能走通 DGEKT 推理，但这不是完整 ASSISTments2017 内容语义对齐。
 - Attribution evidence 当时只有在线 partial evidence，没有运行原 DGEKT 离线 path scorer；V1.6 已增加显式配置的 offline evidence adapter。
-- 本地 memory store 默认进程内保存，服务重启后不保留长期记忆。
+- 本地 memory store 默认进程内保存，服务重启后不保留长期记忆；显式启用 Mem0 adapter 后可持久化。
 - 本地 RAG 使用 JSON fallback，citation 形状稳定但不是生产向量库。
 - 前端仅用于单学习者演示，不包含登录、班级和教师端。
 
-V1.5 已完成第一项 full-data artifact 生产线；V1.6 已接入 DGEKT offline evidence artifact，但仍不包含 provider、持久化长期记忆和生产向量库。后续真实集成优先级：
+V1.5 已完成第一项 full-data artifact 生产线；V1.6 已接入 DGEKT offline evidence artifact；V1.7 已接入 opt-in Mem0 长期记忆 adapter 与 VikingDB / OpenViking RAG adapter，但默认仍是本地 fallback。后续真实集成优先级：
 
-1. `Mem0` adapter：将本地学生记忆替换为可持久化检索记忆。
-2. `VikingDB` / `OpenViking` adapter：将本地 JSON RAG fallback 替换成向量检索。
+1. Mem0 运营控制：学生记忆查看、禁用、清理和 provider health。
+2. Provider 失败降级与可观测性：补齐 Mem0、VikingDB / OpenViking live provider 的健康检查、错误提示和恢复路径。
 3. 持久化学习状态和 TeachingTrace：支持连续学习会话审计。
 4. Full artifact 存储和分发：如果完整 ASSISTments2017 generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程。
 
@@ -186,14 +186,18 @@ V1.7 provider contract 与 worktree 并发规则：
 - Provider mode 固定为 `local_fallback`、`fake_provider`、`live_provider` 三种语义。
 - 默认 `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`、`MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`，继续使用进程内 memory store 和本地 JSON RAG，不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint 或完整 ASSISTments2017 数据。
 - `fake_provider` 是无网络、无密钥的 contract fixture，用于 Mem0 / VikingDB / OpenViking adapter 并发开发。fixture 内部可以模拟 SDK 响应，但向 planner、recommender、API、dashboard 只暴露 `StudentMemory` 和 `RAGSearchResult` 领域模型。
+- Memory 的 `live_provider` 是 Mem0 adapter 的显式 opt-in 入口；只有显式设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 且提供 `MATHTUTOR_MEM0_API_KEY` 时才会加载 `mem0ai`。
 - RAG 的 `live_provider` 是 VikingDB / OpenViking adapter 的显式 opt-in 入口。必须同时配置 provider、endpoint、collection 和对应 API key；缺配置时会报错，默认不会读取外部服务。
 - VikingDB / OpenViking metadata filter 支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`，并兼容 `assistments2017_*` 别名。若 provider 不支持或只弱支持 metadata filter，adapter 会在规范化为 `RAGSearchResult` 后做确定性 post-filter。
+- Mem0 adapter 返回稳定 `StudentMemory`，覆盖 `preference`、`repeated_mistake`、`effective_strategy`、`reflection`，并保留 event source、question / concept、trace、event time、relevance、freshness、source 和 provider provenance。下游不能解析 Mem0 raw response。
+- Mem0 写入使用稳定 dedupe key；重复学习事件会更新同一条记忆的 provenance，而不是无界生成重复记忆。
 - Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
 
 相关单测：
 
 ```bash
 python3 -m pytest backend/tests/test_provider_contracts.py -q
+python3 -m pytest backend/tests/test_mem0_memory_store.py -q
 ```
 
 开发节奏：
@@ -399,7 +403,7 @@ Context can assemble evidence, not decide learning facts.
 - ContextAsset 可以记录 KT 诊断快照，但不能覆盖当前 KT facts。
 - ContextAssetStore 只存上下文引用、摘要、检索结果和组装记录，不是 runtime state 的唯一真相。
 - 默认实现是 `InMemoryContextAssetStore`，本地测试和开发不需要 Mem0、VikingDB、OpenViking 或外部 provider key。
-- VikingDB / OpenViking 后续只能作为 ContextAssetStore 或知识检索的可选后端能力，不能替代 MathTutor runtime。
+- VikingDB / OpenViking 只能作为 ContextAssetStore 或知识检索的可选后端能力，不能替代 MathTutor runtime。
 
 当前最小主链路：
 
@@ -415,8 +419,8 @@ load_context -> diagnose -> context_assemble -> plan -> generate_response -> mem
 
 V1.4 #29 / #35 的 next-step advice 个性化规则：
 
-- `student_memory` 只来自 `StudentMemoryStore.search()` 已返回的本地记忆，不新增 Mem0 provider 依赖。
-- `knowledge_resource` 只来自 `KnowledgeRAG.search()` 已返回的本地 RAG 结果，不新增 VikingDB / OpenViking provider 依赖。
+- `student_memory` 只来自 `StudentMemoryStore.search()` 已返回的稳定 `StudentMemory`；默认是本地记忆，显式 live provider 时可以来自 Mem0。
+- `knowledge_resource` 只来自 `KnowledgeRAG.search()` 已返回的稳定 `RAGSearchResult`；默认是本地 RAG，显式 live provider 时可以来自 VikingDB / OpenViking。
 - `assembled_context.normalized_context.student_memory` 会区分 preference、repeated_mistake、effective_strategy、goal，并给出 included_reason。
 - `assembled_context.normalized_context.knowledge_resource` 会区分 concept_note、question_explanation、mistake_pattern、learning_strategy，并保留 source / doc_type。
 - `assembled_context.evidence_gaps` 显式记录“无可用记忆”和“RAG 未找到相关知识资源”；缺失时不伪造 `student_memory` 或 `knowledge_resource` asset。
@@ -797,6 +801,10 @@ backend/app/memory/store.py
   "memory_type": "preference",
   "content": "学生偏好先练比例相关题。",
   "evidence": {"preferred_concept_id": "c_ratio"},
+  "relevance_score": 0.82,
+  "freshness": "fresh",
+  "source": "local_fallback",
+  "provenance": {"source_event": "event:tt_xxx:chat_message"},
   "created_at": "2026-07-07T...",
   "updated_at": "2026-07-07T..."
 }
@@ -829,12 +837,13 @@ RAG 提供外部知识证据。
 KT state 仍是学习事实来源。
 ```
 
-后续替换为 Mem0：
+Mem0 live provider：
 
-1. 保持 `StudentMemoryStore` 接口不变。
-2. Mem0 adapter 负责持久化、语义检索和去重。
-3. adapter 返回仍映射为 `StudentMemory`。
-4. memory refinery 可以生成 reflection，但不能写 KT facts。
+1. 保持 `StudentMemoryStore` 接口不变，下游仍只消费 `StudentMemory`。
+2. 设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 且提供 `MATHTUTOR_MEM0_API_KEY` 时加载 Mem0 adapter；默认 `local_fallback` 不需要 Mem0 SDK 或网络。
+3. Mem0 adapter 负责持久化、语义检索和稳定 dedupe，返回 relevance、freshness、source 与 provider provenance。
+4. adapter 会清洗 Mem0 raw response；`sdk_response`、embedding vector、内部 provider debug 字段不能进入 planner、recommender、API 或 dashboard。
+5. memory refinery 可以生成 reflection，但不能写 KT facts。
 
 ## 11. Demo 教学内容集
 
@@ -942,9 +951,10 @@ cp .env.example .env
 | `MATHTUTOR_LLM_PROVIDER` | `mock` | V1 优先用 mock / 规则化响应跑通闭环。 |
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
-| `MATHTUTOR_MEMORY_PROVIDER_MODE` | `local_fallback` | 学生长期记忆 provider mode。`fake_provider` 使用离线 contract fixture；`live_provider` 是后续 Mem0 adapter 的显式入口。 |
+| `MATHTUTOR_MEMORY_PROVIDER_MODE` | `local_fallback` | 学生长期记忆 provider mode。`fake_provider` 使用离线 contract fixture；`live_provider` 显式加载 Mem0 adapter。 |
 | `MATHTUTOR_RAG_PROVIDER_MODE` | `local_fallback` | 知识检索 provider mode。`local_fallback` 使用本地 JSON；`fake_provider` 使用离线 VikingDB/OpenViking contract fixture；`live_provider` 显式启用 VikingDB/OpenViking adapter。 |
-| `MATHTUTOR_MEM0_API_KEY` | 空 | 后续 Mem0 live provider 凭据占位；默认留空，不提交真实 key。 |
+| `MATHTUTOR_MEM0_API_KEY` | 空 | Mem0 live provider 凭据；默认留空，不提交真实 key。保持默认 mode 时留空会继续使用 local fallback。 |
+| `MATHTUTOR_RUN_MEM0_LIVE_SMOKE` | `0` | Mem0 live smoke 显式开关；只有设为 `1` 且提供 API key 时才运行 live smoke。 |
 | `MATHTUTOR_VIKINGDB_API_KEY` | 空 | VikingDB live provider 凭据；仅 `MATHTUTOR_RAG_PROVIDER_MODE=live_provider` 且 `MATHTUTOR_RAG_LIVE_PROVIDER=vikingdb` 时需要。 |
 | `MATHTUTOR_OPENVIKING_API_KEY` | 空 | OpenViking live provider 凭据；仅 `MATHTUTOR_RAG_PROVIDER_MODE=live_provider` 且 `MATHTUTOR_RAG_LIVE_PROVIDER=openviking` 时需要。 |
 | `MATHTUTOR_RAG_LIVE_PROVIDER` | `vikingdb` | RAG live provider 类型，可选 `vikingdb` 或 `openviking`。 |
@@ -1006,8 +1016,8 @@ data/
   - `complete/offline` 需要 sample、student target、checkpoint provenance、canonical question/concept 和 CSV schema 全部匹配。
   - 未配置或未命中时，online proxy 只能输出 `partial` / `unavailable`；缺列、malformed row、numeric 解析失败、重复 sample、checkpoint provenance mismatch 或 canonical mapping mismatch 会输出 `invalid`。
   - `prediction_probability` 和 `weak_concepts` 是 KT facts；offline attribution 解释这些事实，不覆盖这些事实。
-- 本地 memory 是默认实现，Mem0 adapter 后续接入。
-- 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
+- 本地 memory 仍是默认实现；Mem0 adapter 已接入 `live_provider`，但必须显式配置 API key 才启用。
+- 本地 RAG fallback 是默认实现；VikingDB / OpenViking adapter 已接入 `live_provider`，但必须显式配置 provider、endpoint、collection 和 API key 才启用。
 
 ## 14. V1 不做什么
 

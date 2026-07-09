@@ -221,6 +221,7 @@ class LearningContextLayer:
         assets: list[ContextAsset] = []
         for memory in student_memories:
             memory_type = str(memory.get("memory_type") or "reflection")
+            memory_freshness = memory.get("freshness")
             assets.append(
                 ContextAsset(
                     asset_type="student_memory",
@@ -232,10 +233,17 @@ class LearningContextLayer:
                         "memory_type": memory_type,
                         "normalized_kind": _memory_kind(memory_type),
                         "evidence": memory.get("evidence", {}),
+                        "provenance": memory.get("provenance", {}),
+                        "source": memory.get("source"),
+                        "relevance_score": memory.get("relevance_score"),
                     },
                     evidence_refs=[f"memory:{memory.get('memory_id', 'unknown')}"],
-                    confidence=0.75,
-                    freshness="recent",
+                    confidence=_confidence_from_memory(memory),
+                    freshness=(
+                        memory_freshness
+                        if memory_freshness in {"fresh", "recent", "stale"}
+                        else "recent"
+                    ),
                     student_id=student_id,
                     session_id=session_id,
                     concept_id=_concept_id_from(memory.get("evidence", {})),
@@ -1044,6 +1052,16 @@ def _question_id_from(value: Any) -> str | None:
     if isinstance(value, dict) and value.get("question_id"):
         return str(value["question_id"])
     return None
+
+
+def _confidence_from_memory(memory: dict[str, Any]) -> float:
+    score = memory.get("relevance_score")
+    if score is None:
+        return 0.75
+    try:
+        return round(min(max(float(score), 0.0), 1.0), 4)
+    except (TypeError, ValueError):
+        return 0.75
 
 
 def _memory_kind(memory_type: str) -> str:

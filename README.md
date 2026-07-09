@@ -31,8 +31,8 @@ V1 优先服务一个学生、一个数学学习场景、一条可审计学习�
 - `MockKTStateEngine` 本地知识追踪实现。
 - 小型本地数学教学内容集和确定性判题。
 - 风险优先的题目推荐与推荐理由。
-- 本地 RAG fallback，并预留 VikingDB adapter。
-- 本地学生长期记忆，并预留 Mem0 adapter。
+- 本地 RAG fallback，以及 opt-in VikingDB / OpenViking adapter。
+- 本地学生长期记忆，以及 opt-in Mem0 adapter。
 - 错因诊断和四类教学动作。
 - TeachingTrace，可追踪每次 agent 决策依据。
 - React 学习驾驶舱首版。
@@ -80,7 +80,7 @@ backend/
     kt/         KTStateEngine 接口与 Mock / DGEKT 预留实现
     memory/     学生长期记忆接口与本地实现
     planning/   教学动作规划与推荐
-    rag/        知识检索接口、本地 fallback、VikingDB 预留
+    rag/        知识检索接口、本地 fallback、VikingDB / OpenViking adapter
     schemas/    Pydantic 领域模型
     storage/    本地数据仓储
   tests/        后端测试
@@ -427,7 +427,7 @@ Provider mode 语义固定为：
 | --- | --- | --- |
 | `local_fallback` | 使用当前进程内 `InMemoryStudentMemoryStore` 和本地 JSON `LocalKnowledgeRAG`。 | 默认模式。 |
 | `fake_provider` | 使用无网络、无密钥的 fake provider fixture，模拟 Mem0 / VikingDB SDK 响应，但只向下游返回稳定领域模型。 | 仅测试 / adapter 开发显式启用。 |
-| `live_provider` | 后续真实 Mem0、VikingDB 或 OpenViking adapter 的 opt-in 入口。 | 非默认；#71 中不会加载真实 SDK。 |
+| `live_provider` | 显式加载真实 provider adapter。Mem0 已通过 `StudentMemoryStore` adapter 接入；VikingDB / OpenViking 已通过 `KnowledgeRAG` adapter 接入。 | 非默认；缺少 live provider 配置时不会启用。 |
 
 环境变量：
 
@@ -435,6 +435,7 @@ Provider mode 语义固定为：
 MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback
 MATHTUTOR_RAG_PROVIDER_MODE=local_fallback
 MATHTUTOR_MEM0_API_KEY=
+MATHTUTOR_RUN_MEM0_LIVE_SMOKE=0
 MATHTUTOR_VIKINGDB_API_KEY=
 MATHTUTOR_OPENVIKING_API_KEY=
 ```
@@ -442,10 +443,14 @@ MATHTUTOR_OPENVIKING_API_KEY=
 当前 fake provider fixture 覆盖：
 
 - 记忆写入、记忆检索、recent memory。
+- Mem0 adapter 覆盖 preference、repeated_mistake、effective_strategy、reflection 四类记忆，返回 `StudentMemory` 稳定模型，并保留 question / concept / trace / event time provenance、relevance、freshness 和 source 元数据。
+- Mem0 写入使用稳定 dedupe key，重复学习事件会更新既有记忆 provenance，不会无界追加重复记录。
 - RAG 检索、question / concept 对齐字段、provider 空结果。
 - raw provider payload 清洗，防止 `sdk_response`、内部向量距离、embedding vector 等 provider SDK 字段泄漏到 planner、recommender、TeachingTrace API 或 dashboard。
 
-V1.7 所有子任务必须使用独立 git worktree 并发开发：每个 issue 从最新 `origin/master` 创建自己的 `codex/...` 分支和 worktree，不在主工作区直接实现，不共用未提交改动。真实 Mem0 adapter、VikingDB/OpenViking adapter、失败降级、context E2E、dashboard 和配置安全任务都应按这个规则拆开推进。
+Mem0 live provider 是 opt-in：默认 `local_fallback` 不需要 Mem0 SDK、API key 或网络；只有设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 且提供 `MATHTUTOR_MEM0_API_KEY` 时才会尝试加载 `mem0ai` 的 `MemoryClient`。本地可用 `pip install .[mem0]` 安装可选 SDK；live smoke 还需要显式设置 `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1`，否则测试会 skip。
+
+V1.7 所有子任务必须使用独立 git worktree 并发开发：每个 issue 从最新 `origin/master` 创建自己的 `codex/...` 分支和 worktree，不在主工作区直接实现，不共用未提交改动。失败降级、context E2E、dashboard、配置安全和 provider 运维任务都应按这个规则拆开推进。
 
 Provider 化不能改变核心边界：Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts；KT facts 仍是权威学习事实。
 
@@ -459,10 +464,10 @@ Provider 化不能改变核心边界：Memory can influence strategy, not master
 - V1.5 已提供 ASSISTments2017 source rows + Q-matrix 到 imported artifact 的构建链路；完整数据是否覆盖充分取决于本地 full source rows、题解和 RAG 文档质量，coverage report 会显式暴露缺口。
 - RAG 文档已支持 imported artifact 和 runtime canonical 对齐；当前提交的 demo / fixture 仍是小样本，不把缺失 citation 伪造成知识资源。
 - Attribution evidence 已支持显式配置下的 DGEKT offline evidence adapter；未配置、未命中或证据无效时仍回退为 partial / unavailable / invalid，不会把在线 proxy 伪装成 complete offline evidence。
-- 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
+- 学生长期记忆默认是本地内存实现；显式启用 Mem0 adapter 后可持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
 - 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
-- LearningContextLayer E2E 当前覆盖 demo canonical question / concept 和小型本地 context assets，尚未接入真实 Mem0 / VikingDB / OpenViking provider adapter。
+- LearningContextLayer E2E 当前覆盖 demo canonical question / concept 和小型本地 context assets；Mem0 provider smoke 使用 fake client 覆盖跨会话记忆召回，VikingDB / OpenViking adapter 已作为显式 opt-in RAG provider 接入。
 - 当前 V1.5 fixture 故意保留缺失 question、缺失 concept、缺失 teaching content 和缺失 RAG doc，用于测试 coverage 诊断；这不是 full data 质量承诺。
 
 ### 内部正式试用版本约束
@@ -489,8 +494,8 @@ V1.8 的准入门槛：
 
 下一阶段真实集成优先级：
 
-1. `Mem0` adapter：把本地 memory store 替换成可持久化的学生长期记忆。
-2. `VikingDB` / `OpenViking` adapter：把本地 RAG JSON fallback 替换成可扩展向量检索。
+1. Mem0 运营控制：补齐学生记忆查看、禁用、清理和 provider health。
+2. Provider 失败降级与可观测性：补齐 Mem0、VikingDB / OpenViking live provider 的健康检查、错误提示和恢复路径。
 3. 持久化学习状态与 TeachingTrace：支持连续学习会话审计。
 4. Full-data artifact 存储和分发策略：如果 full generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程，而不是直接提交到仓库。
 
@@ -526,11 +531,12 @@ cp .env.example .env
 - `MATHTUTOR_LLM_PROVIDER=mock`：V1 先用 mock / 规则化响应跑通闭环。
 - `MATHTUTOR_LLM_MODEL`：真实 LLM 模型名，mock 模式可留空。
 - `MATHTUTOR_OPENAI_API_KEY`：真实 LLM key，本地 mock 模式可留空。
-- `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`：默认学生长期记忆实现；可显式设为 `fake_provider` 跑离线 provider contract fixture。`live_provider` 是后续 Mem0 adapter 的 opt-in 入口，当前 #71 不加载真实 SDK。
-- `MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`：默认知识检索实现；可显式设为 `fake_provider` 跑离线 VikingDB/OpenViking contract fixture。`live_provider` 是后续生产 RAG adapter 的 opt-in 入口，当前 #71 不加载真实 SDK。
-- `MATHTUTOR_MEM0_API_KEY`：后续 Mem0 live provider 凭据占位；默认留空，不能提交真实 key。
-- `MATHTUTOR_VIKINGDB_API_KEY`：后续 VikingDB live provider 凭据占位；默认留空，不能提交真实 key。
-- `MATHTUTOR_OPENVIKING_API_KEY`：后续 OpenViking live provider 凭据占位；默认留空，不能提交真实 key。
+- `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`：默认学生长期记忆实现；可显式设为 `fake_provider` 跑离线 provider contract fixture。`live_provider` 会加载 Mem0 adapter，是 opt-in 路径。
+- `MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`：默认知识检索实现；可显式设为 `fake_provider` 跑离线 VikingDB/OpenViking contract fixture。`live_provider` 会显式启用 VikingDB / OpenViking RAG adapter。
+- `MATHTUTOR_MEM0_API_KEY`：Mem0 live provider 凭据；默认留空，不能提交真实 key。留空且保持默认 mode 时继续使用 local fallback。
+- `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=0`：Mem0 live smoke 开关；只有显式设为 `1` 且配置 API key 时才会运行 live smoke。
+- `MATHTUTOR_VIKINGDB_API_KEY`：VikingDB live provider 凭据；默认留空，不能提交真实 key。
+- `MATHTUTOR_OPENVIKING_API_KEY`：OpenViking live provider 凭据；默认留空，不能提交真实 key。
 - `MATHTUTOR_ASSIST2017_DATASET_MODE=demo`：默认数据模式；`fixture` 用于构建提交的小型 fixture，`full` 仅用于显式本地全量构建。
 - `MATHTUTOR_ASSIST2017_FULL_SOURCE_ROWS_PATH`：本地 full source rows CSV 路径，默认留空。
 - `MATHTUTOR_ASSIST2017_FULL_Q_MATRIX_PATH`：本地 full Q-matrix 路径，默认留空。
