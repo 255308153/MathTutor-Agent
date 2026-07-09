@@ -105,6 +105,8 @@ def test_v14_learning_context_layer_end_to_end_smoke(
         "generate_response",
         "memory_update",
         "kt_tool_observation",
+        "rag_tool_observation",
+        "memory_tool_observation",
         "runtime_end",
     ]
     assert any(item["concept_id"] == concept_id for item in kt_diagnosis["weak_concepts"])

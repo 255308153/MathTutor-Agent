@@ -88,6 +88,32 @@ const baseResponse: MathTutorEventResponse = {
       evidence_refs: ["trace:tt-test", "kt_diagnosis:tt-test"]
     },
     {
+      id: "trace-rag-tool",
+      stage: "rag_tool_observation",
+      actor: "rag",
+      visibility: "expert",
+      content: "Tool Registry 已记录 RAG 数学知识检索 observation。",
+      metadata: {
+        tool_id: "rag_retrieval_evidence",
+        provider_mode: "local_fallback",
+        fallback_used: true
+      },
+      evidence_refs: ["trace:tt-test", "demo-rag/fraction_addition.md"]
+    },
+    {
+      id: "trace-memory-tool",
+      stage: "memory_tool_observation",
+      actor: "memory",
+      visibility: "expert",
+      content: "Tool Registry 已记录学生记忆 observation。",
+      metadata: {
+        tool_id: "student_memory_evidence",
+        provider_mode: "local_fallback",
+        fallback_used: true
+      },
+      evidence_refs: ["trace:tt-test", "memory:mem-preference-1"]
+    },
+    {
       id: "trace-3",
       stage: "generate_response",
       actor: "response",
@@ -113,6 +139,8 @@ const baseResponse: MathTutorEventResponse = {
       "runtime_start",
       "load_context",
       "kt_tool_observation",
+      "rag_tool_observation",
+      "memory_tool_observation",
       "generate_response",
       "runtime_end"
     ],
@@ -157,6 +185,14 @@ const baseResponse: MathTutorEventResponse = {
         {
           tool_id: "kt_authoritative_facts",
           name: "KT/DGEKT 权威学习事实"
+        },
+        {
+          tool_id: "rag_retrieval_evidence",
+          name: "RAG 数学知识检索证据"
+        },
+        {
+          tool_id: "student_memory_evidence",
+          name: "学生记忆证据"
         }
       ],
       tool_observations: [
@@ -164,6 +200,25 @@ const baseResponse: MathTutorEventResponse = {
           tool_id: "kt_authoritative_facts",
           provider_mode: "local_fallback",
           fallback_used: true
+        },
+        {
+          tool_id: "rag_retrieval_evidence",
+          provider_mode: "local_fallback",
+          fallback_used: true,
+          result_summary: {
+            result_count: 1,
+            citation_refs: ["demo-rag/fraction_addition.md"]
+          }
+        },
+        {
+          tool_id: "student_memory_evidence",
+          provider_mode: "local_fallback",
+          fallback_used: true,
+          result_summary: {
+            retrieved_count: 1,
+            selected_count: 1,
+            omitted_count: 0
+          }
         }
       ],
       context_assets: [],
@@ -647,6 +702,8 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("Runtime 开始")).toBeInTheDocument();
     expect(screen.getByText("读取上下文")).toBeInTheDocument();
     expect(screen.getByText("KT 工具观察")).toBeInTheDocument();
+    expect(screen.getByText("RAG 工具观察")).toBeInTheDocument();
+    expect(screen.getByText("记忆工具观察")).toBeInTheDocument();
     expect(screen.getByText("Runtime 结束")).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
     expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2")).toBeInTheDocument();

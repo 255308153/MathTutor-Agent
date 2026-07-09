@@ -1400,6 +1400,8 @@ function stageName(stage: string) {
     load_context: "读取上下文",
     diagnose: "KT 诊断",
     kt_tool_observation: "KT 工具观察",
+    rag_tool_observation: "RAG 工具观察",
+    memory_tool_observation: "记忆工具观察",
     context_assemble: "上下文组装",
     plan: "教学规划",
     generate_response: "生成回复",
