@@ -3,14 +3,26 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.context.learning_context import (
+    AssembledContext,
+    ContextAsset,
+    InMemoryContextAssetStore,
+    LearningContextLayer,
+)
 from backend.app.api import events as events_api
 from backend.app.core.config import MathTutorSettings
+from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.main import create_app
+from backend.app.memory.store import InMemoryStudentMemoryStore, StudentMemory
 from backend.app.provider_health import build_provider_health
+from backend.app.rag.knowledge_rag import LocalKnowledgeRAG
+from backend.app.schemas.learning import ConceptState, KTLearningProgress, LearningEvent
+from backend.app.storage.progress_store import InMemoryProgressStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -565,6 +577,129 @@ def test_provider_health_does_not_change_kt_facts() -> None:
         assert after[field] == before[field]
 
 
+def test_provider_health_endpoint_is_read_only_for_runtime_stores_and_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    student_id = "student-provider-health-readonly"
+    loop, context_store = _readonly_loop_with_seed_state(student_id=student_id)
+    memory_gap = {
+        "gap_type": "provider_timeout",
+        "provider": "mem0",
+        "operation": "search",
+        "reason": "health-readonly-gap memory timeout",
+        "details": {"safe_summary": "health-readonly-gap memory"},
+    }
+    rag_gap = {
+        "gap_type": "provider_empty_result",
+        "provider": "openviking",
+        "operation": "search",
+        "reason": "health-readonly-gap rag empty result",
+        "details": {"safe_summary": "health-readonly-gap rag"},
+    }
+    setattr(loop.memories, "last_evidence_gaps", [memory_gap])
+    setattr(loop.rag, "last_evidence_gaps", [rag_gap])
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    before = _runtime_state_snapshot(
+        loop=loop,
+        context_store=context_store,
+        student_id=student_id,
+    )
+    first_response = client.get("/api/provider-health")
+    second_response = client.get("/api/provider-health")
+    after = _runtime_state_snapshot(
+        loop=loop,
+        context_store=context_store,
+        student_id=student_id,
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.json()["status"] == "unavailable"
+    assert after == before
+
+    components = {item["component"]: item for item in first_response.json()["components"]}
+    assert components["memory"]["evidence_gaps"][0]["gap_type"] == "provider_timeout"
+    assert components["rag"]["evidence_gaps"][0]["gap_type"] == "provider_empty_result"
+    assert components["learning_context"]["evidence_gaps"] == []
+    assert before["rag_cached_artifacts"] == []
+    assert after["rag_cached_artifacts"] == []
+
+
+def test_provider_health_does_not_change_learning_fact_snapshots_or_dgekt_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    student_id = "student-provider-health-dgekt-readonly"
+    progress_store = InMemoryProgressStore()
+    progress_store.save(_seed_progress(student_id))
+    kt_probe = _ReadonlyDGEKTProbe()
+    loop = MathTutorLearningLoop(
+        kt_engine=kt_probe,
+        store=progress_store,
+        memories=InMemoryStudentMemoryStore(),
+        rag=LocalKnowledgeRAG(),
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    before = _learning_fact_snapshot(loop=loop, student_id=student_id)
+    response = client.get("/api/provider-health")
+    after = _learning_fact_snapshot(loop=loop, student_id=student_id)
+
+    assert response.status_code == 200
+    assert after == before
+    assert kt_probe.calls == []
+
+
+def test_provider_health_diagnostic_gaps_do_not_become_teaching_trace_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        memories=InMemoryStudentMemoryStore(),
+        rag=LocalKnowledgeRAG(),
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    diagnostic_gap = {
+        "gap_type": "provider_timeout",
+        "provider": "openviking",
+        "operation": "search",
+        "reason": "health-readonly-gap only for provider health",
+        "details": {"safe_summary": "health-readonly-gap should stay out of trace"},
+    }
+    setattr(loop.memories, "last_evidence_gaps", [])
+    setattr(loop.rag, "last_evidence_gaps", [diagnostic_gap])
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    health_response = client.get("/api/provider-health")
+    setattr(loop.rag, "last_evidence_gaps", [])
+    event_response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-provider-health-gap-readonly",
+            "student_id": "student-provider-health-gap-readonly",
+            "type": "chat_message",
+            "message": "我下一步应该练什么？",
+            "payload": {},
+        },
+    )
+
+    assert health_response.status_code == 200
+    assert "health-readonly-gap" in json.dumps(
+        health_response.json(),
+        ensure_ascii=False,
+    )
+    assert event_response.status_code == 200
+    body = event_response.json()
+    assert all(event["stage"] != "provider_health" for event in body["teaching_trace"])
+    assert "provider_health" not in json.dumps(body, ensure_ascii=False)
+    assert "health-readonly-gap" not in json.dumps(body, ensure_ascii=False)
+    assert body["state_summary"]["errors"] == []
+
+
 def _assert_iso_timestamp(value: str) -> None:
     parsed = datetime.fromisoformat(value)
     assert parsed.tzinfo is not None
@@ -579,6 +714,238 @@ class _RuntimeLoop:
     def __init__(self, *, memories: _RuntimeProvider, rag: _RuntimeProvider) -> None:
         self.memories = memories
         self.rag = rag
+
+
+class _ReadonlyDGEKTProbe:
+    engine_name = "dgekt"
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.diagnostics = {
+            "engine_name": "dgekt",
+            "prediction_facts": {
+                "prediction_probability": 0.2,
+                "weak_concepts": [
+                    {
+                        "concept_id": "c_fraction_addition",
+                        "mastery": 0.37,
+                    }
+                ],
+                "forgetting_risks": [
+                    {
+                        "concept_id": "c_fraction_addition",
+                        "forgetting_risk": 0.55,
+                    }
+                ],
+            },
+            "offline_attribution_facts": {
+                "evidence_status": "complete",
+                "evidence_source": "offline",
+                "top_paths": [
+                    {
+                        "path_id": "offline-path-readonly",
+                        "path_strength": 0.842,
+                    }
+                ],
+                "key_history": [
+                    {
+                        "assist2017_question_id": 3,
+                        "is_correct": False,
+                    }
+                ],
+            },
+        }
+
+    def update_from_event(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls.append("update_from_event")
+        raise AssertionError("Provider Health 不应调用 DGEKT update。")
+
+    def diagnose(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls.append("diagnose")
+        raise AssertionError("Provider Health 不应调用 DGEKT diagnose。")
+
+    def explain_prediction(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls.append("explain_prediction")
+        raise AssertionError("Provider Health 不应调用 DGEKT attribution。")
+
+
+def _readonly_loop_with_seed_state(
+    *,
+    student_id: str,
+) -> tuple[MathTutorLearningLoop, InMemoryContextAssetStore]:
+    progress_store = InMemoryProgressStore()
+    progress_store.save(_seed_progress(student_id))
+
+    memory_store = InMemoryStudentMemoryStore()
+    memory_store.write(
+        StudentMemory(
+            memory_id="mem-readonly-seed",
+            student_id=student_id,
+            memory_type="preference",
+            content="学生偏好步骤化讲解。",
+            summary="偏好步骤化讲解",
+            evidence={"concept_id": "c_fraction_addition"},
+            provenance={"source_event": "event:trace-before:answer_submitted"},
+            created_at="2026-07-09T08:00:00+00:00",
+            updated_at="2026-07-09T08:00:00+00:00",
+        )
+    )
+
+    context_store = InMemoryContextAssetStore()
+    context_store.write(
+        ContextAsset(
+            asset_id="ctx-readonly-seed",
+            asset_type="student_memory",
+            source_type="local_memory",
+            source_ref="memory:mem-readonly-seed",
+            summary="学生偏好步骤化讲解。",
+            student_id=student_id,
+            session_id="session-provider-health-readonly",
+            concept_id="c_fraction_addition",
+            evidence_refs=["memory:mem-readonly-seed"],
+            created_at="2026-07-09T08:00:00+00:00",
+            updated_at="2026-07-09T08:00:00+00:00",
+        )
+    )
+    context_store.record_assembly(
+        session_id="session-provider-health-readonly",
+        student_id=student_id,
+        assembled_context=AssembledContext(
+            context_id="assembled-readonly-seed",
+            intent="next_step_advice",
+            authoritative_kt_facts={
+                "prediction_probability": 0.58,
+                "weak_concepts": [{"concept_id": "c_fraction_addition"}],
+            },
+            asset_summaries=[{"asset_id": "ctx-readonly-seed"}],
+        ),
+    )
+
+    loop = MathTutorLearningLoop(
+        store=progress_store,
+        memories=memory_store,
+        rag=LocalKnowledgeRAG(),
+        context_layer=LearningContextLayer(store=context_store),
+    )
+    return loop, context_store
+
+
+def _seed_progress(student_id: str) -> KTLearningProgress:
+    return KTLearningProgress(
+        student_id=student_id,
+        current_session_id="session-provider-health-readonly",
+        concept_states=[
+            ConceptState(
+                concept_id="c_fraction_addition",
+                concept_name="异分母分数加法",
+                teaching_type="procedure",
+                mastery=0.37,
+                forgetting_risk=0.55,
+                recent_accuracy=0.25,
+                evidence_count=4,
+                status="weak",
+            )
+        ],
+        recent_events=[
+            LearningEvent(
+                session_id="session-provider-health-readonly",
+                student_id=student_id,
+                type="answer_submitted",
+                message="3/5",
+                payload={
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "is_correct": False,
+                },
+            )
+        ],
+        weak_concepts=[
+            {
+                "concept_id": "c_fraction_addition",
+                "mastery": 0.37,
+            }
+        ],
+        forgetting_risks=[
+            {
+                "concept_id": "c_fraction_addition",
+                "forgetting_risk": 0.55,
+            }
+        ],
+        pending_question={"question_id": "q_frac_001"},
+        error_records=[{"code": "preexisting_gap", "message": "seed gap"}],
+        teaching_trace_ids=["trace-before-health"],
+        version=7,
+    )
+
+
+def _runtime_state_snapshot(
+    *,
+    loop: MathTutorLearningLoop,
+    context_store: InMemoryContextAssetStore,
+    student_id: str,
+) -> dict[str, Any]:
+    rag_state = getattr(loop.rag, "__dict__", {})
+    return _jsonable(
+        {
+            "progress": loop.store.get_or_create(student_id).model_dump(mode="json"),
+            "memories": [
+                item.model_dump(mode="json")
+                for item in loop.memories.list_recent(student_id=student_id, limit=20)
+            ],
+            "memory_provider_gaps": getattr(loop.memories, "last_evidence_gaps", []),
+            "rag_provider_gaps": getattr(loop.rag, "last_evidence_gaps", []),
+            "rag_cached_artifacts": sorted(
+                key
+                for key in rag_state
+                if key in {"documents", "canonical_mapping"}
+            ),
+            "context_assets": [
+                item.model_dump(mode="json")
+                for item in context_store.search(student_id=student_id, limit=50)
+            ],
+            "context_records": [
+                item.model_dump(mode="json")
+                for item in context_store.list_assembly_records(
+                    student_id=student_id,
+                    limit=50,
+                )
+            ],
+        }
+    )
+
+
+def _learning_fact_snapshot(
+    *,
+    loop: MathTutorLearningLoop,
+    student_id: str,
+) -> dict[str, Any]:
+    progress = loop.store.get_or_create(student_id)
+    diagnostics = getattr(loop.kt_engine, "diagnostics", {})
+    return _jsonable(
+        {
+            "mastery_by_concept": {
+                concept.concept_id: concept.mastery
+                for concept in progress.concept_states
+            },
+            "concept_states": [
+                concept.model_dump(mode="json")
+                for concept in progress.concept_states
+            ],
+            "weak_concepts": progress.weak_concepts,
+            "forgetting_risks": progress.forgetting_risks,
+            "prediction_probability": diagnostics.get(
+                "prediction_facts",
+                {},
+            ).get("prediction_probability"),
+            "dgekt_prediction_facts": diagnostics.get("prediction_facts"),
+            "offline_attribution_facts": diagnostics.get("offline_attribution_facts"),
+            "teaching_trace_ids": progress.teaching_trace_ids,
+        }
+    )
+
+
+def _jsonable(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True))
 
 
 def _write_dgekt_readiness_files(tmp_path: Path) -> tuple[Path, Path, Path]:

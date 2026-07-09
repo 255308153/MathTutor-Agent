@@ -1,6 +1,6 @@
 # V1.8 Provider Health 与可观测性
 
-本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99、#100、#101 与 #102：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG、KT/DGEKT、Content/RAG artifact、LearningContextLayer readiness 诊断，以及 provider gap 安全归一与敏感信息清洗。
+本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99、#100、#101、#102 与 #103：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG、KT/DGEKT、Content/RAG artifact、LearningContextLayer readiness 诊断、provider gap 安全归一与敏感信息清洗，以及最终只读不变量和验收收口。
 
 ## API
 
@@ -9,10 +9,12 @@
 
 Provider Health 响应固定使用以下状态词：
 
-- `healthy`
-- `degraded`
-- `unavailable`
-- `not_configured`
+| 状态词 | 中文语义 | 试用解读 |
+| --- | --- | --- |
+| `healthy` | 当前诊断面可运行。 | 只说明该组件 readiness 通过，不代表 live provider 已被强制启用。 |
+| `degraded` | 存在可恢复降级。 | 学习主流程继续使用可用 fallback / fixture evidence，管理员需要检查提示。 |
+| `unavailable` | 当前组件不可用或 provider failure。 | 不信任该 provider evidence，不写入学习事实。 |
+| `not_configured` | 显式模式缺少必要配置。 | 与 outage 区分；常见于 opt-in live provider 缺 env。 |
 
 每个组件至少包含：
 
@@ -128,6 +130,13 @@ Provider Health 只能做诊断与运营可见性。读取 `/api/provider-health
 - TeachingTrace
 - KT state
 
+#103 已补只读不变量测试，覆盖：
+
+- runtime memory store、progress store、context asset store、context assembly record、RAG cached artifact / index 状态在 health 调用前后完全一致。
+- health 不调用 DGEKT `update_from_event`、`diagnose` 或 `explain_prediction`，不改变 mastery、weak concepts、forgetting risk、prediction probability、DGEKT prediction facts 或 offline attribution facts。
+- provider health 里看到的诊断 gap 不会被持久化成下一次学习事件的 TeachingTrace stage、evidence gap 或 state error。
+- 前端在 provider health 降级或 unavailable 时仍能展示推荐题并通过默认 fallback 提交答案。
+
 核心边界保持不变：
 
 ```text
@@ -139,3 +148,29 @@ Context can assemble evidence, not decide learning facts.
 ```
 
 Provider Health 输出不得泄露 credentials、authorization header、raw provider payload、SDK response、embedding、provider debug 字段、敏感本地路径、checkpoint 或模型文件路径。
+
+## 使用与验收说明
+
+默认 local fallback / mock / demo content 可运行，只说明本地学习演示路径可用；它不等于 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、完整 ASSISTments2017 artifact 或 live provider 已准备好。若要验证 live provider，需要显式设置对应 mode、provider、endpoint、collection、checkpoint / dataset / Q-matrix / offline evidence 路径和 opt-in smoke 开关。
+
+Provider Health 是诊断与运营可见性，不是学习事实来源。学习事实仍由 KT / DGEKT、服务端判题、RAG citation、Memory 和 LearningContextLayer 各自的边界控制：
+
+- KT facts are authoritative.
+- Offline attribution explains prediction, not overwrite prediction facts.
+- Memory can influence strategy, not mastery.
+- RAG can support explanation, not overwrite prediction facts.
+- Context can assemble evidence, not decide learning facts.
+
+最终收口验收命令：
+
+```bash
+python3 -m pytest backend/tests
+cd frontend && npm test -- --run
+cd frontend && npm run build
+python3 scripts/check_repository_safety.py
+git diff --check
+```
+
+仓库安全要求保持 `violation_count=0`。不得提交 credentials、secrets、`.env`、provider cache、generated vector index、raw dataset、checkpoint、模型文件、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、`dist`、`build` 或 `node_modules`。
+
+V1.8 Provider Health 这一项内部正式试用 gate 的判定：当上述测试和 repository safety 均通过时，本模块满足 provider readiness 可见性、降级提示、安全清洗、只读不变量和默认 fallback 可运行要求。完整 V1.8 仍需继续关注 provider health 之外的剩余风险：持久化学习状态、TeachingTrace 持久化、连续学习反馈闭环，以及 live provider health 的真实运营验证。

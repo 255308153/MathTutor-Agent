@@ -507,6 +507,37 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText(/OpenViking live RAG 不可用/)).toBeInTheDocument();
   });
 
+  it("Provider Health 降级时仍可用 fallback 提交推荐题答案", async () => {
+    const fetchMock = mockMathTutorApi({
+      providerHealthResponse: degradedProviderHealthResponse,
+      eventResponses: [
+        baseResponse,
+        {
+          ...baseResponse,
+          trace_id: "tt-health-degraded-answer",
+          response: "收到，你提交的 q_frac_001 已由服务端标准答案判定为正确。"
+        }
+      ]
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
+    expect(screen.getByText("Memory/RAG live provider 存在配置缺口；默认学习流程仍可继续。")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
+    await userEvent.click(screen.getByLabelText("提交答案"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/服务端标准答案判定为正确/)).toBeInTheDocument();
+    });
+    const eventCalls = eventFetchCalls(fetchMock);
+    expect(eventCalls).toHaveLength(2);
+    expect(eventCalls[1][1]?.body).toContain("\"type\":\"answer_submitted\"");
+    expect(eventCalls[1][1]?.body).toContain("\"answer\":\"3/4\"");
+    expect(eventCalls[1][1]?.body).toContain("\"assist2017_question_id\":1");
+  });
+
   it("展示 KT/DGEKT、Content/RAG artifact 与 LearningContextLayer readiness", async () => {
     mockMathTutorApi({
       providerHealthResponse: ktArtifactProviderHealthResponse
