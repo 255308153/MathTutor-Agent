@@ -120,7 +120,7 @@ V1.3 端到端验收路径：
 python3 -m pytest backend/tests/test_kt_engine_config.py::test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path -q
 ```
 
-V1.3 / V1.4 已知限制：
+V1.3 / V1.4 历史限制（V1.5 之前）：
 
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖 checkpoint。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；大模型和原始数据只通过本地路径引用。
@@ -130,12 +130,12 @@ V1.3 / V1.4 已知限制：
 - 本地 RAG 使用 JSON fallback，citation 形状稳定但不是生产向量库。
 - 前端仅用于单学习者演示，不包含登录、班级和教师端。
 
-下一阶段真实集成优先级：
+V1.5 已完成第一项 full-data artifact 生产线；仍不包含 provider 和完整离线 scorer。后续真实集成优先级：
 
-1. `ASSISTments2017` 完整内容导入：补齐题目、知识点、历史作答、题解和错因文档映射。
-2. 原 DGEKT explainability scorer 在线化：接入完整 top attribution paths / key history scorer 输出。
-3. `Mem0` adapter：将本地学生记忆替换为可持久化检索记忆。
-4. `VikingDB` adapter：将本地 JSON RAG fallback 替换成向量检索。
+1. 原 DGEKT explainability scorer 在线化：接入完整 top attribution paths / key history scorer 输出。
+2. `Mem0` adapter：将本地学生记忆替换为可持久化检索记忆。
+3. `VikingDB` / `OpenViking` adapter：将本地 JSON RAG fallback 替换成向量检索。
+4. Full artifact 存储和分发：如果完整 ASSISTments2017 generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程。
 
 前端环境变量：
 
@@ -153,6 +153,15 @@ pytest
 ruff check .
 cd frontend && npm test && npm run build
 ```
+
+V1.5 #53 最终验收记录（2026-07-09）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `python3 -m pytest backend/tests` | 通过，95 passed，1 skipped。skipped 项为真实 DGEKT checkpoint smoke，仍需显式 opt-in。 |
+| `cd frontend && npm test -- --run` | 通过，1 个 test file / 6 tests passed。 |
+| `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
+| `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 raw train/test、checkpoint、模型文件、cache/build 输出或 full generated artifact。 |
 
 开发节奏：
 
@@ -283,6 +292,57 @@ python3 -m backend.app.importing.build_assist2017_artifacts \
 rm -rf data/local/assist2017_full_artifacts
 rm -rf frontend/dist .pytest_cache .ruff_cache
 ```
+
+## 4.1.2 V1.5 artifact schema 与 coverage 诊断
+
+`backend.app.importing.assist2017_artifacts` 是 V1.5 数据导入 contract 的唯一 Pydantic 定义来源。构建 CLI 写出的文件和 runtime 读取关系如下：
+
+| artifact | schema_version | runtime consumer | 关键字段 |
+| --- | --- | --- | --- |
+| `canonical_mapping.json` | `assist2017-canonical-mapping/v1` | mapping diagnostics / DGEKT target alignment | `questions[].question_id`、`questions[].assist2017_question_id`、`questions[].assist2017_concept_id`、`q_matrix_reference`、`rag_doc_ids`。 |
+| `content_import.json` | `assist2017-content-import/v1` | `ImportedTeachingContentRepository` | `questions[].stem`、`standard_answer`、`explanation`、`difficulty`、`mistake_patterns`、`canonical_mapping`、`provenance`、`content_availability`。 |
+| `rag_documents.json` | `assist2017-rag-documents/v1` | `LocalKnowledgeRAG(documents_path=...)` | `documents[].doc_type`、`concept_id`、`question_id`、ASSIST2017 ids、`canonical_mapping`、`coverage`、`provenance`。 |
+| `coverage_report.json` | `assist2017-coverage-report/v1` | reviewer / researcher diagnostics | `summary.mapping`、`summary.content`、`summary.rag`、`summary.q_matrix`、`gaps[]`。 |
+| `smoke_dataset.json` | `assist2017-smoke-dataset/v1` | API smoke tests | `learning_paths[].canonical_question_id`、`canonical_concept_id`、`steps[]`。 |
+
+所有 artifact 都包含相同结构的 `metadata`：
+
+| 字段 | 含义 |
+| --- | --- |
+| `generated_at` | 构建时间；fixture 构建可传固定值保证 deterministic diff。 |
+| `source_paths` | source rows 和 Q-matrix 的本地来源。full data 路径可以是 Git 外部路径。 |
+| `row_counts` | source rows、valid rows、Q-matrix question/concept、content question、RAG document 数量。 |
+| `coverage_summary` | compact coverage summary，便于 artifact consumer 快速显示。 |
+| `validation_errors` | error / warning / info 级导入问题，不能静默吞掉。 |
+
+`coverage_report.json` 的 gap category：
+
+| category | 常见 reason_code | 如何解读 | 处理建议 |
+| --- | --- | --- | --- |
+| `missing_question_mapping` | `q_matrix_row_without_source_question` | Q-matrix 有题目行，但 source rows 未导入对应题目。 | 补 source rows 或确认 full data 抽样范围。 |
+| `missing_concept_mapping` | `q_matrix_concept_without_source_concept` | Q-matrix 有 concept 列，但 source rows 没有该 concept metadata。 | 补 concept metadata 或检查 Q-matrix。 |
+| `q_matrix_mismatch` | `question_outside_q_matrix` / `concept_not_in_q_matrix_row` | source row 的 question/concept 与 Q-matrix 不一致。 | 作为 error 修正源文件；默认 CLI 会失败。 |
+| `missing_teaching_content` | `essential_teaching_field_missing` | mapping 成功，但题干、标准答案或解析缺失。 | 补内容；runtime 必须通过 `content_availability` 暴露 partial/missing。 |
+| `missing_rag_doc` | `expected_rag_doc_not_generated` | content 期望的 RAG doc 不存在。 | 补 question explanation、mistake pattern、concept note 或 strategy 文档。 |
+
+`summary.mapping.mapped_*` / `unmapped_*` 用于判断 canonical 对齐覆盖；`summary.content.missing_teaching_content` 用于判断教学内容是否完整；`summary.rag.missing_rag_docs` 用于判断 citation 质量；`summary.q_matrix.mismatches` 用于阻断不可信的 KT / DGEKT target alignment。
+
+导入 artifact 不能改变学习事实边界：
+
+- KT facts are authoritative.
+- Memory can influence strategy, not mastery.
+- RAG can support explanation, not overwrite prediction facts.
+- Context can assemble evidence, not decide learning facts.
+
+也就是说，coverage gap、RAG citation、provenance 和 context evidence 只辅助解释与审计；`mastery`、`weak_concepts`、`forgetting_risk`、`prediction_probability` 仍只来自 KT engine。
+
+V1.5 API smoke 可单独运行：
+
+```bash
+python3 -m pytest backend/tests/test_assist2017_learning_path_smoke.py -q
+```
+
+该 smoke 使用 committed imported fixture，验证同一 `canonical_question_id` / `canonical_concept_id` 贯穿推荐 payload、服务端判题、KT facts、RAG citation、`assembled_context` 和 TeachingTrace。默认仍是 `MockKTStateEngine`，不会读取 DGEKT checkpoint。
 
 ## 4.2 LearningContextLayer 本地上下文层
 

@@ -199,6 +199,54 @@ Context can assemble evidence, not decide learning facts.
 - 缺少学生记忆或 RAG 资源时，LearningContextLayer 记录 evidence gap，而不是伪造 asset 或覆盖 KT facts。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 
+### 4.1 V1.5 ASSISTments2017 数据生产线
+
+V1.5 把 ASSISTments2017 从“demo 映射 fixture”推进为可重复构建、可诊断、可 smoke 的 imported artifact 生产线。它不改变 Agent runtime 的核心事实边界，也不默认启用 full data。
+
+```text
+本地 ASSISTments2017 source rows + Q-matrix
+-> build_assist2017_artifacts CLI
+-> canonical_mapping.json
+-> content_import.json
+-> rag_documents.json
+-> coverage_report.json
+-> smoke_dataset.json
+-> ContentRepository / KnowledgeRAG / API smoke / TeachingTrace
+```
+
+三个数据层级必须区分：
+
+| 层级 | 说明 | 默认性 |
+| --- | --- | --- |
+| demo | `data/content/demo_teaching_content.json`、`data/rag/demo_knowledge.json` 和 mapping fixture，供本地默认运行。 | 默认启用。 |
+| imported fixture / smoke | `data/imported/assist2017_fixture/*.json`，用小样本验证 V1.5 artifact contract 和学习路径一致性。 | 仅测试或显式配置启用。 |
+| full | 本地完整 ASSISTments2017 source rows / Q-matrix 构建出的 artifact。 | 必须显式传路径，输出到 Git 外部或 ignored 目录。 |
+
+Artifact contract：
+
+- `canonical_mapping.json`：stable canonical question/concept id、ASSISTments2017 id、Q-matrix reference 和 RAG doc ids。
+- `content_import.json`：题干、标准答案、解析、难度、错因、teaching type、provenance、`content_availability`。`ImportedTeachingContentRepository` 只从这里读取 imported 教学内容。
+- `rag_documents.json`：四类 RAG 文档 `concept_note`、`question_explanation`、`mistake_pattern`、`learning_strategy`，并携带 canonical mapping、ASSISTments2017 metadata、coverage 和 provenance。
+- `coverage_report.json`：mapping/content/RAG/Q-matrix 的覆盖率与 gap 诊断。
+- `smoke_dataset.json`：固定学习路径，证明同一 canonical question/concept 能跨推荐、答题、KT facts、RAG citation、LearningContextLayer 和 TeachingTrace 追踪。
+
+Coverage gap category：
+
+| category | 含义 | 系统行为 |
+| --- | --- | --- |
+| `missing_question_mapping` | Q-matrix row 没有 source question。 | 进入 coverage 诊断；不伪造题目。 |
+| `missing_concept_mapping` | Q-matrix concept 没有 source concept metadata。 | 进入 coverage 诊断；不伪造知识点语义。 |
+| `q_matrix_mismatch` | source row question/concept 与 Q-matrix 不一致。 | error 级问题，默认构建失败。 |
+| `missing_teaching_content` | 题干、标准答案或解析缺失。 | runtime 通过 `content_availability` / evidence gap 暴露，不能静默生成标准答案。 |
+| `missing_rag_doc` | 期望的 RAG doc 未生成或未导入。 | RAG / Context 记录 gap，不伪造 knowledge_resource。 |
+
+安全与 provider 边界：
+
+- 默认 `MATHTUTOR_CONTENT_SOURCE=demo`、`MATHTUTOR_RAG_SOURCE=demo`、`MATHTUTOR_KT_ENGINE=mock`，不读取 full ASSISTments2017、checkpoint、Mem0、VikingDB 或 OpenViking。
+- full data 只能通过 `--dataset-mode full --source-rows ... --q-matrix ...` 或等价显式配置启用。
+- raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、build output 和 full generated artifact 不进入 Git。
+- DGEKT 继续 opt-in；V1.5 只让 canonical mapping 和内容底座更稳定，不实现完整 DGEKT offline scorer。
+
 ## 5. 双输入模型
 
 V1 不只有聊天消息，还必须接收学习事件。
