@@ -223,6 +223,9 @@ export interface TeachingTraceSummary {
     error_records?: EvidenceGap[];
     planner_decision?: Record<string, unknown> | null;
     recommendations?: RecommendedQuestion[];
+    tool_registry_manifest?: Array<Record<string, unknown>>;
+    tool_observations?: Array<Record<string, unknown>>;
+    runtime?: Record<string, unknown>;
   };
   invariants: string[];
   errors: string[];

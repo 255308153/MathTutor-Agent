@@ -33,6 +33,7 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
         "plan",
         "generate_response",
         "memory_update",
+        "kt_tool_observation",
         "runtime_end",
     ]
     assert "KT facts are authoritative." in body["teaching_trace_summary"]["invariants"]
@@ -80,6 +81,8 @@ def test_trace_events_distinguish_student_and_expert_evidence() -> None:
     assert by_stage["runtime_start"]["type"] == "stage_start"
     assert by_stage["load_context"]["visibility"] == "expert"
     assert by_stage["diagnose"]["actor"] == "kt"
+    assert by_stage["kt_tool_observation"]["actor"] == "kt"
+    assert by_stage["kt_tool_observation"]["type"] == "observation"
     assert by_stage["context_assemble"]["actor"] == "context"
     assert by_stage["plan"]["actor"] == "planner"
     assert by_stage["generate_response"]["visibility"] == "student"

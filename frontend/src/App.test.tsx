@@ -76,6 +76,19 @@ const baseResponse: MathTutorEventResponse = {
     },
     {
       id: "trace-2",
+      stage: "kt_tool_observation",
+      actor: "kt",
+      visibility: "expert",
+      content: "Tool Registry 已记录 KT/DGEKT 权威学习事实 observation。",
+      metadata: {
+        tool_id: "kt_authoritative_facts",
+        provider_mode: "local_fallback",
+        fallback_used: true
+      },
+      evidence_refs: ["trace:tt-test", "kt_diagnosis:tt-test"]
+    },
+    {
+      id: "trace-3",
       stage: "generate_response",
       actor: "response",
       visibility: "student",
@@ -96,7 +109,13 @@ const baseResponse: MathTutorEventResponse = {
   teaching_trace_summary: {
     trace_id: "tt-test",
     intent: "next_step_advice",
-    stages: ["runtime_start", "load_context", "generate_response", "runtime_end"],
+    stages: [
+      "runtime_start",
+      "load_context",
+      "kt_tool_observation",
+      "generate_response",
+      "runtime_end"
+    ],
     student_explanation: "下一步先练：1/2 + 1/4。",
     expert_evidence: {
       kt_diagnosis: {
@@ -134,6 +153,19 @@ const baseResponse: MathTutorEventResponse = {
       ],
       planner_decision: { decision: "recommend" },
       recommendations: [],
+      tool_registry_manifest: [
+        {
+          tool_id: "kt_authoritative_facts",
+          name: "KT/DGEKT 权威学习事实"
+        }
+      ],
+      tool_observations: [
+        {
+          tool_id: "kt_authoritative_facts",
+          provider_mode: "local_fallback",
+          fallback_used: true
+        }
+      ],
       context_assets: [],
       assembled_context: {
         context_id: "assembled-test",
@@ -614,6 +646,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("TeachingTrace")).toBeInTheDocument();
     expect(screen.getByText("Runtime 开始")).toBeInTheDocument();
     expect(screen.getByText("读取上下文")).toBeInTheDocument();
+    expect(screen.getByText("KT 工具观察")).toBeInTheDocument();
     expect(screen.getByText("Runtime 结束")).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
     expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2")).toBeInTheDocument();
