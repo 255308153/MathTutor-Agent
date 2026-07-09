@@ -373,6 +373,37 @@ describe("学习驾驶舱", () => {
     expect(screen.getByRole("button", { name: "刷新长期记忆" })).toBeInTheDocument();
   });
 
+  it("可以在长期记忆面板禁用并重新启用单条记忆", async () => {
+    const fetchMock = mockMathTutorApi();
+
+    render(<App />);
+
+    expect((await screen.findAllByText("偏好步骤化分数讲解")).length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "禁用记忆" }));
+
+    expect(await screen.findByRole("button", { name: "重新启用记忆" })).toBeInTheDocument();
+    expect(screen.getAllByText("已禁用").length).toBeGreaterThan(0);
+    expect(screen.getByText("控制操作")).toBeInTheDocument();
+    expect(screen.getByText("disable")).toBeInTheDocument();
+    expect(screen.getByText("学生在记忆控制面板中禁用该记忆。")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "重新启用记忆" }));
+
+    expect(await screen.findByRole("button", { name: "禁用记忆" })).toBeInTheDocument();
+    expect(screen.getAllByText("已启用").length).toBeGreaterThan(0);
+
+    const memoryControlCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes("/api/students/student-demo/memories/mem-preference-1/")
+    );
+    expect(memoryControlCalls.map(([input]) => String(input))).toEqual([
+      "/api/students/student-demo/memories/mem-preference-1/disable",
+      "/api/students/student-demo/memories/mem-preference-1/enable"
+    ]);
+    expect(memoryControlCalls[0][1]?.body).toContain("学生在记忆控制面板中禁用该记忆。");
+    expect(memoryControlCalls[1][1]?.body).toContain("学生在记忆控制面板中重新启用该记忆。");
+  });
+
   it("展示 provider-backed selected/omitted context evidence 并隐藏 SDK 噪声", async () => {
     mockMathTutorApi({
       eventResponses: [{
@@ -770,13 +801,33 @@ function mockMathTutorApi({
   memoryPending?: boolean;
 } = {}) {
   const eventQueue = [...eventResponses];
+  let currentMemoryResponse = memoryResponse;
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     if (url.includes("/api/students/") && url.includes("/memories")) {
       if (memoryPending) return new Promise<Response>(() => {});
       if (memoryError instanceof Error) throw memoryError;
       if (memoryError instanceof Response) return memoryError.clone();
-      return jsonResponse(memoryResponse);
+      const controlAction = memoryControlAction(url);
+      if (controlAction) {
+        const memoryId = decodeURIComponent(url.split("/memories/")[1].split("/")[0]);
+        const updated = updateMemoryControlFixture(
+          currentMemoryResponse,
+          memoryId,
+          controlAction
+        );
+        currentMemoryResponse = {
+          ...currentMemoryResponse,
+          memories: currentMemoryResponse.memories.map((memory) =>
+            memory.memory_id === memoryId ? updated : memory
+          )
+        };
+        return jsonResponse({
+          student_id: currentMemoryResponse.student_id,
+          memory: updated
+        });
+      }
+      return jsonResponse(currentMemoryResponse);
     }
     if (url.includes("/api/events")) {
       if (eventError instanceof Error) throw eventError;
@@ -787,6 +838,42 @@ function mockMathTutorApi({
     }
     throw new Error(`Unexpected fetch: ${url} ${JSON.stringify(init ?? {})}`);
   });
+}
+
+function memoryControlAction(url: string): "enable" | "disable" | null {
+  if (url.endsWith("/disable")) return "disable";
+  if (url.endsWith("/enable")) return "enable";
+  return null;
+}
+
+function updateMemoryControlFixture(
+  memoryResponse: StudentMemoryListResponse,
+  memoryId: string,
+  action: "enable" | "disable"
+) {
+  const memory = memoryResponse.memories.find((item) => item.memory_id === memoryId);
+  if (!memory) throw new Error(`Missing memory fixture: ${memoryId}`);
+  const enabled = action === "enable";
+  const status: StudentMemoryListResponse["memories"][number]["status"] = enabled
+    ? "enabled"
+    : "disabled";
+  return {
+    ...memory,
+    enabled,
+    status,
+    provenance: {
+      ...memory.provenance,
+      control: {
+        operation: action,
+        status,
+        actor: "student",
+        reason: enabled
+          ? "学生在记忆控制面板中重新启用该记忆。"
+          : "学生在记忆控制面板中禁用该记忆。",
+        occurred_at: "2026-07-09T09:00:00+00:00"
+      }
+    }
+  };
 }
 
 function eventFetchCalls(fetchMock: ReturnType<typeof mockMathTutorApi>) {

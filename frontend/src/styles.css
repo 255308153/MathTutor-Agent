@@ -177,6 +177,7 @@ h2 {
 }
 
 .primary-button,
+.secondary-button,
 .answer-row button,
 .chat-form button {
   display: inline-flex;
@@ -190,6 +191,12 @@ h2 {
   color: white;
   font-weight: 800;
   padding: 0 16px;
+}
+
+.secondary-button {
+  border: 1px solid #cfd9d3;
+  background: #fbfcfb;
+  color: #1f4e43;
 }
 
 .answer-row button,
@@ -385,6 +392,12 @@ button:disabled {
   background: #f0f8f5;
 }
 
+.memory-list button.memory-disabled {
+  border-style: dashed;
+  background: #f6f7f5;
+  color: #5f6963;
+}
+
 .memory-list span,
 .memory-list strong,
 .memory-list small {
@@ -431,6 +444,16 @@ button:disabled {
 .memory-detail p {
   color: #47564f;
   line-height: 1.5;
+}
+
+.memory-control-row {
+  display: flex;
+  justify-content: flex-start;
+  margin: 10px 0 4px;
+}
+
+.memory-control-row button {
+  min-height: 34px;
 }
 
 .memory-type {

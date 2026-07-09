@@ -226,6 +226,9 @@ class LearningContextLayer:
             memory_type = str(memory.get("memory_type") or "reflection")
             memory_freshness = memory.get("freshness")
             provider_metadata = _memory_provider_metadata(memory)
+            is_disabled = _memory_is_disabled(memory)
+            included_reason = None if is_disabled else _memory_included_reason(memory_type)
+            excluded_reason = _disabled_memory_excluded_reason() if is_disabled else None
             assets.append(
                 ContextAsset(
                     asset_type="student_memory",
@@ -244,6 +247,9 @@ class LearningContextLayer:
                         "provider_backed": provider_metadata["provider_backed"],
                         "provider_name": provider_metadata.get("provider_name"),
                         "provider_mode": provider_metadata.get("provider_mode"),
+                        "enabled": not is_disabled,
+                        "status": "disabled" if is_disabled else "enabled",
+                        "control": _memory_control_metadata(memory),
                     },
                     evidence_refs=[f"memory:{memory.get('memory_id', 'unknown')}"],
                     confidence=_confidence_from_memory(memory),
@@ -256,7 +262,8 @@ class LearningContextLayer:
                     session_id=session_id,
                     concept_id=_concept_id_from(memory.get("evidence", {})),
                     question_id=_question_id_from(memory.get("evidence", {})),
-                    included_reason=_memory_included_reason(memory_type),
+                    included_reason=included_reason,
+                    excluded_reason=excluded_reason,
                 )
             )
 
@@ -1101,6 +1108,22 @@ def _memory_included_reason(memory_type: str) -> str:
         "reflection": "参考学习目标或反思",
     }
     return reasons.get(memory_type, "参考学生记忆")
+
+
+def _memory_is_disabled(memory: dict[str, Any]) -> bool:
+    return memory.get("enabled") is False or memory.get("status") == "disabled"
+
+
+def _disabled_memory_excluded_reason() -> str:
+    return "学生已禁用该记忆，默认学习上下文已排除。"
+
+
+def _memory_control_metadata(memory: dict[str, Any]) -> dict[str, Any]:
+    provenance = memory.get("provenance")
+    if not isinstance(provenance, dict):
+        return {}
+    control = provenance.get("control")
+    return control if isinstance(control, dict) else {}
 
 
 def _knowledge_included_reason(doc_type: str) -> str:

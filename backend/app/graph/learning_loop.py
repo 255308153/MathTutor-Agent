@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from ..context.learning_context import LearningContextLayer, context_layer as default_context_layer
+from ..context.learning_context import (
+    ContextAsset,
+    LearningContextLayer,
+    context_layer as default_context_layer,
+)
 from ..kt.engine import KTStateEngine
 from ..kt.dgekt_engine import DGEKTMappingError, DGEKTUnsupportedTargetError
 from ..kt.factory import create_kt_engine
@@ -463,6 +467,7 @@ class MathTutorLearningLoop:
         )
         if not retrieved:
             retrieved = assets[:8]
+        retrieved = self._apply_memory_controls_to_context_assets(state, retrieved)
         assembled = self.context_layer.assemble_context(
             intent=state.intent,
             assets=retrieved,
@@ -503,6 +508,45 @@ class MathTutorLearningLoop:
                 concept.concept_id: concept.mastery for concept in state.kt_progress.concept_states
             },
         }
+
+    def _apply_memory_controls_to_context_assets(
+        self,
+        state: MathTutorState,
+        assets: list[ContextAsset],
+    ) -> list[ContextAsset]:
+        controlled_assets: list[ContextAsset] = []
+        for asset in assets:
+            if asset.asset_type != "student_memory":
+                controlled_assets.append(asset)
+                continue
+            memory_id = _memory_id_from_source_ref(asset.source_ref)
+            if memory_id is None:
+                controlled_assets.append(asset)
+                continue
+            try:
+                memory = self.memories.get(student_id=state.student_id, memory_id=memory_id)
+            except Exception:
+                controlled_assets.append(asset)
+                continue
+            if memory is None or (memory.enabled and memory.status == "enabled"):
+                controlled_assets.append(asset)
+                continue
+            metadata = dict(asset.metadata)
+            metadata["memory_control"] = {
+                "status": memory.status,
+                "enabled": memory.enabled,
+                "control": memory.provenance.get("control"),
+            }
+            controlled_assets.append(
+                asset.model_copy(
+                    update={
+                        "included_reason": None,
+                        "excluded_reason": _disabled_memory_excluded_reason(),
+                        "metadata": metadata,
+                    }
+                )
+            )
+        return controlled_assets
 
     def _attach_runtime_evidence_gaps(
         self,
@@ -1350,6 +1394,18 @@ class MathTutorLearningLoop:
         for ref in assembled_context.get("evidence_refs", []):
             refs.append(str(ref))
         return list(dict.fromkeys(refs))
+
+
+def _memory_id_from_source_ref(source_ref: str) -> str | None:
+    prefix = "memory:"
+    if not source_ref.startswith(prefix):
+        return None
+    memory_id = source_ref[len(prefix):]
+    return memory_id or None
+
+
+def _disabled_memory_excluded_reason() -> str:
+    return "学生已禁用该记忆，默认学习上下文已排除。"
 
 
 learning_loop = MathTutorLearningLoop()

@@ -87,6 +87,63 @@ def test_student_memory_read_api_lists_and_details_without_provider_payload_leak
         assert raw_provider_key not in serialized
 
 
+@pytest.mark.parametrize(
+    ("provider_name", "store_factory"),
+    [
+        ("local_fallback", InMemoryStudentMemoryStore),
+        ("fake_provider", FakeStudentMemoryProvider),
+    ],
+)
+def test_student_memory_control_api_disables_and_reenables_memory(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_name: str,
+    store_factory: Callable[[], StudentMemoryStore],
+) -> None:
+    store = store_factory()
+    student_id = f"student-memory-toggle-{provider_name}"
+    memory = store.write(
+        StudentMemory(
+            student_id=student_id,
+            memory_type="preference",
+            content="学生偏好先看比例题的步骤化讲解。",
+            evidence={"preferred_concept_id": "c_ratio"},
+        )
+    )
+    monkeypatch.setattr(events_api, "learning_loop", SimpleNamespace(memories=store))
+    client = TestClient(create_app())
+
+    disabled_response = client.post(
+        f"/api/students/{student_id}/memories/{memory.memory_id}/disable",
+        json={"actor": "student", "reason": "暂时不要让这条记忆影响推荐。"},
+    )
+
+    assert disabled_response.status_code == 200
+    disabled = disabled_response.json()["memory"]
+    assert disabled["enabled"] is False
+    assert disabled["status"] == "disabled"
+    assert disabled["provenance"]["control"]["operation"] == "disable"
+    assert disabled["provenance"]["control"]["reason"] == "暂时不要让这条记忆影响推荐。"
+    assert store.search(student_id=student_id, query="比例 步骤", limit=5) == []
+
+    listed = client.get(f"/api/students/{student_id}/memories").json()["memories"]
+    assert listed[0]["memory_id"] == memory.memory_id
+    assert listed[0]["status"] == "disabled"
+
+    enabled_response = client.post(
+        f"/api/students/{student_id}/memories/{memory.memory_id}/enable",
+        json={"actor": "student", "reason": "重新允许这条记忆参与推荐。"},
+    )
+
+    assert enabled_response.status_code == 200
+    enabled = enabled_response.json()["memory"]
+    assert enabled["enabled"] is True
+    assert enabled["status"] == "enabled"
+    assert enabled["provenance"]["control"]["operation"] == "enable"
+    assert store.search(student_id=student_id, query="比例 步骤", limit=5)[0].memory_id == (
+        memory.memory_id
+    )
+
+
 def test_student_memory_detail_api_returns_404_for_missing_memory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
