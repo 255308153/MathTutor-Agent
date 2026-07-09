@@ -5,32 +5,51 @@ from typing import Any
 from ..graph.learning_loop import MathTutorLearningLoop, learning_loop as default_learning_loop
 from ..schemas.learning import LearningEvent, MathTutorEventResponse
 from ..schemas.trace import TeachingTraceEvent, TeachingTraceEventType
+from .capabilities import (
+    CapabilitySelection,
+    MathCapabilityRegistry,
+    default_capability_registry,
+)
 from .context import LearningTurnContext, RuntimeIntent
 
 
 class MathTutorAgentRuntime:
     """V1.9 top-level orchestration seam for one mathematics learning turn."""
 
-    def __init__(self, learning_loop: MathTutorLearningLoop | None = None) -> None:
+    def __init__(
+        self,
+        learning_loop: MathTutorLearningLoop | None = None,
+        capability_registry: MathCapabilityRegistry | None = None,
+    ) -> None:
         self.learning_loop = learning_loop or default_learning_loop
+        self.capability_registry = capability_registry or default_capability_registry
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         turn_context = self._build_turn_context(event)
+        capability_selection = self.capability_registry.select(turn_context)
+        capability_summary = capability_selection.public_summary()
         start_event = self._runtime_trace(
             event_type=TeachingTraceEventType.STAGE_START,
             stage="runtime_start",
-            content="MathTutorAgentRuntime 已接收本轮数学学习事件。",
+            content=self._runtime_start_content(capability_selection),
             metadata={
                 "runtime_name": turn_context.runtime_name,
                 "turn_id": turn_context.turn_id,
                 "subject": turn_context.subject,
                 "intent": turn_context.intent,
+                "capability_selection": capability_summary,
                 "learning_event_type": event.type,
                 "kt_progress_version_before": turn_context.kt_progress.version,
                 "state_reference_only": True,
-                "boundary": "Agent runtime orchestrates teaching flow, not KT facts.",
+                "boundary": (
+                    "Agent runtime orchestrates teaching flow; capability selection "
+                    "cannot overwrite KT facts."
+                ),
             },
-            evidence_refs=[f"turn:{turn_context.turn_id}"],
+            evidence_refs=[
+                f"turn:{turn_context.turn_id}",
+                f"capability:{capability_summary['capability_id']}",
+            ],
         )
         response = self.learning_loop.handle_event(event)
         completed_progress = self.learning_loop.store.get_or_create(
@@ -49,6 +68,7 @@ class MathTutorAgentRuntime:
                 "turn_id": completed_context.turn_id,
                 "subject": completed_context.subject,
                 "intent": completed_context.intent,
+                "capability_selection": capability_summary,
                 "kt_progress_version_after": completed_context.kt_progress.version,
                 "context_asset_ref_count": len(completed_context.context_asset_refs),
                 "assembled_context_ref": completed_context.assembled_context_ref,
@@ -60,7 +80,7 @@ class MathTutorAgentRuntime:
             evidence_refs=completed_context.trace_refs,
         )
         response.teaching_trace = [start_event, *response.teaching_trace, end_event]
-        self._attach_runtime_summary(response, completed_context)
+        self._attach_runtime_summary(response, completed_context, capability_selection)
         return response
 
     def _build_turn_context(self, event: LearningEvent) -> LearningTurnContext:
@@ -104,23 +124,43 @@ class MathTutorAgentRuntime:
             evidence_refs=list(dict.fromkeys(evidence_refs)),
         )
 
+    def _runtime_start_content(self, selection: CapabilitySelection) -> str:
+        if selection.fallback:
+            return (
+                "MathTutorAgentRuntime 已接收本轮数学学习事件；"
+                "未匹配专用数学能力，使用现有学习流 fallback。"
+            )
+        capability_name = selection.capability.name if selection.capability else "未知能力"
+        return (
+            "MathTutorAgentRuntime 已接收本轮数学学习事件；"
+            f"已选择数学能力：{capability_name}。"
+        )
+
     def _attach_runtime_summary(
         self,
         response: MathTutorEventResponse,
         context: LearningTurnContext,
+        capability_selection: CapabilitySelection,
     ) -> None:
         response.teaching_trace_summary.stages = [
             event.stage for event in response.teaching_trace
         ]
         expert_evidence = dict(response.teaching_trace_summary.expert_evidence)
+        capability_summary = capability_selection.public_summary()
         expert_evidence["learning_turn_context"] = context.public_summary()
+        expert_evidence["active_capability"] = capability_summary
+        expert_evidence["capability_manifest"] = self.capability_registry.manifest()
         expert_evidence["runtime"] = {
             "runtime_name": context.runtime_name,
             "turn_id": context.turn_id,
             "subject": context.subject,
             "intent": context.intent,
+            "active_capability_id": capability_summary["capability_id"],
             "status": "completed",
             "state_reference_only": True,
-            "boundary": "Agent runtime is orchestration; KT remains authoritative.",
+            "boundary": (
+                "Agent runtime is orchestration; capability selection delegates execution "
+                "and KT remains authoritative."
+            ),
         }
         response.teaching_trace_summary.expert_evidence = expert_evidence

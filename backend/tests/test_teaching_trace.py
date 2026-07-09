@@ -51,7 +51,7 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
     assert learning_turn_context["assembled_context_ref"]
     assert f"trace:{body['trace_id']}" in learning_turn_context["trace_refs"]
     assert learning_turn_context["state_reference_only"] is True
-    assert expert["runtime"]["boundary"] == "Agent runtime is orchestration; KT remains authoritative."
+    assert "KT remains authoritative." in expert["runtime"]["boundary"]
     assert expert["kt_diagnosis"]["prediction_probability"] == 0.58
     assert expert["attribution_evidence"]["top_paths"][0]["path_id"] == "mock-path-1"
     assert expert["attribution_evidence"]["key_history"]

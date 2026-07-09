@@ -38,12 +38,15 @@ V1.9 起新增最高层 runtime seam：
 ```text
 MathTutorAgentRuntime
 -> LearningTurnContext
--> 数学 Capability / Tool Registry（逐步拆分）
+-> 数学 Capability Registry
+-> Tool Registry（逐步拆分）
 -> 现有 MathTutorLearningLoop
 -> TeachingTrace runtime/tool observation
 ```
 
 `LearningTurnContext` 是每轮学习 turn 的统一事实载体，记录学生、会话、intent、学习事件、当前 KT progress 快照、context asset 引用、assembled context 引用和 trace 引用。它只做编排与审计引用，不替代 progress store、KT/DGEKT、RAG、memory store 或 LearningContextLayer 的事实所有权。
+
+`MathCapabilityRegistry` 只注册数学学习能力 manifest，并根据 intent 选择本轮激活能力。首批能力包括答题诊断与错因分析、下一步建议与复习规划、数学概念讲解与提示。Capability 只描述用途、适用 intent、预期工具、选择原因和权威边界；当前执行仍委托 `MathTutorLearningLoop`，不得直接写 KT facts、RAG 结果或学生记忆。
 
 ## 2. 参考项目与吸收点
 
