@@ -959,8 +959,7 @@ class MathTutorLearningLoop:
                 "grading_source": self.content.grading_source,
                 "content_availability": grade.question.get("content_availability")
                 or self.content.content_availability(grade.question),
-                "content_provenance": grade.question.get("provenance")
-                or self.content.provenance(grade.question),
+                "content_provenance": self._question_provenance(grade.question),
                 "canonical_mapping": grade.question.get("canonical_mapping"),
                 "q_matrix_reference": grade.question.get("q_matrix_reference"),
             }
@@ -993,16 +992,8 @@ class MathTutorLearningLoop:
         canonical = question.get("canonical_mapping") or {}
         payload.setdefault("concept_id", question.get("concept_id"))
         payload.setdefault("concept_name", question.get("concept_name"))
-        payload.setdefault(
-            "assist2017_question_id",
-            question.get("assist2017_question_id") or canonical.get("assist2017_question_id"),
-        )
-        payload.setdefault(
-            "assist2017_concept_id",
-            question.get("assist2017_concept_id") or canonical.get("assist2017_concept_id"),
-        )
         payload["content_availability"] = availability
-        payload["content_provenance"] = question.get("provenance") or self.content.provenance(question)
+        payload["content_provenance"] = self._question_provenance(question)
         payload["canonical_mapping"] = canonical
         payload["q_matrix_reference"] = question.get("q_matrix_reference") or canonical.get(
             "q_matrix_reference"
@@ -1046,7 +1037,7 @@ class MathTutorLearningLoop:
         availability: dict[str, Any],
     ) -> dict[str, Any]:
         canonical = question.get("canonical_mapping") or {}
-        provenance = question.get("provenance") or self.content.provenance(question)
+        provenance = self._question_provenance(question)
         return {
             "canonical_question_id": question.get("question_id") or canonical.get("question_id"),
             "canonical_concept_id": question.get("concept_id") or canonical.get("concept_id"),
@@ -1061,6 +1052,15 @@ class MathTutorLearningLoop:
             "q_matrix_reference": question.get("q_matrix_reference")
             or canonical.get("q_matrix_reference"),
         }
+
+    def _question_provenance(self, question: dict[str, Any]) -> dict[str, Any]:
+        provenance = question.get("provenance")
+        if isinstance(provenance, dict):
+            return provenance
+        provider = getattr(self.content, "provenance", None)
+        if callable(provider):
+            return provider(question)
+        return {}
 
     def _target_content_trace(self, state: MathTutorState) -> dict[str, Any] | None:
         payload = state.learning_event.payload

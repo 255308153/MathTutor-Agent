@@ -21,6 +21,11 @@ class MathTutorSettings(BaseSettings):
     llm_model: str = ""
     openai_api_key: str = ""
 
+    assist2017_dataset_mode: Literal["demo", "fixture", "full"] = "demo"
+    assist2017_full_source_rows_path: str = ""
+    assist2017_full_q_matrix_path: str = ""
+    assist2017_full_artifact_dir: str = ""
+
     content_source: Literal["demo", "imported"] = "demo"
     content_import_path: str = ""
     rag_source: Literal["demo", "imported"] = "demo"

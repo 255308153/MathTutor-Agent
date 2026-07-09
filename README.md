@@ -302,6 +302,61 @@ cd frontend && npm test -- --run
 cd frontend && npm run build
 ```
 
+## V1.5 ASSISTments2017 导入与安全护栏
+
+V1.5 引入 ASSISTments2017 imported artifact 生产线，但默认运行仍是轻量 demo/mock：
+
+- `MATHTUTOR_ASSIST2017_DATASET_MODE=demo`：默认模式，只使用提交的小型 demo / fixture，不读取完整 ASSISTments2017。
+- `MATHTUTOR_CONTENT_SOURCE=demo`、`MATHTUTOR_RAG_SOURCE=demo`、`MATHTUTOR_KT_ENGINE=mock`：默认后端和默认测试路径，不需要 checkpoint、Mem0、VikingDB/OpenViking。
+- `MATHTUTOR_CONTENT_SOURCE=imported` + `MATHTUTOR_CONTENT_IMPORT_PATH=.../content_import.json`：显式读取导入教学内容 artifact。
+- `MATHTUTOR_RAG_SOURCE=imported` + `MATHTUTOR_RAG_ARTIFACT_PATH=.../rag_documents.json`：显式读取导入 RAG artifact。
+- `MATHTUTOR_ASSIST2017_DATASET_MODE=full`：仅用于本地全量数据构建，必须显式配置 source rows、Q-matrix 和输出目录。
+
+可提交的小型 V1.5 测试资产只有：
+
+```text
+data/import/assist2017_source.fixture.csv
+data/mapping/*.fixture.csv
+data/mapping/*.fixture.json
+data/imported/assist2017_fixture/*.json
+```
+
+全量 ASSISTments2017 推荐放在 Git 外部路径，例如：
+
+```text
+/Users/lqc/data/assist2017/
+/Users/lqc/Downloads/assist2017-full/
+```
+
+如果临时放在仓库内，只能放在默认忽略的 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/assist2017/`。不要提交 raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或全量 generated artifacts。
+
+构建小型 fixture artifact：
+
+```bash
+python3 -m backend.app.importing.build_assist2017_artifacts \
+  --dataset-mode fixture \
+  --output-dir data/imported/assist2017_fixture \
+  --generated-at 2026-07-09T00:00:00+00:00
+```
+
+构建本地 full artifact 时必须显式传入本地路径，并建议输出到 ignored 目录：
+
+```bash
+python3 -m backend.app.importing.build_assist2017_artifacts \
+  --dataset-mode full \
+  --source-rows /Users/lqc/data/assist2017/source_rows.csv \
+  --q-matrix /Users/lqc/data/assist2017/q_matrix.csv \
+  --output-dir data/local/assist2017_full_artifacts
+```
+
+提交前可运行仓库护栏：
+
+```bash
+python3 scripts/check_repository_safety.py
+```
+
+该脚本会检查当前 Git tracked 文件中是否混入 raw train/test、checkpoint、cache/build 输出或非 fixture generated artifact。
+
 ## V1.3 / V1.4 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：
@@ -357,6 +412,14 @@ cp .env.example .env
 - `MATHTUTOR_LLM_PROVIDER=mock`：V1 先用 mock / 规则化响应跑通闭环。
 - `MATHTUTOR_LLM_MODEL`：真实 LLM 模型名，mock 模式可留空。
 - `MATHTUTOR_OPENAI_API_KEY`：真实 LLM key，本地 mock 模式可留空。
+- `MATHTUTOR_ASSIST2017_DATASET_MODE=demo`：默认数据模式；`fixture` 用于构建提交的小型 fixture，`full` 仅用于显式本地全量构建。
+- `MATHTUTOR_ASSIST2017_FULL_SOURCE_ROWS_PATH`：本地 full source rows CSV 路径，默认留空。
+- `MATHTUTOR_ASSIST2017_FULL_Q_MATRIX_PATH`：本地 full Q-matrix 路径，默认留空。
+- `MATHTUTOR_ASSIST2017_FULL_ARTIFACT_DIR`：本地 full artifact 输出目录，建议指向 `data/local/...` 或 Git 外部路径。
+- `MATHTUTOR_CONTENT_SOURCE=demo`：默认教学内容仓库；`imported` 需要显式配置 `MATHTUTOR_CONTENT_IMPORT_PATH`。
+- `MATHTUTOR_CONTENT_IMPORT_PATH`：导入 `content_import.json` 路径，默认留空，缺失时不会静默 fallback。
+- `MATHTUTOR_RAG_SOURCE=demo`：默认本地 RAG；`imported` 需要显式配置 `MATHTUTOR_RAG_ARTIFACT_PATH`。
+- `MATHTUTOR_RAG_ARTIFACT_PATH`：导入 `rag_documents.json` 路径，默认留空，缺失时不会静默 fallback。
 - `MATHTUTOR_KT_ENGINE=mock`：默认 KT 引擎；保持 V1.1 演示不依赖真实 checkpoint。
 - `MATHTUTOR_KT_ENGINE=dgekt`：显式启用真实 DGEKT 配置校验。
 - `MATHTUTOR_DGEKT_DATASET=assist2017`：V1.2 当前支持的真实数据集。

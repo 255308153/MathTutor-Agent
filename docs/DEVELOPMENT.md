@@ -229,6 +229,61 @@ python -m backend.app.mapping.build_assist2017_mapping \
 - `DGEKTStateEngine` 只在显式设置 `MATHTUTOR_KT_ENGINE=dgekt` 时启用。
 - KT facts 是权威事实；RAG 和 Memory 只能影响解释、偏好和策略，不能覆盖 KT mastery / risk / prediction facts。
 
+## 4.1.1 V1.5 demo / imported / full 数据切换
+
+默认本地运行和默认测试使用：
+
+```bash
+MATHTUTOR_ASSIST2017_DATASET_MODE=demo
+MATHTUTOR_CONTENT_SOURCE=demo
+MATHTUTOR_RAG_SOURCE=demo
+MATHTUTOR_KT_ENGINE=mock
+```
+
+这条路径不需要完整 ASSISTments2017、DGEKT checkpoint、Mem0、VikingDB/OpenViking，也不会读取本地 full data。
+
+导入小型 fixture artifact：
+
+```bash
+python3 -m backend.app.importing.build_assist2017_artifacts \
+  --dataset-mode fixture \
+  --output-dir data/imported/assist2017_fixture \
+  --generated-at 2026-07-09T00:00:00+00:00
+```
+
+读取 imported artifact 需要显式配置：
+
+```bash
+export MATHTUTOR_CONTENT_SOURCE=imported
+export MATHTUTOR_CONTENT_IMPORT_PATH=data/imported/assist2017_fixture/content_import.json
+export MATHTUTOR_RAG_SOURCE=imported
+export MATHTUTOR_RAG_ARTIFACT_PATH=data/imported/assist2017_fixture/rag_documents.json
+```
+
+本地 full data 构建必须显式传入源路径，推荐输出到 ignored 目录：
+
+```bash
+python3 -m backend.app.importing.build_assist2017_artifacts \
+  --dataset-mode full \
+  --source-rows /Users/lqc/data/assist2017/source_rows.csv \
+  --q-matrix /Users/lqc/data/assist2017/q_matrix.csv \
+  --output-dir data/local/assist2017_full_artifacts
+```
+
+提交规则：
+
+- 可以提交 `data/import/assist2017_source.fixture.csv`、`data/mapping/*.fixture.*`、`data/imported/assist2017_fixture/*.json`。
+- 不提交 raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或 full generated artifact。
+- full data 推荐放在 Git 外部路径；若临时放仓库内，使用 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/assist2017/`。
+- 提交前运行 `python3 scripts/check_repository_safety.py`，确认 tracked 文件没有禁提交项。
+
+清理方式：
+
+```bash
+rm -rf data/local/assist2017_full_artifacts
+rm -rf frontend/dist .pytest_cache .ruff_cache
+```
+
 ## 4.2 LearningContextLayer 本地上下文层
 
 V1.4 的 LearningContextLayer 位于：
