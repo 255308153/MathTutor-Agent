@@ -261,6 +261,35 @@ V1.7 #78 最终验收记录（2026-07-09）：
 
 V1.7 结论：满足 small expert trial only。内部正式试用仍不得早于 **V1.8**；V1.8 前仍需补齐学生记忆运营控制、live provider health / observability、持久化学习状态、连续学习反馈闭环和更完整的真实数据验收。
 
+## 5. V1.8 记忆控制 gate
+
+V1.8 学生记忆控制的完整说明见 [V1_8_MEMORY_CONTROL.md](V1_8_MEMORY_CONTROL.md)。该模块让 dashboard 支持长期记忆查看、禁用、重新启用和删除，是 V1.8 内部正式试用准入 gate 的一部分。
+
+默认开发路径：
+
+- 不设置 provider env 时继续使用 `local_fallback`，dashboard demo/mock 可运行。
+- `fake_provider` 只用于无网络、无密钥的 provider contract 测试。
+- Mem0 live provider 必须显式设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 和 `MATHTUTOR_MEM0_API_KEY`；live smoke 还需要 `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1`。
+- disabled memory 不进入 selected `student_memory` context assets；deleted memory 不进入 active context assets。
+- 记忆控制只影响策略和上下文，不改写 KTDiagnosis、mastery、prediction probability、weak concepts 或 forgetting risk。
+
+安全规则：
+
+- 不提交 provider credentials、secrets、provider caches、generated vector indexes、raw datasets、checkpoints、`.pkl`、`.pt`、`.pth`、`dist`、`node_modules`。
+- 提交前运行 `python3 scripts/check_repository_safety.py`，要求 `violation_count=0`。
+
+V1.8 记忆控制最终验收记录（2026-07-09）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `python3 -m pytest backend/tests` | 通过，166 passed，4 skipped。 |
+| `cd frontend && npm test -- --run` | 通过，1 个 test file / 15 tests passed。 |
+| `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
+| `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`。 |
+| `git diff --check` | 通过。 |
+
+完整 V1.8 仍未全部完成；后续仍需要 provider health、持久化学习状态、TeachingTrace 持久化和连续学习反馈闭环。
+
 开发节奏：
 
 - 小改动先运行相关单测。
