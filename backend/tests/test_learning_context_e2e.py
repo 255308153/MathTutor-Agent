@@ -8,7 +8,10 @@ from backend.app.context.learning_context import (
     LearningContextLayer,
 )
 from backend.app.main import create_app
+from backend.app.memory.fake_provider import FakeStudentMemoryProvider
 from backend.app.memory.store import InMemoryStudentMemoryStore, StudentMemory
+from backend.app.rag.fake_provider import FakeKnowledgeRAGProvider
+from backend.app.rag.viking_provider import VikingKnowledgeRAGAdapter
 from backend.app.storage.progress_store import InMemoryProgressStore
 
 
@@ -206,3 +209,259 @@ def test_v14_learning_context_layer_end_to_end_smoke(
         "summary",
         "created_at",
     }
+
+
+def test_v17_provider_aware_context_assembly_e2e(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.api import events as events_api
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+
+    concept_id = "c_fraction_addition"
+    student_id = "student-v17-provider-context"
+    memories = FakeStudentMemoryProvider(
+        seed_memories=[
+            StudentMemory(
+                student_id=student_id,
+                memory_type="preference",
+                content="学生偏好先看通分步骤，再做题。",
+                evidence={
+                    "preferred_teaching_type": "procedure",
+                    "preferred_concept_id": concept_id,
+                    "concept_id": concept_id,
+                    "question_id": "q_frac_001",
+                    "prediction_probability": 0.99,
+                    "mastery_by_concept": {concept_id: 1.0},
+                },
+                provenance={
+                    "source_event": "event:seed-provider-memory",
+                    "trace_id": "trace-seed-provider-memory",
+                    "session_id": "session-seed-provider-memory",
+                },
+            )
+        ]
+    )
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        memories=memories,
+        rag=FakeKnowledgeRAGProvider(records=_provider_context_records()),
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v17-provider-context",
+            "student_id": student_id,
+            "type": "answer_submitted",
+            "message": "我选 1/6，验证 provider context。",
+            "payload": {
+                "question_id": "q_frac_001",
+                "answer": "1/6",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    assembled = expert["assembled_context"]
+    normalized = assembled["normalized_context"]
+    kt_diagnosis = expert["kt_diagnosis"]
+
+    provider_memory = next(
+        item
+        for item in normalized["student_memory"]
+        if item["metadata"]["provider_backed"] is True
+    )
+    provider_resource = next(
+        item
+        for item in normalized["knowledge_resource"]
+        if item["metadata"]["provider_backed"] is True
+    )
+    assert provider_memory["source_type"] == "provider_memory"
+    assert provider_memory["metadata"]["provider_name"] == "fake_mem0_fixture"
+    assert provider_memory["metadata"]["provider_mode"] == "fake_provider"
+    assert provider_resource["source_type"] == "provider_rag"
+    assert provider_resource["metadata"]["provider_name"] == "fake_vikingdb"
+    assert provider_resource["metadata"]["provider_mode"] == "fake_provider"
+    assert provider_resource["metadata"]["source"].startswith("fake-rag/")
+    assert provider_resource["metadata"]["provenance"]["provider_record_id"]
+
+    selected = assembled["asset_selection"]["selected"]
+    assert any(
+        summary["asset_type"] == "student_memory"
+        and summary["source_type"] == "provider_memory"
+        and summary["selection_status"] == "included"
+        for summary in selected
+    )
+    assert any(
+        summary["asset_type"] == "knowledge_resource"
+        and summary["source_type"] == "provider_rag"
+        and summary["selection_status"] == "included"
+        for summary in selected
+    )
+    assert isinstance(assembled["asset_selection"]["omitted"], list)
+    assert assembled["budget_used"] <= assembled["budget_limit"]
+    assert assembled["compression_summary"]["selected_asset_count"] == len(selected)
+
+    context_trace = next(
+        event for event in body["teaching_trace"] if event["stage"] == "context_assemble"
+    )
+    trace_context = context_trace["metadata"]["assembled_context"]
+    assert trace_context["asset_selection"]["selected"]
+    assert any(
+        asset["source_type"] == "provider_rag"
+        for asset in trace_context["asset_selection"]["selected"]
+    )
+
+    assert assembled["authoritative_kt_facts"]["prediction_probability"] == (
+        kt_diagnosis["prediction_probability"]
+    )
+    assert assembled["authoritative_kt_facts"]["mastery_by_concept"][concept_id] != 1.0
+    assert provider_memory["metadata"]["evidence"]["prediction_probability"] == 0.99
+    assert provider_resource["metadata"]["canonical_mapping"][
+        "claimed_prediction_probability"
+    ] == 0.99
+    assert expert["attribution_evidence"]["prediction_probability"] == (
+        kt_diagnosis["prediction_probability"]
+    )
+    assert expert["attribution_evidence"]["prediction_probability"] != 0.99
+
+
+def test_v17_provider_failure_gap_reaches_context_assembly_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.api import events as events_api
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+
+    student_id = "student-v17-provider-gap-context"
+    rag = VikingKnowledgeRAGAdapter(
+        provider_name="openviking",
+        provider_mode="live_provider",
+        collection="assist2017-smoke",
+        client=_TimeoutRAGClient(),
+        fallback=FakeKnowledgeRAGProvider(records=_provider_context_records()),
+    )
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        memories=FakeStudentMemoryProvider(
+            seed_memories=[
+                StudentMemory(
+                    student_id=student_id,
+                    memory_type="preference",
+                    content="学生偏好通分步骤提示。",
+                    evidence={"concept_id": "c_fraction_addition"},
+                )
+            ]
+        ),
+        rag=rag,
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v17-provider-gap-context",
+            "student_id": student_id,
+            "type": "answer_submitted",
+            "message": "我选 1/6，验证 provider failure context gap。",
+            "payload": {"question_id": "q_frac_001", "answer": "1/6"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    assembled = expert["assembled_context"]
+    assert any(
+        gap["gap_type"] == "provider_timeout"
+        and gap["provider"] == "openviking"
+        and gap["operation"] == "search"
+        for gap in assembled["evidence_gaps"]
+    )
+    assert assembled["normalized_context"]["knowledge_resource"]
+
+    load_context = next(
+        event for event in body["teaching_trace"] if event["stage"] == "load_context"
+    )
+    assert any(
+        record["category"] == "provider_timeout"
+        for record in load_context["metadata"]["evidence_gap_records"]
+    )
+    context_trace = next(
+        event for event in body["teaching_trace"] if event["stage"] == "context_assemble"
+    )
+    assert any(
+        gap["gap_type"] == "provider_timeout"
+        for gap in context_trace["metadata"]["assembled_context"]["evidence_gaps"]
+    )
+
+
+class _TimeoutRAGClient:
+    def search(self, **_: object) -> object:
+        raise TimeoutError("provider timed out")
+
+
+def _provider_context_records() -> list[dict[str, object]]:
+    return [
+        {
+            "id": "fake-vector-context-q-frac-001",
+            "vikingdb_distance": 0.05,
+            "payload": {
+                "doc_id": "fake-rag-context-q-frac-001",
+                "doc_type": "question_explanation",
+                "title": "provider q_frac_001 题解",
+                "content": "先找公分母，再把两个分数化成同分母后相加。",
+                "source": "fake-rag/provider_context.md#q_frac_001",
+                "concept_id": "c_fraction_addition",
+                "question_id": "q_frac_001",
+                "assist2017_question_id": 3,
+                "assist2017_concept_id": 2,
+                "canonical_mapping": {
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "assist2017_question_id": 3,
+                    "assist2017_concept_id": 2,
+                    "source": "fake_provider_fixture",
+                    "claimed_prediction_probability": 0.99,
+                    "claimed_mastery": 1.0,
+                },
+                "coverage": {
+                    "coverage_type": "question",
+                    "question_aligned": True,
+                    "concept_aligned": True,
+                },
+                "keywords": ["题解", "通分", "分数", "错因", "策略"],
+            },
+        },
+        {
+            "id": "fake-vector-context-strategy",
+            "vikingdb_distance": 0.1,
+            "payload": {
+                "doc_id": "fake-rag-context-strategy",
+                "doc_type": "learning_strategy",
+                "title": "provider 分数题策略",
+                "content": "先标出分母，再找公分母，最后检查答案是否可约分。",
+                "source": "fake-rag/provider_context.md#strategy",
+                "concept_id": "c_fraction_addition",
+                "question_id": None,
+                "assist2017_question_id": None,
+                "assist2017_concept_id": 2,
+                "canonical_mapping": {
+                    "concept_id": "c_fraction_addition",
+                    "assist2017_concept_id": 2,
+                    "source": "fake_provider_fixture",
+                },
+                "coverage": {
+                    "coverage_type": "concept",
+                    "concept_aligned": True,
+                },
+                "keywords": ["策略", "推荐", "通分"],
+            },
+        },
+    ]
