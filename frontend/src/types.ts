@@ -61,6 +61,35 @@ export interface StudentMemoryDetailResponse {
   memory: StudentMemory;
 }
 
+export type ProviderHealthStatus =
+  | "healthy"
+  | "degraded"
+  | "unavailable"
+  | "not_configured";
+
+export type ProviderHealthSeverity = "info" | "warning" | "error";
+
+export interface ProviderHealthComponent {
+  component: string;
+  display_name: string;
+  mode: string;
+  provider: string;
+  configured: boolean;
+  status: ProviderHealthStatus;
+  severity: ProviderHealthSeverity;
+  recoverable: boolean;
+  actionable_hint: string;
+  evidence_gaps: EvidenceGap[];
+  last_checked_at: string;
+}
+
+export interface ProviderHealthResponse {
+  status: ProviderHealthStatus;
+  summary: string;
+  generated_at: string;
+  components: ProviderHealthComponent[];
+}
+
 export interface RecommendedQuestion {
   question_id: string;
   assist2017_question_id?: number | string;

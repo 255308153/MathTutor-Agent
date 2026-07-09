@@ -1,6 +1,7 @@
 import type {
   LearningEventRequest,
   MathTutorEventResponse,
+  ProviderHealthResponse,
   StudentMemoryDetailResponse,
   StudentMemoryListResponse
 } from "./types";
@@ -37,6 +38,17 @@ export async function fetchStudentMemories(
   }
 
   return response.json() as Promise<StudentMemoryListResponse>;
+}
+
+export async function fetchProviderHealth(): Promise<ProviderHealthResponse> {
+  const response = await fetch(`${API_BASE}/api/provider-health`);
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Provider 状态读取失败：${response.status} ${errorDetail(body)}`);
+  }
+
+  return response.json() as Promise<ProviderHealthResponse>;
 }
 
 export async function updateStudentMemoryControl({

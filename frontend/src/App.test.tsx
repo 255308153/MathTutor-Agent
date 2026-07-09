@@ -2,7 +2,11 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { MathTutorEventResponse, StudentMemoryListResponse } from "./types";
+import type {
+  MathTutorEventResponse,
+  ProviderHealthResponse,
+  StudentMemoryListResponse
+} from "./types";
 
 const baseResponse: MathTutorEventResponse = {
   trace_id: "tt-test",
@@ -251,12 +255,107 @@ const baseMemoryResponse: StudentMemoryListResponse = {
   ]
 };
 
+const baseProviderHealthResponse: ProviderHealthResponse = {
+  status: "healthy",
+  summary: "默认本地 fallback / mock / demo provider 状态可运行。",
+  generated_at: "2026-07-09T08:30:00+00:00",
+  components: [
+    {
+      component: "memory",
+      display_name: "Memory / 长期记忆",
+      mode: "local_fallback",
+      provider: "local_fallback",
+      configured: true,
+      status: "healthy",
+      severity: "info",
+      recoverable: true,
+      actionable_hint: "默认本地长期记忆 fallback 可运行；Mem0 live provider 未启用。",
+      evidence_gaps: [],
+      last_checked_at: "2026-07-09T08:30:00+00:00"
+    },
+    {
+      component: "rag",
+      display_name: "RAG / 知识检索",
+      mode: "local_fallback",
+      provider: "local_fallback",
+      configured: true,
+      status: "healthy",
+      severity: "info",
+      recoverable: true,
+      actionable_hint: "默认本地 RAG fallback 可运行；VikingDB / OpenViking live provider 未启用。",
+      evidence_gaps: [],
+      last_checked_at: "2026-07-09T08:30:00+00:00"
+    },
+    {
+      component: "kt",
+      display_name: "KT / DGEKT",
+      mode: "mock",
+      provider: "mock",
+      configured: true,
+      status: "healthy",
+      severity: "info",
+      recoverable: true,
+      actionable_hint: "默认 mock KT 可运行；真实 DGEKT checkpoint 未启用，KT facts 仍是权威学习事实。",
+      evidence_gaps: [],
+      last_checked_at: "2026-07-09T08:30:00+00:00"
+    },
+    {
+      component: "content_rag_artifact",
+      display_name: "Content/RAG artifact",
+      mode: "content:demo/rag:demo",
+      provider: "demo_artifacts",
+      configured: true,
+      status: "healthy",
+      severity: "info",
+      recoverable: true,
+      actionable_hint: "默认 demo content 与 demo RAG artifact 可运行；当前未要求 full ASSISTments2017 或 generated vector index。",
+      evidence_gaps: [],
+      last_checked_at: "2026-07-09T08:30:00+00:00"
+    },
+    {
+      component: "learning_context",
+      display_name: "LearningContextLayer",
+      mode: "local_fallback",
+      provider: "in_memory_context_layer",
+      configured: true,
+      status: "healthy",
+      severity: "info",
+      recoverable: true,
+      actionable_hint: "LearningContextLayer 使用本地上下文组装证据；它只汇总 evidence，不决定 mastery 或 KT facts。",
+      evidence_gaps: [],
+      last_checked_at: "2026-07-09T08:30:00+00:00"
+    }
+  ]
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
 describe("学习驾驶舱", () => {
+  it("展示系统 Provider 状态面板和默认本地 fallback 可运行状态", async () => {
+    mockMathTutorApi();
+
+    render(<App />);
+
+    expect(await screen.findByText("系统状态 / Provider 状态")).toBeInTheDocument();
+    expect(screen.getByText("默认本地 fallback / mock / demo provider 状态可运行。")).toBeInTheDocument();
+    expect(screen.getByText("Memory / 长期记忆")).toBeInTheDocument();
+    expect(screen.getByText("RAG / 知识检索")).toBeInTheDocument();
+    expect(screen.getByText("KT / DGEKT")).toBeInTheDocument();
+    expect(screen.getByText("Content/RAG artifact")).toBeInTheDocument();
+    expect(screen.getByText("LearningContextLayer")).toBeInTheDocument();
+    expect(screen.getAllByText("正常").length).toBeGreaterThanOrEqual(6);
+    expect(screen.getAllByText("local_fallback").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("demo_artifacts")).toBeInTheDocument();
+    expect(screen.getByText(/本地长期记忆 fallback 可运行/)).toBeInTheDocument();
+    expect(screen.getByText(/本地 RAG fallback 可运行/)).toBeInTheDocument();
+    expect(screen.queryByText(/raw_provider_payload/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/embedding_vector/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/provider_debug/)).not.toBeInTheDocument();
+  });
+
   it("可以加载建议、提交推荐题答案，并展示 trace 与证据", async () => {
     const fetchMock = mockMathTutorApi({
       eventResponses: [
@@ -849,15 +948,19 @@ describe("学习驾驶舱", () => {
 function mockMathTutorApi({
   eventResponses = [baseResponse],
   memoryResponse = baseMemoryResponse,
+  providerHealthResponse = baseProviderHealthResponse,
   eventError,
   memoryError,
+  providerHealthError,
   memoryDeleteError,
   memoryPending = false
 }: {
   eventResponses?: MathTutorEventResponse[];
   memoryResponse?: StudentMemoryListResponse;
+  providerHealthResponse?: ProviderHealthResponse;
   eventError?: Error | Response;
   memoryError?: Error | Response;
+  providerHealthError?: Error | Response;
   memoryDeleteError?: Error | Response;
   memoryPending?: boolean;
 } = {}) {
@@ -865,6 +968,11 @@ function mockMathTutorApi({
   let currentMemoryResponse = memoryResponse;
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
+    if (url.includes("/api/provider-health")) {
+      if (providerHealthError instanceof Error) throw providerHealthError;
+      if (providerHealthError instanceof Response) return providerHealthError.clone();
+      return jsonResponse(providerHealthResponse);
+    }
     if (url.includes("/api/students/") && url.includes("/memories")) {
       if (memoryPending) return new Promise<Response>(() => {});
       if (memoryError instanceof Error) throw memoryError;
