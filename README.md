@@ -572,9 +572,13 @@ V1.8 Provider Health gate 让学习驾驶舱展示“系统状态 / Provider 状
 
 - `GET /api/health` 保持向后兼容，继续只返回 `{"status":"ok"}`。
 - `GET /api/provider-health` 返回 Memory、RAG、KT、Content/RAG artifact 和 LearningContextLayer 的统一状态合约。
+- 状态词固定为 `healthy`、`degraded`、`unavailable`、`not_configured`；`not_configured` 表示显式模式缺配置，不等同于默认本地路径故障。
 - 默认 `local_fallback / mock / demo` 路径显示为可运行，不要求 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、full ASSISTments2017 数据、generated vector index 或网络访问。
+- 默认 local fallback / mock / demo 可运行不等于真实 Mem0、VikingDB、OpenViking 或 DGEKT live provider 已准备好；live readiness 必须显式 opt-in 并补齐配置。
 - Mem0、VikingDB、OpenViking 和 DGEKT live/checkpoint 仍是 opt-in；默认 provider health 不实例化 live adapter，也不访问外部 provider。
-- Provider Health 只做诊断与运营可见性，不能写 memory、progress、context、RAG、TeachingTrace 或 KT state。
+- Provider Health 只做诊断与运营可见性，不是学习事实来源；不能写 memory、progress、context、RAG、TeachingTrace 或 KT state，也不能覆盖 mastery、weak concepts、forgetting risk、prediction probability、DGEKT prediction facts 或 offline attribution facts。
+- Provider gap 会清洗 credentials、authorization、raw provider payload、SDK response、embedding/vector、provider debug 和敏感本地路径；前端只展示中文摘要和恢复建议。
+- 禁止提交 credentials、secrets、`.env`、provider cache、generated vector index、raw dataset、checkpoint、模型文件、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、`dist`、`build`、`node_modules`。
 
 ## V1.6 已知限制与下一阶段优先级
 
