@@ -100,7 +100,10 @@
         "canonical_question_id": "q_assist2017_000002",
         "category": "missing_question_mapping",
         "message": "Q-matrix row 2 has no imported source question.",
-        "provenance": {},
+        "provenance": {
+          "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+          "q_matrix_row": 2
+        },
         "reason_code": "q_matrix_row_without_source_question",
         "severity": "warning",
         "source_ref": "data/mapping/assist2017_q_matrix.fixture.csv:row:2"
@@ -112,7 +115,10 @@
         "canonical_question_id": "q_assist2017_000004",
         "category": "missing_question_mapping",
         "message": "Q-matrix row 4 has no imported source question.",
-        "provenance": {},
+        "provenance": {
+          "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+          "q_matrix_row": 4
+        },
         "reason_code": "q_matrix_row_without_source_question",
         "severity": "warning",
         "source_ref": "data/mapping/assist2017_q_matrix.fixture.csv:row:4"
@@ -124,7 +130,10 @@
         "canonical_question_id": "q_assist2017_000006",
         "category": "missing_question_mapping",
         "message": "Q-matrix row 6 has no imported source question.",
-        "provenance": {},
+        "provenance": {
+          "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+          "q_matrix_row": 6
+        },
         "reason_code": "q_matrix_row_without_source_question",
         "severity": "warning",
         "source_ref": "data/mapping/assist2017_q_matrix.fixture.csv:row:6"
@@ -136,7 +145,10 @@
         "canonical_question_id": null,
         "category": "missing_concept_mapping",
         "message": "Q-matrix concept column 4 has no imported concept metadata.",
-        "provenance": {},
+        "provenance": {
+          "q_matrix_concept_column": 4,
+          "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv"
+        },
         "reason_code": "q_matrix_concept_without_source_concept",
         "severity": "warning",
         "source_ref": "data/mapping/assist2017_q_matrix.fixture.csv:column:4"
@@ -149,9 +161,27 @@
         "category": "missing_teaching_content",
         "message": "q_assist2017_000005 缺少解析，请补齐 ASSISTments2017 教学内容。",
         "provenance": {
+          "content_availability": {
+            "fallback_message": "q_assist2017_000005 缺少解析，请补齐 ASSISTments2017 教学内容。",
+            "has_answer": true,
+            "has_concept_metadata": true,
+            "has_explanation": false,
+            "has_stem": true,
+            "missing_fields": [
+              "explanation"
+            ],
+            "missing_reason_codes": [
+              "missing_explanation"
+            ],
+            "status": "partial"
+          },
           "missing_fields": [
             "explanation"
-          ]
+          ],
+          "missing_reason_codes": [
+            "missing_explanation"
+          ],
+          "source_row_id": "assist2017-fixture-row-5"
         },
         "reason_code": "essential_teaching_field_missing",
         "severity": "warning",
@@ -165,7 +195,8 @@
         "category": "missing_rag_doc",
         "message": "Expected RAG document rag_assist2017_q000005_question_explanation was not generated.",
         "provenance": {
-          "doc_id": "rag_assist2017_q000005_question_explanation"
+          "doc_id": "rag_assist2017_q000005_question_explanation",
+          "source_row_id": "assist2017-fixture-row-5"
         },
         "reason_code": "expected_rag_doc_not_generated",
         "severity": "warning",

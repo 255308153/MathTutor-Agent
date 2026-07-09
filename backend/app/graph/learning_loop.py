@@ -144,6 +144,7 @@ class MathTutorLearningLoop:
                     "grading_source": state.learning_event.payload.get("grading_source"),
                     "is_correct": state.learning_event.payload.get("is_correct"),
                     "correct_answer_available": "correct_answer" in state.learning_event.payload,
+                    "target_content": self._target_content_trace(state),
                     "evidence_gap_records": list(state.error_records),
                 },
             )
@@ -455,6 +456,7 @@ class MathTutorLearningLoop:
                     "recoverable": record["recoverable"],
                     "stage": record["stage"],
                     "code": record["code"],
+                    "details": record.get("details", {}),
                 }
             )
             existing.add(key)
@@ -598,6 +600,7 @@ class MathTutorLearningLoop:
                             "score_factors": question["score_factors"],
                             "canonical_mapping": question.get("canonical_mapping"),
                             "content_availability": question.get("content_availability"),
+                            "provenance": question.get("provenance"),
                         }
                         for question in ranked_questions[:5]
                     ],
@@ -910,6 +913,8 @@ class MathTutorLearningLoop:
             return
 
         availability = question.get("content_availability") or self.content.content_availability(question)
+        self._attach_target_content_payload(state, question, availability)
+        self._record_partial_content_gap_if_needed(state, question, availability)
         if "standard_answer" in availability.get("missing_fields", []):
             state.learning_event.payload["grading_source"] = "missing_teaching_content"
             self._record_issue(
@@ -922,6 +927,7 @@ class MathTutorLearningLoop:
                     or f"{question_id} 缺少标准答案，无法进行服务端确定性判题。"
                 ),
                 actionable_hint="补齐题目的 standard_answer 后再用于完整练习。",
+                details=self._content_gap_details(question, availability),
             )
             return
 
@@ -951,6 +957,12 @@ class MathTutorLearningLoop:
                 "mistake_patterns": grade.question["mistake_patterns"],
                 "rag_doc_ids": grade.question["rag_doc_ids"],
                 "grading_source": self.content.grading_source,
+                "content_availability": grade.question.get("content_availability")
+                or self.content.content_availability(grade.question),
+                "content_provenance": grade.question.get("provenance")
+                or self.content.provenance(grade.question),
+                "canonical_mapping": grade.question.get("canonical_mapping"),
+                "q_matrix_reference": grade.question.get("q_matrix_reference"),
             }
         )
         explicit_assist_question_id = state.learning_event.payload.get(
@@ -970,6 +982,105 @@ class MathTutorLearningLoop:
             for key in ("assist2017_concept_id", "dgekt_concept_id"):
                 if key in grade.question and key not in state.learning_event.payload:
                     state.learning_event.payload[key] = grade.question[key]
+
+    def _attach_target_content_payload(
+        self,
+        state: MathTutorState,
+        question: dict[str, Any],
+        availability: dict[str, Any],
+    ) -> None:
+        payload = state.learning_event.payload
+        canonical = question.get("canonical_mapping") or {}
+        payload.setdefault("concept_id", question.get("concept_id"))
+        payload.setdefault("concept_name", question.get("concept_name"))
+        payload.setdefault(
+            "assist2017_question_id",
+            question.get("assist2017_question_id") or canonical.get("assist2017_question_id"),
+        )
+        payload.setdefault(
+            "assist2017_concept_id",
+            question.get("assist2017_concept_id") or canonical.get("assist2017_concept_id"),
+        )
+        payload["content_availability"] = availability
+        payload["content_provenance"] = question.get("provenance") or self.content.provenance(question)
+        payload["canonical_mapping"] = canonical
+        payload["q_matrix_reference"] = question.get("q_matrix_reference") or canonical.get(
+            "q_matrix_reference"
+        )
+
+    def _record_partial_content_gap_if_needed(
+        self,
+        state: MathTutorState,
+        question: dict[str, Any],
+        availability: dict[str, Any],
+    ) -> None:
+        missing_fields = [
+            field
+            for field in availability.get("missing_fields", [])
+            if field != "standard_answer"
+        ]
+        if not missing_fields:
+            return
+        question_id = question.get("question_id") or state.learning_event.payload.get("question_id")
+        self._record_issue(
+            state,
+            code="partial_teaching_content",
+            category="missing_teaching_content",
+            stage="load_context",
+            message=(
+                availability.get("fallback_message")
+                or f"{question_id} 教学内容不完整，已记录 coverage gap。"
+            ),
+            actionable_hint="补齐导入内容中的缺失教学字段，避免把 fallback 当成完整证据。",
+            severity="warning",
+            append_to_errors=False,
+            details=self._content_gap_details(
+                question,
+                availability | {"missing_fields": missing_fields},
+            ),
+        )
+
+    def _content_gap_details(
+        self,
+        question: dict[str, Any],
+        availability: dict[str, Any],
+    ) -> dict[str, Any]:
+        canonical = question.get("canonical_mapping") or {}
+        provenance = question.get("provenance") or self.content.provenance(question)
+        return {
+            "canonical_question_id": question.get("question_id") or canonical.get("question_id"),
+            "canonical_concept_id": question.get("concept_id") or canonical.get("concept_id"),
+            "assist2017_question_id": question.get("assist2017_question_id")
+            or canonical.get("assist2017_question_id"),
+            "assist2017_concept_id": question.get("assist2017_concept_id")
+            or canonical.get("assist2017_concept_id"),
+            "missing_fields": list(availability.get("missing_fields", [])),
+            "missing_reason_codes": list(availability.get("missing_reason_codes", [])),
+            "content_availability": availability,
+            "provenance": provenance,
+            "q_matrix_reference": question.get("q_matrix_reference")
+            or canonical.get("q_matrix_reference"),
+        }
+
+    def _target_content_trace(self, state: MathTutorState) -> dict[str, Any] | None:
+        payload = state.learning_event.payload
+        if not payload.get("question_id"):
+            return None
+        canonical = payload.get("canonical_mapping") or {}
+        return {
+            "canonical_question_id": payload.get("question_id")
+            or canonical.get("question_id"),
+            "canonical_concept_id": payload.get("concept_id")
+            or canonical.get("concept_id"),
+            "assist2017_question_id": payload.get("assist2017_question_id")
+            or canonical.get("assist2017_question_id"),
+            "assist2017_concept_id": payload.get("assist2017_concept_id")
+            or canonical.get("assist2017_concept_id"),
+            "q_matrix_reference": payload.get("q_matrix_reference")
+            or canonical.get("q_matrix_reference"),
+            "content_availability": payload.get("content_availability"),
+            "provenance": payload.get("content_provenance"),
+        }
 
     def _classify_intent(self, event: LearningEvent) -> Literal[
         "next_step_advice",
@@ -1045,6 +1156,7 @@ class MathTutorLearningLoop:
                 or canonical.get("source")
             ),
             "content_availability": question.get("content_availability"),
+            "content_provenance": question.get("provenance"),
         }
 
     def _trace(
