@@ -26,6 +26,36 @@ export interface ConceptState {
   status: string;
 }
 
+export type StudentMemoryType =
+  | "preference"
+  | "repeated_mistake"
+  | "effective_strategy"
+  | "reflection";
+
+export type StudentMemoryFreshness = "fresh" | "recent" | "stale";
+export type StudentMemoryStatus = "enabled" | "disabled";
+
+export interface StudentMemory {
+  memory_id: string;
+  memory_type: StudentMemoryType;
+  content: string;
+  summary: string;
+  source: string;
+  evidence: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  freshness: StudentMemoryFreshness;
+  enabled: boolean;
+  status: StudentMemoryStatus;
+}
+
+export interface StudentMemoryListResponse {
+  student_id: string;
+  count: number;
+  memories: StudentMemory[];
+}
+
 export interface RecommendedQuestion {
   question_id: string;
   assist2017_question_id?: number | string;

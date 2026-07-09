@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from .api.events import router as events_router
 from .api.health import router as health_router
+from .api.memories import router as memories_router
 from .kt.dgekt_engine import (
     DGEKTCheckpointError,
     DGEKTConfigurationError,
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(events_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
+    app.include_router(memories_router, prefix="/api")
 
     @app.exception_handler(DGEKTMappingError)
     def handle_dgekt_mapping_error(

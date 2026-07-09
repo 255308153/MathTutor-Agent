@@ -121,6 +121,11 @@ def test_mem0_adapter_normalizes_contract_provenance_filters_and_limits() -> Non
     }
     assert all(memory.source == "mem0" for memory in recent)
     assert all(memory.freshness in {"fresh", "recent", "stale"} for memory in recent)
+    detail = store.get(student_id=student_id, memory_id=recent[0].memory_id)
+    assert detail is not None
+    assert detail.memory_id == recent[0].memory_id
+    assert detail.enabled is True
+    assert detail.status == "enabled"
 
     results = store.search(
         student_id=student_id,

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   Activity,
   BookOpenCheck,
+  Brain,
   ChevronDown,
   CircleHelp,
   ClipboardCheck,
@@ -13,13 +14,14 @@ import {
   Sparkles,
   Target
 } from "lucide-react";
-import { sendLearningEvent } from "./api";
+import { fetchStudentMemories, sendLearningEvent } from "./api";
 import type {
   AttributionEvidence,
   ContextAssetEvidence,
   EvidenceGap,
   MathTutorEventResponse,
-  RecommendedQuestion
+  RecommendedQuestion,
+  StudentMemory
 } from "./types";
 
 const SESSION_ID = `demo-${Date.now()}`;
@@ -41,12 +43,21 @@ export default function App() {
   const [answerByQuestion, setAnswerByQuestion] = useState<Record<string, string>>({});
   const [current, setCurrent] = useState<MathTutorEventResponse | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [memories, setMemories] = useState<StudentMemory[]>([]);
+  const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isMemoryLoading, setIsMemoryLoading] = useState(false);
   const [error, setError] = useState("");
+  const [memoryError, setMemoryError] = useState("");
+  const activeStudentId = studentId || DEFAULT_STUDENT_ID;
 
   useEffect(() => {
     void requestNextStep("我下一步应该练什么？");
   }, []);
+
+  useEffect(() => {
+    void loadStudentMemories(activeStudentId);
+  }, [activeStudentId]);
 
   const weakConcepts = current?.state_summary.weak_concepts ?? [];
   const forgettingRisks = current?.state_summary.forgetting_risks ?? [];
@@ -68,6 +79,7 @@ export default function App() {
       const response = await sendLearningEvent(event);
       setCurrent(response);
       setHistory((items) => [{ id: response.trace_id, label, response }, ...items].slice(0, 6));
+      void loadStudentMemories(event.student_id);
       return response;
     } catch (err) {
       setError(err instanceof Error ? err.message : "事件处理失败");
@@ -80,7 +92,7 @@ export default function App() {
   function requestNextStep(text = message) {
     return runEvent("下一步建议", {
       session_id: SESSION_ID,
-      student_id: studentId || DEFAULT_STUDENT_ID,
+      student_id: activeStudentId,
       type: "chat_message",
       message: text,
       payload: {}
@@ -92,7 +104,7 @@ export default function App() {
     if (!message.trim()) return;
     void runEvent("概念问答", {
       session_id: SESSION_ID,
-      student_id: studentId || DEFAULT_STUDENT_ID,
+      student_id: activeStudentId,
       type: "chat_message",
       message,
       payload: {}
@@ -104,7 +116,7 @@ export default function App() {
     if (!answer.trim()) return;
     void runEvent("提交答案", {
       session_id: SESSION_ID,
-      student_id: studentId || DEFAULT_STUDENT_ID,
+      student_id: activeStudentId,
       type: "answer_submitted",
       message: `提交 ${question.question_id} 的答案`,
       payload: {
@@ -116,6 +128,25 @@ export default function App() {
         dgekt_concept_id: question.dgekt_concept_id
       }
     });
+  }
+
+  async function loadStudentMemories(targetStudentId = activeStudentId) {
+    setIsMemoryLoading(true);
+    setMemoryError("");
+    try {
+      const response = await fetchStudentMemories(targetStudentId);
+      setMemories(response.memories);
+      setSelectedMemoryId((currentId) => {
+        if (response.memories.some((memory) => memory.memory_id === currentId)) return currentId;
+        return response.memories[0]?.memory_id ?? "";
+      });
+    } catch (err) {
+      setMemories([]);
+      setSelectedMemoryId("");
+      setMemoryError(err instanceof Error ? err.message : "学生记忆读取失败");
+    } finally {
+      setIsMemoryLoading(false);
+    }
   }
 
   return (
@@ -275,6 +306,15 @@ export default function App() {
             {isLoading && <p className="loading-line">正在处理学习事件...</p>}
           </article>
 
+          <MemoryPanel
+            memories={memories}
+            selectedMemoryId={selectedMemoryId}
+            isLoading={isMemoryLoading}
+            error={memoryError}
+            onSelect={setSelectedMemoryId}
+            onRefresh={() => void loadStudentMemories()}
+          />
+
           <TracePanel response={current} />
 
           <article className="panel">
@@ -318,6 +358,149 @@ function MetricPanel({
       <strong>{value}</strong>
       <p>{detail}</p>
     </article>
+  );
+}
+
+function MemoryPanel({
+  memories,
+  selectedMemoryId,
+  isLoading,
+  error,
+  onSelect,
+  onRefresh
+}: {
+  memories: StudentMemory[];
+  selectedMemoryId: string;
+  isLoading: boolean;
+  error: string;
+  onSelect: (memoryId: string) => void;
+  onRefresh: () => void;
+}) {
+  const selectedMemory =
+    memories.find((memory) => memory.memory_id === selectedMemoryId) ?? memories[0] ?? null;
+  const evidenceFacts = selectedMemory ? memoryEvidenceFacts(selectedMemory) : [];
+  const provenanceFacts = selectedMemory ? memoryProvenanceFacts(selectedMemory) : [];
+
+  return (
+    <article className="panel memory-panel">
+      <div className="panel-title panel-title-with-action">
+        <span>
+          <Brain size={18} />
+          <h2>长期记忆</h2>
+        </span>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          aria-label="刷新长期记忆"
+          title="刷新长期记忆"
+        >
+          <RefreshCw size={16} />
+        </button>
+      </div>
+      <div className="memory-summary-row">
+        <span>{memories.length} 条</span>
+        <span>{selectedMemory ? memoryProviderName(selectedMemory.source) : "等待读取"}</span>
+      </div>
+
+      {isLoading && <p className="loading-line">正在读取长期记忆...</p>}
+      {error && (
+        <div className="memory-error" role="status">
+          <span>{error}</span>
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={15} />
+            重试
+          </button>
+        </div>
+      )}
+      {!isLoading && !error && memories.length === 0 && (
+        <p className="muted">暂无长期记忆；完成练习或产生偏好后会出现在这里。</p>
+      )}
+
+      {memories.length > 0 && (
+        <div className="memory-layout">
+          <div className="memory-list" aria-label="长期记忆列表">
+            {memories.map((memory) => (
+              <button
+                type="button"
+                key={memory.memory_id}
+                className={memory.memory_id === selectedMemory?.memory_id ? "memory-active" : ""}
+                onClick={() => onSelect(memory.memory_id)}
+              >
+                <span>{memoryTypeName(memory.memory_type)}</span>
+                <strong>{memory.summary || memory.content}</strong>
+                <small>
+                  {freshnessName(memory.freshness)} · {memoryStatusName(memory.status)}
+                </small>
+              </button>
+            ))}
+          </div>
+
+          {selectedMemory && (
+            <div className="memory-detail">
+              <div className="memory-detail-heading">
+                <span className={`memory-type memory-type-${selectedMemory.memory_type}`}>
+                  {memoryTypeName(selectedMemory.memory_type)}
+                </span>
+                <span className={`memory-status memory-status-${selectedMemory.status}`}>
+                  {memoryStatusName(selectedMemory.status)}
+                </span>
+              </div>
+              <h3>{selectedMemory.summary || selectedMemory.content}</h3>
+              <p>{selectedMemory.content}</p>
+              <div className="memory-facts">
+                <p>
+                  <strong>来源</strong>
+                  <span>{memoryProviderName(selectedMemory.source)}</span>
+                </p>
+                <p>
+                  <strong>Freshness</strong>
+                  <span>{freshnessName(selectedMemory.freshness)}</span>
+                </p>
+                <p>
+                  <strong>更新时间</strong>
+                  <span>{formatDateTime(selectedMemory.updated_at)}</span>
+                </p>
+              </div>
+
+              <MemoryFactGroup title="证据" facts={evidenceFacts} emptyLabel="暂无证据字段" />
+              <MemoryFactGroup
+                title="来源链"
+                facts={provenanceFacts}
+                emptyLabel="暂无来源链字段"
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function MemoryFactGroup({
+  title,
+  facts,
+  emptyLabel
+}: {
+  title: string;
+  facts: Array<{ label: string; value: string }>;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="memory-fact-group">
+      <strong>{title}</strong>
+      {facts.length > 0 ? (
+        facts.map((fact) => (
+          <p key={`${title}-${fact.label}`}>
+            <span>{fact.label}</span>
+            <b>{fact.value}</b>
+          </p>
+        ))
+      ) : (
+        <small>{emptyLabel}</small>
+      )}
+    </div>
   );
 }
 
@@ -539,6 +722,87 @@ function ContextAssetRow({ asset }: { asset: ContextAssetEvidence }) {
       </div>
     </div>
   );
+}
+
+function memoryEvidenceFacts(memory: StudentMemory) {
+  return publicFacts(memory.evidence, [
+    ["preferred_concept_id", "偏好知识点"],
+    ["concept_id", "知识点"],
+    ["question_id", "题目"],
+    ["preferred_teaching_type", "偏好讲法"],
+    ["source_event", "来源事件"],
+    ["trace_id", "Trace"],
+    ["event_time", "事件时间"]
+  ]);
+}
+
+function memoryProvenanceFacts(memory: StudentMemory) {
+  const facts = publicFacts(memory.provenance, [
+    ["trace_id", "Trace"],
+    ["session_id", "Session"],
+    ["source_event", "来源事件"],
+    ["event_type", "事件类型"],
+    ["occurred_at", "发生时间"]
+  ]);
+  const provider = memory.provenance.provider;
+  if (isRecord(provider)) {
+    const providerName = primitiveText(provider.name);
+    if (providerName) facts.unshift({ label: "Provider", value: providerName });
+  }
+  return facts;
+}
+
+function publicFacts(
+  record: Record<string, unknown>,
+  fields: Array<[key: string, label: string]>
+) {
+  return fields.flatMap(([key, label]) => {
+    const value = primitiveText(record[key]);
+    return value ? [{ label, value }] : [];
+  });
+}
+
+function primitiveText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const parts = value.map(primitiveText).filter(Boolean);
+    return parts.join("、");
+  }
+  return "";
+}
+
+function memoryTypeName(type: StudentMemory["memory_type"]) {
+  return {
+    preference: "偏好",
+    repeated_mistake: "重复错因",
+    effective_strategy: "有效策略",
+    reflection: "反思"
+  }[type];
+}
+
+function memoryStatusName(status: StudentMemory["status"]) {
+  return status === "disabled" ? "已禁用" : "已启用";
+}
+
+function memoryProviderName(source: string) {
+  return {
+    local_fallback: "local fallback",
+    fake_provider: "fake provider",
+    mem0: "Mem0",
+    mem0_unavailable: "Mem0 unavailable"
+  }[source] ?? source;
+}
+
+function formatDateTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return value;
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function visibleResponseIssue(response: MathTutorEventResponse | null) {

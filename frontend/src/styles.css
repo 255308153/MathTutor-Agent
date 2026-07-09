@@ -131,6 +131,29 @@ h2 {
   margin-bottom: 14px;
 }
 
+.panel-title-with-action {
+  justify-content: space-between;
+}
+
+.panel-title-with-action span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #fbfcfb;
+  color: #1f4e43;
+  padding: 0;
+}
+
 .focus-panel {
   min-height: 190px;
   display: grid;
@@ -305,6 +328,213 @@ button:disabled {
   color: #25352f;
   line-height: 1.65;
   margin-bottom: 16px;
+}
+
+.memory-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.memory-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memory-summary-row span,
+.memory-type,
+.memory-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.memory-summary-row span {
+  background: #edf4f1;
+  color: #275247;
+}
+
+.memory-layout {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.78fr) minmax(0, 1.22fr);
+  gap: 12px;
+}
+
+.memory-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.memory-list button {
+  width: 100%;
+  border: 1px solid #dde5e0;
+  border-radius: 8px;
+  background: #fbfcfb;
+  color: #17201b;
+  padding: 10px;
+  text-align: left;
+}
+
+.memory-list button.memory-active {
+  border-color: #2f8a70;
+  background: #f0f8f5;
+}
+
+.memory-list span,
+.memory-list strong,
+.memory-list small {
+  display: block;
+}
+
+.memory-list span {
+  color: #1f4e43;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.memory-list strong {
+  margin: 3px 0;
+  line-height: 1.35;
+}
+
+.memory-list small {
+  color: #617069;
+}
+
+.memory-detail {
+  min-width: 0;
+  border: 1px solid #dde5e0;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 12px;
+}
+
+.memory-detail-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.memory-detail h3 {
+  margin: 0 0 8px;
+  color: #17201b;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.memory-detail p {
+  color: #47564f;
+  line-height: 1.5;
+}
+
+.memory-type {
+  background: #f4eef9;
+  color: #6b3b87;
+}
+
+.memory-type-repeated_mistake {
+  background: #fff1e8;
+  color: #8f3d12;
+}
+
+.memory-type-effective_strategy {
+  background: #eaf6ef;
+  color: #23734f;
+}
+
+.memory-type-reflection {
+  background: #eef2fb;
+  color: #254f8f;
+}
+
+.memory-status-enabled {
+  background: #eaf6ef;
+  color: #23734f;
+}
+
+.memory-status-disabled {
+  background: #f1f2f0;
+  color: #617069;
+}
+
+.memory-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.memory-facts p,
+.memory-fact-group p {
+  border-radius: 8px;
+  background: #f1f6f3;
+  padding: 8px;
+  margin: 0;
+}
+
+.memory-facts strong,
+.memory-facts span,
+.memory-fact-group strong,
+.memory-fact-group span,
+.memory-fact-group b,
+.memory-fact-group small {
+  display: block;
+}
+
+.memory-facts strong,
+.memory-fact-group > strong,
+.memory-fact-group span {
+  color: #1f4e43;
+  font-size: 0.76rem;
+}
+
+.memory-facts span,
+.memory-fact-group b {
+  margin-top: 4px;
+  color: #17201b;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.memory-fact-group {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.memory-fact-group small {
+  color: #617069;
+}
+
+.memory-error {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d16d43;
+  border-radius: 8px;
+  background: #fff5ef;
+  color: #8f3d12;
+  padding: 10px;
+  font-weight: 800;
+}
+
+.memory-error button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: #8f3d12;
+  color: white;
+  padding: 0 10px;
+  font-weight: 800;
 }
 
 .trace-panel details {
@@ -698,7 +928,9 @@ pre {
   }
 
   .context-summary,
-  .context-asset {
+  .context-asset,
+  .memory-layout,
+  .memory-facts {
     grid-template-columns: 1fr;
   }
 
