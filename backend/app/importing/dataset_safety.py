@@ -7,10 +7,18 @@ from pathlib import Path
 
 
 BANNED_TRACKED_PATH_PATTERNS = [
+    r"(^|/)\.env(\..*)?$",
+    r"(^|/)(secrets?|credentials?)(/|$)",
+    r"(^|/)[^/]*(secret|credential|api[_-]?key|token)[^/]*\.(env|json|ya?ml|toml|txt)$",
     r"(^|/)(node_modules|dist|build|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|\.next|\.cache|cache)(/|$)",
+    r"(^|/)(provider[-_]?caches?|mem0[-_]?cache|vikingdb[-_]?cache|openviking[-_]?cache)(/|$)",
+    r"(^|/)(generated[-_]?vector[-_]?indexes?|vector[-_]?indexes?)(/|$)",
+    r"(^|/)(chroma|faiss|annoy)[-_]?(index|indexes|store|cache|db)(/|$)",
     r"(^|/)(checkpoints?|model/runs)(/|$)",
+    r"\.(faiss|hnsw|ann|index)$",
     r"\.(pkl|pt|pth|ckpt|safetensors)$",
     r"^data/(local|raw|full)(/|$)",
+    r"^data/(provider[-_]?caches?|generated[-_]?vector[-_]?indexes?|vector[-_]?indexes?)(/|$)",
     r"^data/import/(assist2017|full)(/|$)",
     r"^data/.*/[^/]*(train|test)[^/]*\.(csv|json|jsonl|txt|tsv)$",
     r"^data/imported/(?!assist2017_fixture/)",
@@ -20,6 +28,7 @@ BANNED_TRACKED_PATH_PATTERNS = [
 ]
 
 COMMITTABLE_FIXTURE_PATH_PATTERNS = [
+    r"^\.env\.example$",
     r"^data/content/demo_teaching_content\.json$",
     r"^data/rag/demo_knowledge\.json$",
     r"^data/import/[^/]+\.fixture\.csv$",

@@ -188,10 +188,20 @@ V1.7 provider contract 与 worktree 并发规则：
 - `fake_provider` 是无网络、无密钥的 contract fixture，用于 Mem0 / VikingDB / OpenViking adapter 并发开发。fixture 内部可以模拟 SDK 响应，但向 planner、recommender、API、dashboard 只暴露 `StudentMemory` 和 `RAGSearchResult` 领域模型。
 - Memory 的 `live_provider` 是 Mem0 adapter 的显式 opt-in 入口；只有显式设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 且提供 `MATHTUTOR_MEM0_API_KEY` 时才会加载 `mem0ai`。
 - RAG 的 `live_provider` 是 VikingDB / OpenViking adapter 的显式 opt-in 入口。必须同时配置 provider、endpoint、collection 和对应 API key；缺配置时会报错，默认不会读取外部服务。
+- Live smoke 是双重 opt-in：Mem0 需要 `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1` 和 `MATHTUTOR_MEM0_API_KEY`；VikingDB / OpenViking 需要 `MATHTUTOR_RUN_VIKING_RAG_SMOKE=1`、endpoint、collection 和对应 API key。任一条件缺失时测试自动 skip，默认 backend/frontend 测试不访问外部 provider。
 - VikingDB / OpenViking metadata filter 支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`，并兼容 `assistments2017_*` 别名。若 provider 不支持或只弱支持 metadata filter，adapter 会在规范化为 `RAGSearchResult` 后做确定性 post-filter。
 - Mem0 adapter 返回稳定 `StudentMemory`，覆盖 `preference`、`repeated_mistake`、`effective_strategy`、`reflection`，并保留 event source、question / concept、trace、event time、relevance、freshness、source 和 provider provenance。下游不能解析 Mem0 raw response。
 - Mem0 写入使用稳定 dedupe key；重复学习事件会更新同一条记忆的 provenance，而不是无界生成重复记忆。
 - Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
+
+Provider 配置和故障诊断：
+
+- 配置缺失：`live_provider` 缺 key、endpoint 或 collection 会抛出明确配置错误；默认 `local_fallback` 保持 demo/mock 可运行。
+- `provider_auth_error`：检查 API key、权限、provider 类型和环境变量是否只在本地 `.env` 中配置；失败 evidence 不可信，不写入 mastery。
+- `provider_timeout`：检查 endpoint、网络和 timeout；系统继续使用 local/fake evidence，不等待 provider 覆盖 KT facts。
+- `provider_empty_result`：provider 返回空结果时不伪造 memory 或 RAG citation；检查 query、metadata filter、namespace 和 collection 内容。
+- `provider_schema_mismatch`：provider raw response 无法规范化；检查字段别名、metadata filter、adapter schema 和 SDK 版本。
+- `provider_budget_exceeded`：检查 quota、rate limit 和调用预算；系统只使用已拿到的 evidence。
 
 相关单测：
 
@@ -319,7 +329,7 @@ python3 -m backend.app.importing.build_assist2017_artifacts \
 提交规则：
 
 - 可以提交 `data/import/assist2017_source.fixture.csv`、`data/mapping/*.fixture.*`、`data/imported/assist2017_fixture/*.json`。
-- 不提交 raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或 full generated artifact。
+- 不提交 provider credentials、secrets、`.env`、provider cache、generated vector index、raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或 full generated artifact。
 - full data 推荐放在 Git 外部路径；若临时放仓库内，使用 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/assist2017/`。
 - 提交前运行 `python3 scripts/check_repository_safety.py`，确认 tracked 文件没有禁提交项。
 
@@ -328,6 +338,7 @@ python3 -m backend.app.importing.build_assist2017_artifacts \
 ```bash
 rm -rf data/local/assist2017_full_artifacts
 rm -rf frontend/dist .pytest_cache .ruff_cache
+rm -rf provider_caches vector_indexes generated_vector_indexes
 ```
 
 ## 4.1.2 V1.5 artifact schema 与 coverage 诊断

@@ -328,7 +328,7 @@ data/imported/assist2017_fixture/*.json
 /Users/lqc/Downloads/assist2017-full/
 ```
 
-如果临时放在仓库内，只能放在默认忽略的 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/assist2017/`。不要提交 raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或全量 generated artifacts。
+如果临时放在仓库内，只能放在默认忽略的 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/assist2017/`。不要提交 provider credentials、secrets、`.env`、provider cache、generated vector index、raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或全量 generated artifacts。
 
 构建小型 fixture artifact：
 
@@ -355,7 +355,7 @@ python3 -m backend.app.importing.build_assist2017_artifacts \
 python3 scripts/check_repository_safety.py
 ```
 
-该脚本会检查当前 Git tracked 文件中是否混入 raw train/test、checkpoint、cache/build 输出或非 fixture generated artifact。
+该脚本会检查当前 Git tracked 文件中是否混入 provider credentials、secrets、`.env`、generated vector indexes、provider caches、raw train/test、checkpoint、模型文件、cache/build 输出或非 fixture generated artifact。
 
 ### V1.5 artifact contract
 
@@ -450,9 +450,22 @@ MATHTUTOR_OPENVIKING_API_KEY=
 
 Mem0 live provider 是 opt-in：默认 `local_fallback` 不需要 Mem0 SDK、API key 或网络；只有设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 且提供 `MATHTUTOR_MEM0_API_KEY` 时才会尝试加载 `mem0ai` 的 `MemoryClient`。本地可用 `pip install .[mem0]` 安装可选 SDK；live smoke 还需要显式设置 `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1`，否则测试会 skip。
 
+VikingDB / OpenViking live RAG 也是 opt-in：只有设置 `MATHTUTOR_RAG_PROVIDER_MODE=live_provider`，并同时提供 `MATHTUTOR_RAG_LIVE_PROVIDER`、`MATHTUTOR_RAG_PROVIDER_ENDPOINT`、`MATHTUTOR_RAG_PROVIDER_COLLECTION` 和对应 API key 时才会创建 live adapter。live smoke 需要 `MATHTUTOR_RUN_VIKING_RAG_SMOKE=1` 且上述配置完整，否则自动 skip；默认测试不会访问外部 provider。
+
+Provider 配置诊断：
+
+- 配置缺失：`live_provider` 缺 API key、endpoint 或 collection 会抛出配置错误；保持默认 `local_fallback` 可继续本地 demo。
+- `provider_auth_error`：检查 Mem0 / VikingDB / OpenViking key、权限和 provider 选择；系统不会信任失败 provider 的 evidence。
+- `provider_timeout`：检查 endpoint、网络和 `MATHTUTOR_RAG_PROVIDER_TIMEOUT_SECONDS`；主学习流程会继续使用已有 local/fake evidence。
+- `provider_empty_result`：provider 未返回可用记忆或 citation；不要伪造 memory/RAG evidence，改查 query、metadata filter 和 collection 内容。
+- `provider_schema_mismatch`：provider 响应无法规范化为 `StudentMemory` 或 `RAGSearchResult`；检查字段别名、metadata filter 和 adapter schema。
+- `provider_budget_exceeded`：检查 quota/rate limit；系统只使用已取得 evidence，不覆盖 KT facts。
+
 V1.7 所有子任务必须使用独立 git worktree 并发开发：每个 issue 从最新 `origin/master` 创建自己的 `codex/...` 分支和 worktree，不在主工作区直接实现，不共用未提交改动。失败降级、context E2E、dashboard、配置安全和 provider 运维任务都应按这个规则拆开推进。
 
 Provider 化不能改变核心边界：Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts；KT facts 仍是权威学习事实。
+
+V1.7 仍只允许 small expert trial。内部正式试用不得早于 **V1.8**。
 
 ## V1.6 已知限制与下一阶段优先级
 

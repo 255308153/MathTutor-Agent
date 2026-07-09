@@ -37,6 +37,9 @@ class MathTutorSettings(BaseSettings):
     rag_provider_search_path: str = "/search"
     rag_provider_supports_metadata_filter: bool = True
     rag_provider_timeout_seconds: float = 5.0
+    run_mem0_live_smoke: bool = False
+    run_viking_rag_smoke: bool = False
+    viking_rag_smoke_query: str = ""
 
     assist2017_dataset_mode: Literal["demo", "fixture", "full"] = "demo"
     assist2017_full_source_rows_path: str = ""

@@ -16,10 +16,26 @@ dist/
 build/
 .next/
 *.tsbuildinfo
+provider_cache/
+provider_caches/
+vector_index/
+vector_indexes/
+generated_vector_index/
+generated_vector_indexes/
+*.faiss
+*.hnsw
+*.ann
+*.index
 
 data/local/
 data/raw/
 data/full/
+data/provider_cache/
+data/provider_caches/
+data/vector_index/
+data/vector_indexes/
+data/generated_vector_index/
+data/generated_vector_indexes/
 data/checkpoint/
 data/checkpoints/
 data/**/*.sqlite

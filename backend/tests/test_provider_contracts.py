@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from typing import Any
 
@@ -36,6 +35,9 @@ def test_default_provider_modes_keep_demo_mock_local_fallback() -> None:
 
     assert settings.memory_provider_mode == "local_fallback"
     assert settings.rag_provider_mode == "local_fallback"
+    assert settings.run_mem0_live_smoke is False
+    assert settings.run_viking_rag_smoke is False
+    assert settings.viking_rag_smoke_query == ""
     assert settings.assist2017_dataset_mode == "demo"
     assert settings.content_source == "demo"
     assert settings.rag_source == "demo"
@@ -249,19 +251,18 @@ def test_live_provider_mode_is_explicit_and_not_default() -> None:
         )
 
 
-@pytest.mark.skipif(
-    os.getenv("MATHTUTOR_RUN_VIKING_RAG_SMOKE") != "1",
-    reason=(
-        "Set MATHTUTOR_RUN_VIKING_RAG_SMOKE=1 plus VikingDB/OpenViking endpoint, "
-        "collection and API key env vars to run live RAG smoke."
-    ),
-)
 def test_live_viking_rag_provider_smoke_from_environment() -> None:
+    smoke_settings = MathTutorSettings()
+    if not _live_viking_rag_smoke_enabled(smoke_settings):
+        pytest.skip(
+            "VikingDB/OpenViking live smoke 需要显式 run flag、endpoint、collection 和 provider API key。"
+        )
+
     settings = MathTutorSettings(rag_provider_mode="live_provider")
 
     rag = create_knowledge_rag(settings)
     results = rag.search(
-        query=os.getenv("MATHTUTOR_VIKING_RAG_SMOKE_QUERY", "通分 题解"),
+        query=smoke_settings.viking_rag_smoke_query or "通分 题解",
         filters={"doc_types": ["concept_note", "question_explanation", "mistake_pattern"]},
         limit=1,
     )
@@ -447,3 +448,17 @@ class StaticRAGProviderClient:
         assert query
         assert limit >= 1
         return self.records
+
+
+def _live_viking_rag_smoke_enabled(settings: MathTutorSettings) -> bool:
+    api_key = (
+        settings.openviking_api_key
+        if settings.rag_live_provider == "openviking"
+        else settings.vikingdb_api_key
+    )
+    return bool(
+        settings.run_viking_rag_smoke
+        and settings.rag_provider_endpoint
+        and settings.rag_provider_collection
+        and api_key
+    )
