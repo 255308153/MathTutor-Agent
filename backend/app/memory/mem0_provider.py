@@ -6,6 +6,7 @@ from typing import Any
 from ..provider_gaps import provider_evidence_gap, provider_exception_gap
 from .store import (
     MemoryProviderConfigurationError,
+    MemoryStatus,
     MemoryType,
     StudentMemory,
     memory_dedupe_key,
@@ -187,6 +188,34 @@ class Mem0StudentMemoryStore:
         )
         return memories[:limit]
 
+    def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
+        self._clear_provider_gaps()
+        try:
+            records = self._provider_get_all(student_id=student_id, limit=100)
+        except Exception as exc:
+            if not self.fallback_on_error:
+                raise
+            self._record_error("get", exc)
+            return None
+
+        for index, record in enumerate(self._extract_records(records)):
+            try:
+                memory = self._to_domain_memory(record, student_id=student_id)
+            except MemoryProviderSchemaError as exc:
+                self._record_gap(
+                    provider_evidence_gap(
+                        gap_type="provider_schema_mismatch",
+                        provider="mem0",
+                        operation="get",
+                        reason=str(exc),
+                        details={"record_index": index},
+                    )
+                )
+                continue
+            if memory.student_id == student_id and memory.memory_id == memory_id:
+                return memory
+        return None
+
     def _build_client(self, *, api_key: str) -> Any:
         try:
             from mem0 import MemoryClient  # type: ignore[import-not-found]
@@ -289,6 +318,9 @@ class Mem0StudentMemoryStore:
             "memory_type": memory.memory_type,
             "evidence": _sanitize_dict(memory.evidence),
             "provenance": _sanitize_dict(memory.provenance),
+            "summary": memory.summary,
+            "enabled": memory.enabled,
+            "status": memory.status,
             "created_at": memory.created_at,
             "updated_at": memory.updated_at,
             "dedupe_key": memory_dedupe_key(memory),
@@ -407,6 +439,8 @@ class Mem0StudentMemoryStore:
         memory_type = _memory_type(metadata.get("memory_type") or fallback.memory_type)
         evidence = _sanitize_dict(metadata.get("evidence") or fallback.evidence)
         provenance = _sanitize_dict(metadata.get("provenance") or fallback.provenance)
+        enabled = _enabled(metadata.get("enabled"), fallback=fallback.enabled)
+        status = _memory_status(metadata.get("status"), enabled=enabled)
         provenance["provider"] = {
             "name": "mem0",
             "record_id": memory_id,
@@ -427,11 +461,14 @@ class Mem0StudentMemoryStore:
             student_id=str(record.get("user_id") or metadata.get("student_id") or student_id),
             memory_type=memory_type,
             content=content,
+            summary=str(metadata.get("summary")) if metadata.get("summary") else fallback.summary,
             evidence=evidence,
             relevance_score=_relevance_score(record, fallback=fallback.relevance_score),
             freshness=memory_freshness(updated_at),
             source=self.source,
             provenance=provenance,
+            enabled=enabled,
+            status=status,
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -513,6 +550,20 @@ def _memory_type(value: Any) -> MemoryType:
     if value in {"preference", "repeated_mistake", "effective_strategy", "reflection"}:
         return value
     return "reflection"
+
+
+def _enabled(value: Any, *, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() not in {"false", "0", "disabled"}
+    return fallback
+
+
+def _memory_status(value: Any, *, enabled: bool) -> MemoryStatus:
+    if value in {"enabled", "disabled"}:
+        return value
+    return "enabled" if enabled else "disabled"
 
 
 def _relevance_score(record: dict[str, Any], *, fallback: float | None) -> float | None:

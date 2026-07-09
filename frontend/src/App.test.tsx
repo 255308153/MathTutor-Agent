@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { MathTutorEventResponse } from "./types";
+import type { MathTutorEventResponse, StudentMemoryListResponse } from "./types";
 
 const baseResponse: MathTutorEventResponse = {
   trace_id: "tt-test",
@@ -202,6 +202,55 @@ const baseResponse: MathTutorEventResponse = {
   }
 };
 
+const baseMemoryResponse: StudentMemoryListResponse = {
+  student_id: "student-demo",
+  count: 2,
+  memories: [
+    {
+      memory_id: "mem-preference-1",
+      memory_type: "preference",
+      content: "学生偏好先看分数通分的步骤化讲解。",
+      summary: "偏好步骤化分数讲解",
+      source: "local_fallback",
+      evidence: {
+        preferred_concept_id: "c_fraction_addition",
+        raw_provider_payload: "should_not_render",
+        embedding_vector: [0.1, 0.2, 0.3]
+      },
+      provenance: {
+        trace_id: "tt-memory-1",
+        source_event: "event:tt-memory-1:answer_submitted",
+        provider_debug: "should_not_render"
+      },
+      created_at: "2026-07-09T08:00:00+00:00",
+      updated_at: "2026-07-09T08:20:00+00:00",
+      freshness: "fresh",
+      enabled: true,
+      status: "enabled"
+    },
+    {
+      memory_id: "mem-mistake-1",
+      memory_type: "repeated_mistake",
+      content: "学生在分数通分时经常忘记找公分母。",
+      summary: "通分时忘记公分母",
+      source: "fake_provider",
+      evidence: {
+        concept_id: "c_fraction_addition",
+        question_id: "q_frac_001"
+      },
+      provenance: {
+        provider: { name: "fake_mem0_fixture", record_id: "hidden-provider-id" },
+        trace_id: "tt-memory-2"
+      },
+      created_at: "2026-07-08T08:00:00+00:00",
+      updated_at: "2026-07-09T07:20:00+00:00",
+      freshness: "recent",
+      enabled: true,
+      status: "enabled"
+    }
+  ]
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -209,14 +258,16 @@ afterEach(() => {
 
 describe("学习驾驶舱", () => {
   it("可以加载建议、提交推荐题答案，并展示 trace 与证据", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse(baseResponse))
-      .mockResolvedValueOnce(jsonResponse({
+    const fetchMock = mockMathTutorApi({
+      eventResponses: [
+        baseResponse,
+        {
         ...baseResponse,
         trace_id: "tt-answer",
         response: "收到，你提交的 q_frac_001 已由服务端标准答案判定为正确。"
-      }));
+        }
+      ]
+    });
 
     render(<App />);
 
@@ -243,6 +294,11 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("参考相关知识资源")).toBeInTheDocument();
     expect(screen.getByText("Trace reference 已排除")).toBeInTheDocument();
     expect(screen.getAllByText("部分上下文资产因预算限制被裁剪").length).toBeGreaterThan(0);
+    expect(screen.getByText("长期记忆")).toBeInTheDocument();
+    expect((await screen.findAllByText("偏好步骤化分数讲解")).length).toBeGreaterThan(0);
+    expect(screen.getByText("偏好知识点")).toBeInTheDocument();
+    expect(screen.getByText("来源链")).toBeInTheDocument();
+    expect(screen.queryByText(/should_not_render/)).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
     await userEvent.click(screen.getByLabelText("提交答案"));
@@ -250,13 +306,15 @@ describe("学习驾驶舱", () => {
     await waitFor(() => {
       expect(screen.getByText(/服务端标准答案判定为正确/)).toBeInTheDocument();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1][1]?.body).toContain("\"answer\":\"3/4\"");
-    expect(fetchMock.mock.calls[1][1]?.body).toContain("\"assist2017_question_id\":1");
+    const eventCalls = eventFetchCalls(fetchMock);
+    expect(eventCalls).toHaveLength(2);
+    expect(eventCalls[1][1]?.body).toContain("\"answer\":\"3/4\"");
+    expect(eventCalls[1][1]?.body).toContain("\"assist2017_question_id\":1");
   });
 
   it("没有上下文资产时保持推荐主流程可用并展示 fallback", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+    mockMathTutorApi({
+      eventResponses: [{
       ...baseResponse,
       teaching_trace_summary: {
         ...baseResponse.teaching_trace_summary,
@@ -267,7 +325,8 @@ describe("学习驾驶舱", () => {
           evidence_gaps: []
         }
       }
-    }));
+      }]
+    });
 
     render(<App />);
 
@@ -277,8 +336,46 @@ describe("学习驾驶舱", () => {
     expect(screen.getAllByText("暂无").length).toBeGreaterThan(0);
   });
 
+  it("长期记忆读取中展示加载状态", async () => {
+    mockMathTutorApi({ memoryPending: true });
+
+    render(<App />);
+
+    expect(await screen.findByText("正在读取长期记忆...")).toBeInTheDocument();
+  });
+
+  it("长期记忆为空时展示空状态", async () => {
+    mockMathTutorApi({
+      memoryResponse: {
+        student_id: "student-demo",
+        count: 0,
+        memories: []
+      }
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("暂无长期记忆；完成练习或产生偏好后会出现在这里。")).toBeInTheDocument();
+  });
+
+  it("长期记忆读取失败时展示面板级错误，不影响推荐主流程", async () => {
+    mockMathTutorApi({
+      memoryError: new Response(JSON.stringify({ detail: "memory provider unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" }
+      })
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
+    expect(await screen.findByText(/学生记忆读取失败：503 memory provider unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新长期记忆" })).toBeInTheDocument();
+  });
+
   it("展示 provider-backed selected/omitted context evidence 并隐藏 SDK 噪声", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+    mockMathTutorApi({
+      eventResponses: [{
       ...baseResponse,
       teaching_trace_summary: {
         ...baseResponse.teaching_trace_summary,
@@ -364,7 +461,8 @@ describe("学习驾驶舱", () => {
           error_records: []
         }
       }
-    }));
+      }]
+    });
 
     render(<App />);
 
@@ -387,7 +485,8 @@ describe("学习驾驶舱", () => {
   });
 
   it("展示答题提交追加的 task/tool/trace 上下文证据", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+    mockMathTutorApi({
+      eventResponses: [{
       ...baseResponse,
       trace_id: "tt-answer-context",
       teaching_trace_summary: {
@@ -431,7 +530,8 @@ describe("学习驾驶舱", () => {
           }
         }
       }
-    }));
+      }]
+    });
 
     render(<App />);
 
@@ -442,7 +542,8 @@ describe("学习驾驶舱", () => {
   });
 
   it("展示 complete/offline DGEKT evidence 的 scorer、路径和消融摘要", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+    mockMathTutorApi({
+      eventResponses: [{
       ...baseResponse,
       teaching_trace_summary: {
         ...baseResponse.teaching_trace_summary,
@@ -497,7 +598,8 @@ describe("学习驾驶舱", () => {
           }
         }
       }
-    }));
+      }]
+    });
 
     render(<App />);
 
@@ -511,7 +613,8 @@ describe("学习驾驶舱", () => {
 
   it("展示 unavailable offline evidence gap，不把 partial proxy 当完整证据", async () => {
     const gapReason = "DGEKT offline evidence directory not found: /tmp/missing-offline-evidence.";
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+    mockMathTutorApi({
+      eventResponses: [{
       ...baseResponse,
       teaching_trace_summary: {
         ...baseResponse.teaching_trace_summary,
@@ -564,7 +667,8 @@ describe("学习驾驶舱", () => {
           }
         }
       }
-    }));
+      }]
+    });
 
     render(<App />);
 
@@ -575,7 +679,7 @@ describe("学习驾驶舱", () => {
   });
 
   it("后端不可达时展示中文错误和重试入口", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("网络不可用"));
+    mockMathTutorApi({ eventError: new Error("网络不可用") });
 
     render(<App />);
 
@@ -584,7 +688,8 @@ describe("学习驾驶舱", () => {
   });
 
   it("后端返回可恢复 evidence gap 时在顶部展示处理提示", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+    mockMathTutorApi({
+      eventResponses: [{
       ...baseResponse,
       state_summary: {
         ...baseResponse.state_summary,
@@ -619,7 +724,8 @@ describe("学习驾驶舱", () => {
           ]
         }
       }
-    }));
+      }]
+    });
 
     render(<App />);
 
@@ -632,12 +738,15 @@ describe("学习驾驶舱", () => {
   });
 
   it("后端返回 DGEKT detail 时展示可理解错误", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ detail: "DGEKT 映射失败：缺少 ASSIST2017 题目映射" }), {
+    mockMathTutorApi({
+      eventError: new Response(
+        JSON.stringify({ detail: "DGEKT 映射失败：缺少 ASSIST2017 题目映射" }),
+        {
         status: 400,
         headers: { "Content-Type": "application/json" }
-      })
-    );
+        }
+      )
+    });
 
     render(<App />);
 
@@ -646,6 +755,43 @@ describe("学习驾驶舱", () => {
     );
   });
 });
+
+function mockMathTutorApi({
+  eventResponses = [baseResponse],
+  memoryResponse = baseMemoryResponse,
+  eventError,
+  memoryError,
+  memoryPending = false
+}: {
+  eventResponses?: MathTutorEventResponse[];
+  memoryResponse?: StudentMemoryListResponse;
+  eventError?: Error | Response;
+  memoryError?: Error | Response;
+  memoryPending?: boolean;
+} = {}) {
+  const eventQueue = [...eventResponses];
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.includes("/api/students/") && url.includes("/memories")) {
+      if (memoryPending) return new Promise<Response>(() => {});
+      if (memoryError instanceof Error) throw memoryError;
+      if (memoryError instanceof Response) return memoryError.clone();
+      return jsonResponse(memoryResponse);
+    }
+    if (url.includes("/api/events")) {
+      if (eventError instanceof Error) throw eventError;
+      if (eventError instanceof Response) return eventError.clone();
+      return jsonResponse(
+        eventQueue.shift() ?? eventResponses[eventResponses.length - 1] ?? baseResponse
+      );
+    }
+    throw new Error(`Unexpected fetch: ${url} ${JSON.stringify(init ?? {})}`);
+  });
+}
+
+function eventFetchCalls(fetchMock: ReturnType<typeof mockMathTutorApi>) {
+  return fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/events"));
+}
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {

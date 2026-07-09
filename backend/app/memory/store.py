@@ -5,13 +5,14 @@ from hashlib import sha256
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..core.config import MathTutorSettings, get_settings
 
 
 MemoryType = Literal["preference", "repeated_mistake", "effective_strategy", "reflection"]
 MemoryFreshness = Literal["fresh", "recent", "stale"]
+MemoryStatus = Literal["enabled", "disabled"]
 
 
 class StudentMemory(BaseModel):
@@ -19,13 +20,24 @@ class StudentMemory(BaseModel):
     student_id: str
     memory_type: MemoryType
     content: str
+    summary: str | None = None
     evidence: dict[str, Any] = Field(default_factory=dict)
     relevance_score: float | None = Field(default=None, ge=0.0, le=1.0)
     freshness: MemoryFreshness = "fresh"
     source: str = "local_fallback"
     provenance: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+    status: MemoryStatus = "enabled"
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+    @model_validator(mode="after")
+    def align_enabled_status(self) -> StudentMemory:
+        if self.status == "disabled" and self.enabled:
+            self.enabled = False
+        elif not self.enabled and self.status == "enabled":
+            self.status = "disabled"
+        return self
 
 
 class StudentMemoryStore(Protocol):
@@ -43,6 +55,9 @@ class StudentMemoryStore(Protocol):
 
     def list_recent(self, student_id: str, limit: int = 10) -> list[StudentMemory]:
         """Return recent memories for inspection and planning."""
+
+    def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
+        """Return one memory by id for read-only detail views."""
 
 
 class MemoryProviderConfigurationError(RuntimeError):
@@ -111,6 +126,16 @@ class InMemoryStudentMemoryStore:
             _with_retrieval_metadata(memory, relevance_score=None, source="local_fallback")
             for memory in recent
         ]
+
+    def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
+        for memory in self._memories_by_student.get(student_id, []):
+            if memory.memory_id == memory_id:
+                return _with_retrieval_metadata(
+                    memory,
+                    relevance_score=None,
+                    source="local_fallback",
+                )
+        return None
 
     def _score(self, memory: StudentMemory, terms: set[str]) -> float:
         if not terms:

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from .store import MemoryType, StudentMemory, memory_freshness
+from .store import MemoryStatus, MemoryType, StudentMemory, memory_freshness
 
 
 class FakeStudentMemoryProvider:
@@ -83,6 +83,12 @@ class FakeStudentMemoryProvider:
         )
         return [self._to_domain_memory(record) for record in sorted_records[:limit]]
 
+    def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
+        for record in self._records_by_student.get(student_id, []):
+            if str(record["provider_id"]) == memory_id:
+                return self._to_domain_memory(record)
+        return None
+
     def _to_provider_record(self, memory: StudentMemory) -> dict[str, Any]:
         provider_id = memory.memory_id or f"fake-mem-{uuid4().hex[:10]}"
         return {
@@ -94,6 +100,9 @@ class FakeStudentMemoryProvider:
                 "memory_type": memory.memory_type,
                 "evidence": dict(memory.evidence),
                 "provenance": dict(memory.provenance),
+                "summary": memory.summary,
+                "enabled": memory.enabled,
+                "status": memory.status,
                 "created_at": memory.created_at,
                 "updated_at": memory.updated_at,
             },
@@ -125,11 +134,14 @@ class FakeStudentMemoryProvider:
             student_id=str(record["user_id"]),
             memory_type=metadata.get("memory_type", "reflection"),
             content=str(record["memory"]),
+            summary=metadata.get("summary"),
             evidence=dict(metadata.get("evidence") or {}),
             relevance_score=_normalized_score(record.get("score")),
             freshness=memory_freshness(updated_at),
             source="fake_provider",
             provenance=provenance,
+            enabled=bool(metadata.get("enabled", True)),
+            status=_memory_status(metadata.get("status")),
             created_at=str(metadata.get("created_at") or datetime.now(UTC).isoformat()),
             updated_at=updated_at,
         )
@@ -173,3 +185,7 @@ def _normalized_score(value: Any) -> float | None:
         return round(min(max(float(value), 0.0), 1.0), 4)
     except (TypeError, ValueError):
         return None
+
+
+def _memory_status(value: Any) -> MemoryStatus:
+    return value if value in {"enabled", "disabled"} else "enabled"

@@ -394,6 +394,12 @@ def _assert_student_memory_store_contract(store: StudentMemoryStore) -> None:
         preference.memory_id,
         mistake.memory_id,
     }
+    detail = store.get(student_id=student_id, memory_id=preference.memory_id)
+    assert detail is not None
+    assert detail.memory_id == preference.memory_id
+    assert detail.enabled is True
+    assert detail.status == "enabled"
+    assert store.get(student_id=student_id, memory_id="missing-memory") is None
     assert store.search(student_id="missing-student", query="通分", limit=3) == []
 
 
