@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from ..context.learning_context import LearningContextLayer, context_layer as default_context_layer
@@ -743,6 +744,8 @@ class MathTutorLearningLoop:
 
     def _update_memory(self, state: MathTutorState) -> None:
         updates: list[StudentMemory] = []
+        base_evidence = self._memory_event_evidence(state)
+        base_provenance = self._memory_event_provenance(state)
         preferred_teaching_type = state.learning_event.payload.get("preferred_teaching_type")
         preferred_concept_id = state.learning_event.payload.get("preferred_concept_id")
         if preferred_teaching_type or preferred_concept_id:
@@ -752,9 +755,14 @@ class MathTutorLearningLoop:
                     memory_type="preference",
                     content="学生在推荐中表达了学习偏好。",
                     evidence={
+                        **base_evidence,
                         "preferred_teaching_type": preferred_teaching_type,
                         "preferred_concept_id": preferred_concept_id,
+                        "question_id": state.learning_event.payload.get("question_id"),
+                        "concept_id": preferred_concept_id
+                        or state.learning_event.payload.get("concept_id"),
                     },
+                    provenance=base_provenance,
                 )
             )
 
@@ -767,10 +775,12 @@ class MathTutorLearningLoop:
                         memory_type="repeated_mistake",
                         content=f"学生在「{state.learning_event.payload.get('concept_name')}」上出现错题。",
                         evidence={
+                            **base_evidence,
                             "question_id": state.learning_event.payload.get("question_id"),
                             "concept_id": state.learning_event.payload.get("concept_id"),
                             "mistake_patterns": state.learning_event.payload.get("mistake_patterns", []),
                         },
+                        provenance=base_provenance,
                     )
                 )
             elif is_correct is True:
@@ -780,9 +790,11 @@ class MathTutorLearningLoop:
                         memory_type="effective_strategy",
                         content="学生完成了一次正确作答，可继续用同类巩固题推进。",
                         evidence={
+                            **base_evidence,
                             "question_id": state.learning_event.payload.get("question_id"),
                             "concept_id": state.learning_event.payload.get("concept_id"),
                         },
+                        provenance=base_provenance,
                     )
                 )
 
@@ -805,6 +817,28 @@ class MathTutorLearningLoop:
                 },
             )
         )
+
+    def _memory_event_evidence(self, state: MathTutorState) -> dict[str, Any]:
+        occurred_at = datetime.now(UTC).isoformat()
+        return {
+            "source_event": f"event:{state.trace_id}:{state.learning_event.type}",
+            "event_type": state.learning_event.type,
+            "trace_id": state.trace_id,
+            "session_id": state.session_id,
+            "event_time": occurred_at,
+        }
+
+    def _memory_event_provenance(self, state: MathTutorState) -> dict[str, Any]:
+        occurred_at = datetime.now(UTC).isoformat()
+        return {
+            "source_event": f"event:{state.trace_id}:{state.learning_event.type}",
+            "event_type": state.learning_event.type,
+            "trace_id": state.trace_id,
+            "session_id": state.session_id,
+            "occurred_at": occurred_at,
+            "question_id": state.learning_event.payload.get("question_id"),
+            "concept_id": state.learning_event.payload.get("concept_id"),
+        }
 
     def _knowledge_response(self, state: MathTutorState) -> str:
         if not state.rag_context:

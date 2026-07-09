@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from .store import MemoryType, StudentMemory
+from .store import MemoryType, StudentMemory, memory_freshness
 
 
 class FakeStudentMemoryProvider:
@@ -44,7 +44,10 @@ class FakeStudentMemoryProvider:
                 item[1]["provider_id"],
             )
         )
-        return [self._to_domain_memory(record) for _, record in scored[:limit]]
+        return [
+            self._to_domain_memory(record | {"score": score})
+            for score, record in scored[:limit]
+        ]
 
     def write(self, memory: StudentMemory) -> StudentMemory:
         records = self._records_by_student.setdefault(memory.student_id, [])
@@ -90,6 +93,7 @@ class FakeStudentMemoryProvider:
             "metadata": {
                 "memory_type": memory.memory_type,
                 "evidence": dict(memory.evidence),
+                "provenance": dict(memory.provenance),
                 "created_at": memory.created_at,
                 "updated_at": memory.updated_at,
             },
@@ -110,14 +114,24 @@ class FakeStudentMemoryProvider:
 
     def _to_domain_memory(self, record: dict[str, Any]) -> StudentMemory:
         metadata = record.get("metadata", {})
+        updated_at = str(metadata.get("updated_at") or datetime.now(UTC).isoformat())
+        provenance = dict(metadata.get("provenance") or {})
+        provenance["provider"] = {
+            "name": "fake_mem0_fixture",
+            "record_id": str(record["provider_id"]),
+        }
         return StudentMemory(
             memory_id=str(record["provider_id"]),
             student_id=str(record["user_id"]),
             memory_type=metadata.get("memory_type", "reflection"),
             content=str(record["memory"]),
             evidence=dict(metadata.get("evidence") or {}),
+            relevance_score=_normalized_score(record.get("score")),
+            freshness=memory_freshness(updated_at),
+            source="fake_provider",
+            provenance=provenance,
             created_at=str(metadata.get("created_at") or datetime.now(UTC).isoformat()),
-            updated_at=str(metadata.get("updated_at") or datetime.now(UTC).isoformat()),
+            updated_at=updated_at,
         )
 
     def _score(self, record: dict[str, Any], terms: set[str]) -> float:
@@ -150,3 +164,12 @@ class FakeStudentMemoryProvider:
             if keyword in normalized:
                 terms.add(keyword)
         return terms
+
+
+def _normalized_score(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(min(max(float(value), 0.0), 1.0), 4)
+    except (TypeError, ValueError):
+        return None

@@ -20,6 +20,9 @@ dev = [
 rag = [
   "chromadb>=0.5.0",
 ]
+mem0 = [
+  "mem0ai",
+]
 
 [tool.ruff]
 line-length = 100
