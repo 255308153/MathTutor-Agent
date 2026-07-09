@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from ..schemas.learning import KTDiagnosis, KTLearningProgress
-from ..storage.content_repository import DemoTeachingContentRepository, content_repository
+from ..storage.content_repository import ContentRepository, content_repository
 
 
 class RiskPrioritizedRecommender:
-    def __init__(self, content: DemoTeachingContentRepository | None = None) -> None:
+    def __init__(self, content: ContentRepository | None = None) -> None:
         self.content = content or content_repository
 
     def recommend(
@@ -45,6 +45,7 @@ class RiskPrioritizedRecommender:
             "novelty": self._novelty(question, progress),
             "preference_fit": self._preference_fit(question, preferences),
             "canonical_alignment": self._canonical_alignment(question),
+            "content_completeness": self._content_completeness(question),
             "context_support": self._context_support(question, preferences),
         }
         score = round(
@@ -54,7 +55,8 @@ class RiskPrioritizedRecommender:
             + factors["prediction_risk"] * 0.1
             + factors["novelty"] * 0.15
             + factors["preference_fit"] * 0.1
-            + factors["canonical_alignment"] * 0.04,
+            + factors["canonical_alignment"] * 0.04
+            + factors["content_completeness"] * 0.06,
             4,
         )
         public = self.content.public_question(question)
@@ -148,6 +150,16 @@ class RiskPrioritizedRecommender:
             and question.get("canonical_mapping_source")
         )
         return 1.0 if has_curated_mapping else 0.0
+
+    def _content_completeness(self, question: dict[str, Any]) -> float:
+        availability = question.get("content_availability") or self.content.content_availability(
+            question
+        )
+        if availability.get("status") == "available":
+            return 1.0
+        missing_fields = set(availability.get("missing_fields", []))
+        essential = {"stem", "standard_answer", "explanation", "concept_metadata"}
+        return round(max(0.0, 1.0 - len(missing_fields & essential) / len(essential)), 4)
 
     def _canonical_mapping(self, question: dict[str, Any]) -> dict[str, Any]:
         return {
