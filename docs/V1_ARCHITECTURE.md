@@ -190,6 +190,7 @@ Context can assemble evidence, not decide learning facts.
 - RAG 提供知识点讲解、题目解析、错因和学习策略证据。
 - Mem0 风格记忆提供个人偏好、反思和历史策略效果。
 - LearningContextLayer 统一组织 context assets 和 assembled_context，但不决定学习事实。next-step advice 中，planner / recommender / response 只读取 `assembled_context.normalized_context` 的 student_memory、knowledge_resource、task_state 和 evidence gaps，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
+- `answer_submitted` 会额外生成 task_state、tool_observation 和 trace_reference 快照，把 pending question、grading、KT diagnosis、RAG retrieval、错因诊断、推荐候选和 memory update 来源串到 TeachingTrace；这些快照只做审计引用，不能取代 progress store、LearningEvent、KTDiagnosis、RAG 或 memory store。
 - 缺少学生记忆或 RAG 资源时，LearningContextLayer 记录 evidence gap，而不是伪造 asset 或覆盖 KT facts。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 

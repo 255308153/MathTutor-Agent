@@ -275,6 +275,15 @@ V1.4 #29 / #35 的 next-step advice 个性化规则：
 - planner / recommender / response 只能通过 `assembled_context` 读取 normalized context。它们不能直接调用 Mem0、VikingDB、OpenViking 或外部 provider SDK。
 - 推荐理由可以展示“参考学生偏好”“参考相关知识资源”等 context included_reason，也可以展示 gap reason，但 mastery、weak_concepts、forgetting_risk、prediction_probability 仍只来自 KT。
 
+V1.4 #30 的 `answer_submitted` 上下文快照规则：
+
+- 正确作答、错误作答和未判题作答都会生成 answer-submission 专属 assets。
+- `task_state` 记录 pending question、submitted answer、grading result、next action，并用 `source_ref` / `evidence_refs` 指向 progress、event 和 TeachingTrace；它不能作为唯一 runtime state。
+- `tool_observation` 记录本轮 KT diagnosis、RAG retrieval、mistake diagnosis、recommendation candidates。KT observation 必须带 `snapshot=true`、`source=kt`、`trace_id`、`generated_at`、`freshness=fresh` 和 `authoritative_snapshot=true`，表示它只是 KT facts 的审计副本。
+- RAG 或错因诊断缺失时不伪造结果，而是保留 omitted asset 和 `excluded_reason`，供 TeachingTrace expert evidence 展示。
+- `trace_reference` 记录 retrieval refs、planner decision ref 和 memory update source，用来追踪本轮证据路径。
+- 代码入口是 `LearningContextLayer.collect_answer_submission_assets()`；主循环只在 planner 之后或未判题 fallback plan 中调用它。
+
 ## 5. 统一事件 API
 
 V1 后端通过统一事件入口接收聊天消息和学习事件：

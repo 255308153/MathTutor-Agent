@@ -467,6 +467,24 @@ class MathTutorLearningLoop:
                     "type": "record_ungraded_answer",
                     "label": "记录未判题作答并等待内容集补齐",
                 }
+                state.teaching_plan = {
+                    "decision": "record_ungraded_answer",
+                    "selected_action": state.next_action,
+                    "teaching_type": state.learning_event.payload.get("teaching_type", "concept"),
+                    "mistake_diagnosis": None,
+                    "evidence": {
+                        "event_type": state.learning_event.type,
+                        "question_id": state.learning_event.payload.get("question_id"),
+                        "is_correct": None,
+                        "assembled_context_id": (
+                            state.assembled_context or {}
+                        ).get("context_id"),
+                        "context_gap_reasons": self._context_gap_reasons(state),
+                        "error_records": list(state.error_records),
+                    },
+                }
+                answer_submission_assets = self._record_answer_submission_context_snapshots(state)
+                context_asset_selection = self._context_asset_selection(state.context_assets)
                 state.teaching_trace.append(
                     self._trace(
                         stage="plan",
@@ -475,6 +493,12 @@ class MathTutorLearningLoop:
                             "intent": state.intent,
                             "next_action": state.next_action,
                             "recommended_question_count": len(state.recommended_questions),
+                            "answer_submission_context_assets": answer_submission_assets,
+                            "context_asset_selection": context_asset_selection,
+                            "evidence_gaps": (state.assembled_context or {}).get(
+                                "evidence_gaps", []
+                            ),
+                            "error_records": list(state.error_records),
                         },
                     )
                 )
@@ -532,6 +556,8 @@ class MathTutorLearningLoop:
             assembled_context=state.assembled_context,
         )
         state.next_action = state.teaching_plan["selected_action"]
+        answer_submission_assets = self._record_answer_submission_context_snapshots(state)
+        context_asset_selection = self._context_asset_selection(state.context_assets)
 
         state.teaching_trace.append(
             self._trace(
@@ -551,6 +577,8 @@ class MathTutorLearningLoop:
                         state.assembled_context or {}
                     ).get("context_id"),
                     "context_asset_count": len(state.context_assets),
+                    "answer_submission_context_assets": answer_submission_assets,
+                    "context_asset_selection": context_asset_selection,
                     "context_rationale": self._context_rationale(state),
                     "evidence_gaps": (state.assembled_context or {}).get("evidence_gaps", []),
                     "error_records": list(state.error_records),
@@ -574,6 +602,60 @@ class MathTutorLearningLoop:
                 },
             )
         )
+
+    def _record_answer_submission_context_snapshots(
+        self,
+        state: MathTutorState,
+    ) -> list[dict[str, Any]]:
+        if state.intent != "answer_submission":
+            return []
+        assets = self.context_layer.collect_answer_submission_assets(
+            student_id=state.student_id,
+            session_id=state.session_id,
+            learning_event=state.learning_event,
+            kt_progress=state.kt_progress,
+            kt_diagnosis=state.kt_diagnosis,
+            rag_context=state.rag_context,
+            teaching_plan=state.teaching_plan,
+            recommended_questions=state.recommended_questions,
+            trace_id=state.trace_id,
+        )
+        dumped = [asset.model_dump() for asset in assets]
+        existing_ids = {asset.get("asset_id") for asset in state.context_assets}
+        state.context_assets.extend(
+            asset for asset in dumped if asset.get("asset_id") not in existing_ids
+        )
+        return [
+            {
+                "asset_id": asset["asset_id"],
+                "asset_type": asset["asset_type"],
+                "source_type": asset["source_type"],
+                "source_ref": asset["source_ref"],
+                "summary": asset["summary"],
+                "included_reason": asset.get("included_reason"),
+                "excluded_reason": asset.get("excluded_reason"),
+            }
+            for asset in dumped
+        ]
+
+    def _context_asset_selection(self, assets: list[dict[str, Any]]) -> dict[str, Any]:
+        selected: list[dict[str, Any]] = []
+        omitted: list[dict[str, Any]] = []
+        for asset in assets:
+            summary = {
+                "asset_id": asset.get("asset_id"),
+                "asset_type": asset.get("asset_type"),
+                "source_type": asset.get("source_type"),
+                "source_ref": asset.get("source_ref"),
+                "summary": asset.get("summary"),
+                "included_reason": asset.get("included_reason"),
+                "excluded_reason": asset.get("excluded_reason"),
+            }
+            if asset.get("excluded_reason"):
+                omitted.append(summary)
+            else:
+                selected.append(summary)
+        return {"selected": selected, "omitted": omitted}
 
     def _generate_response(self, state: MathTutorState) -> None:
         if state.intent == "answer_submission":
