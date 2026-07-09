@@ -98,7 +98,15 @@ export MATHTUTOR_DGEKT_Q_MATRIX_PATH=/Users/lqc/Downloads/LDGEKT_副本/90_源�
 uvicorn backend.app.main:app --reload
 ```
 
-前端仍按同一条 dashboard 路径操作。DGEKT 模式下应在 `模型证据` 看到 engine、checkpoint provenance、prediction facts、DGEKT attribution、Top path、Path strength 和 Key history。
+前端仍按同一条 dashboard 路径操作。DGEKT 模式下应在 `模型证据` 看到 engine、checkpoint provenance、prediction facts、DGEKT attribution、Top path、Path strength 和 Key history。V1.6 如需读取原 DGEKT explainability outputs，额外显式配置：
+
+```bash
+export MATHTUTOR_DGEKT_CHECKPOINT_ID=dgekt-assist2017-fixture-epoch26
+export MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR=/path/to/dgekt/offline_evidence_outputs
+export MATHTUTOR_DGEKT_CANONICAL_MAPPING_PATH=data/mapping/assist2017_canonical_mapping.fixture.json
+```
+
+配置后 `模型证据` 需要能区分 `complete/offline`、`partial`、`unavailable` 和 `invalid`，并展示 scorer provenance、gap reason、top paths、key history 和 path ablation。未配置 offline evidence 时，DGEKT 仍只能显示 partial online proxy；不能把 proxy path 当成完整离线归因。
 
 V1.3 端到端验收路径：
 
@@ -125,16 +133,16 @@ V1.3 / V1.4 历史限制（V1.5 之前）：
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖 checkpoint。
 - `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；大模型和原始数据只通过本地路径引用。
 - Demo 内容集优先读取 V1.3 canonical mapping fixture；未映射题会生成稳定 ASSIST2017 smoke question id，确保 dashboard 能走通 DGEKT 推理，但这不是完整 ASSISTments2017 内容语义对齐。
-- Attribution evidence 当前是在线 partial evidence，没有运行原 DGEKT 离线 path scorer。
+- Attribution evidence 当时只有在线 partial evidence，没有运行原 DGEKT 离线 path scorer；V1.6 已增加显式配置的 offline evidence adapter。
 - 本地 memory store 默认进程内保存，服务重启后不保留长期记忆。
 - 本地 RAG 使用 JSON fallback，citation 形状稳定但不是生产向量库。
 - 前端仅用于单学习者演示，不包含登录、班级和教师端。
 
-V1.5 已完成第一项 full-data artifact 生产线；仍不包含 provider 和完整离线 scorer。后续真实集成优先级：
+V1.5 已完成第一项 full-data artifact 生产线；V1.6 已接入 DGEKT offline evidence artifact，但仍不包含 provider、持久化长期记忆和生产向量库。后续真实集成优先级：
 
-1. 原 DGEKT explainability scorer 在线化：接入完整 top attribution paths / key history scorer 输出。
-2. `Mem0` adapter：将本地学生记忆替换为可持久化检索记忆。
-3. `VikingDB` / `OpenViking` adapter：将本地 JSON RAG fallback 替换成向量检索。
+1. `Mem0` adapter：将本地学生记忆替换为可持久化检索记忆。
+2. `VikingDB` / `OpenViking` adapter：将本地 JSON RAG fallback 替换成向量检索。
+3. 持久化学习状态和 TeachingTrace：支持连续学习会话审计。
 4. Full artifact 存储和分发：如果完整 ASSISTments2017 generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程。
 
 前端环境变量：
@@ -162,6 +170,15 @@ V1.5 #53 最终验收记录（2026-07-09）：
 | `cd frontend && npm test -- --run` | 通过，1 个 test file / 6 tests passed。 |
 | `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
 | `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 raw train/test、checkpoint、模型文件、cache/build 输出或 full generated artifact。 |
+
+V1.6 #68 最终验收记录（2026-07-09）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `python3 -m pytest backend/tests` | 通过，113 passed，2 skipped。skipped 项为真实 checkpoint / full offline evidence smoke，仍需显式 opt-in。 |
+| `cd frontend && npm test -- --run` | 通过，1 个 test file / 8 tests passed。 |
+| `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
+| `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 raw train/test、checkpoint、模型文件、cache/build 输出、full generated artifact 或 full explainability outputs。 |
 
 开发节奏：
 
@@ -623,7 +640,7 @@ TeachingTrace 的 `plan` 阶段会记录：
 专家证据层包含：
 
 - `kt_diagnosis`：KT 掌握度、薄弱点、遗忘风险、预测概率等事实。
-- `attribution_evidence`：DGEKT attribution evidence，包含 `prediction_probability`、`raw_model_target`、`mapped_teaching_content`、`scorer`、`top_paths`、`key_history`、`weak_concepts`。DGEKT 在线 adapter 当前输出带 `partial_evidence=true` 的可审计 partial evidence。
+- `attribution_evidence`：DGEKT attribution evidence，包含 `prediction_probability`、`raw_model_target`、`mapped_teaching_content`、`evidence_status`、`evidence_source`、`scorer`、`top_paths`、`key_history`、`weak_concepts`、`path_ablation` 和 `evidence_gaps`。V1.6 在显式配置 artifact 时可输出 `complete/offline`；未配置、未命中或无效时输出 `partial`、`unavailable` 或 `invalid`，并保留 gap reason。
 - `rag_sources`：RAG 文档引用。
 - `student_memories`：本轮读取到的长期记忆。
 - `planner_decision`：TeachingPlanner 的 selected action、mistake diagnosis 和证据。
@@ -633,12 +650,14 @@ DGEKT attribution evidence 约定：
 
 1. 保持 `KTStateEngine.explain_prediction(progress, target_question_id)` 接口不变。
 2. DGEKT adapter 返回 `AttributionEvidence`，其中 `prediction_probability` 与 `diagnose` 的预测概率一致。
-3. `key_history` 放最近进入 DGEKT one-hot 序列的已判题交互，包括 MathTutor question、ASSIST2017 question、正确性、序列位置和 concept 映射。
-4. `top_paths` 放 history question 到 target question 的可审计 partial path：history / target question、history / target concept、Q-matrix concept relation strength、question relation strength、recency strength、`path_strength` / `path_weight`、`relation_strength`、`relation_source`。
+3. `key_history` 放进入 DGEKT one-hot 序列的关键历史交互，包括 MathTutor question、ASSIST2017 question、正确性、序列位置和 concept 映射；offline evidence 命中时来自 `key_history.csv`。
+4. `top_paths` 放 history question 到 target question 的可审计 path。offline evidence 命中时来自 `attribution_paths.csv`；未命中时只能使用 recent history + Q-matrix 的 partial proxy，并标注 `partial_evidence=true`。
 5. `weak_concept_hit` 和 `weak_concept_evidence` 只说明该 path 命中了 DGEKT 诊断出的薄弱概念 proxy，不能反向改写 `KTDiagnosis.weak_concepts`。
 6. `diagnose` 阶段 TeachingTrace 会记录 `attribution_chain`，按 raw model target -> mapped teaching content -> attribution evidence 串联研究者可审计链路。
-7. 当前在线 adapter 没有运行原 DGEKT 工程的离线 path scorer / graph path CSV，因此 `top_paths` 必须标注 `partial_evidence=true`、`evidence_status=partial`、`partial_evidence_reason` 和 limitations，不能伪装成完整双图归因。
-8. `prediction_probability` 与 `weak_concepts` 仍是 KT facts，RAG / Memory 不得覆盖。
+7. `path_ablation` 来自 `path_ablation.csv`；缺失、缺列或 numeric 解析失败时 evidence status 必须降为 `invalid` 或 `unavailable`，不能显示为 complete。
+8. `evidence_gaps` 固定包含 `missing_artifact`、`missing_column`、`malformed_row`、`invalid_numeric_value`、`duplicate_sample`、`target_not_found`、`canonical_mapping_mismatch`、`checkpoint_provenance_mismatch` 等类别。
+9. 只有 `evidence_status=complete` 且 `evidence_source=offline` 可视为完整离线归因；online proxy 必须标注 partial reason 和 limitations。
+10. `prediction_probability` 与 `weak_concepts` 仍是 KT facts，offline attribution / RAG / Memory 不得覆盖。
 
 ## 9. 数学 RAG
 
@@ -871,6 +890,24 @@ data/content/demo_teaching_content.json
 4. 保持核心边界：KT facts authoritative，内容集和 RAG 不能覆盖 KT prediction facts。
 5. 先让 adapter 产出同样的 public question / grade result，再替换推荐器和 KT engine。
 
+### 内部正式试用 gate
+
+内部正式试用不得早于 **V1.8**。V1.6 和 V1.7 可以做技术内测或专家试用，但不能被标记为普通内部学习者可连续使用的正式试用版。
+
+版本准入约束：
+
+- V1.6：接入真实 DGEKT offline attribution / checkpoint evidence，仍只做技术内测。
+- V1.7：接入 Mem0 长期记忆与 VikingDB / OpenViking RAG adapter，可做小范围专家试用。
+- V1.8：同时具备真实 DGEKT evidence、长期记忆、生产级 RAG adapter、持久化学习状态、可解释 TeachingTrace、用户反馈闭环和基础安全护栏后，才允许内部正式试用。
+
+V1.8 验收时必须额外确认：
+
+- 默认 demo/mock 仍可运行，真实数据和 provider adapter 仍通过显式配置启用。
+- 学生记忆支持查看、清理和禁用，不把记忆事实直接写成 mastery facts。
+- RAG citation、KT facts、Memory preference、Context asset 在 TeachingTrace 中边界清楚。
+- 缺题干、缺解析、缺 citation、缺 checkpoint、provider 失败时有可见降级或错误提示，不静默伪造教学内容。
+- 至少 3-5 个真实内部用户完成连续学习流程，并留下问题反馈和评估记录。
+
 ## 12. 环境变量
 
 从示例文件创建本地配置：
@@ -890,17 +927,22 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 | `MATHTUTOR_KT_ENGINE` | `mock` | KT 引擎选择。默认 `mock`，显式设为 `dgekt` 才会验证并加载真实 DGEKT 配置。 |
-| `MATHTUTOR_DGEKT_DATASET` | `assist2017` | DGEKT 数据集名；V1.2 当前只支持 `assist2017`。 |
+| `MATHTUTOR_DGEKT_DATASET` | `assist2017` | DGEKT 数据集名；当前只支持 `assist2017`。 |
 | `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 ASSIST2017 DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
+| `MATHTUTOR_DGEKT_CHECKPOINT_ID` | 空 | 可选 checkpoint provenance ID；用于和 offline evidence artifact 的 `checkpoint_id` 对齐。 |
 | `MATHTUTOR_DGEKT_DATASET_DIR` | 空 | ASSIST2017 数据目录，例如原始工程中的 `Dataset/assist2017`，需包含 `assist2017_pid_train.csv` 和 `assist2017_pid_test.csv`。 |
 | `MATHTUTOR_DGEKT_Q_MATRIX_PATH` | 空 | DGEKT Q-matrix / incidence matrix 文件，例如原始工程中的 `Dataset/H/2017.csv`。 |
+| `MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR` | 空 | 可选 DGEKT offline evidence artifact 目录；必须显式配置才会读取。 |
+| `MATHTUTOR_DGEKT_CANONICAL_MAPPING_PATH` | 空 | 可选 canonical mapping artifact 路径；用于校验 offline evidence 的 canonical question/concept。 |
 | `MATHTUTOR_RUN_DGEKT_SMOKE` | `0` | 设为 `1` 时启用本地真实 checkpoint smoke test；默认测试不依赖大模型文件。 |
+| `MATHTUTOR_RUN_DGEKT_OFFLINE_EVIDENCE_SMOKE` | `0` | 设为 `1` 时启用真实 offline explainability outputs smoke；默认只跑小型 fixture。 |
 
 ## 13. 数据目录约定
 
 ```text
 data/
   content/      小型数学教学内容集：题目、知识点、答案、题解、错因、策略。
+  dgekt/        DGEKT 小型 offline evidence fixture；真实 full outputs 必须放到 Git 外部或 ignored 目录。
   mapping/      ASSIST2017 canonical mapping 小型 fixture 与 schema artifact。
   rag/          本地 RAG 文档和可检索片段。
   local/        sqlite、cache、临时索引等本地运行产物，不提交。
@@ -921,7 +963,7 @@ data/
   - 正确性来自服务端判题后的 `is_correct`，正确编码到前 3162 维，错误编码到后 3162 维，保持原 DGEKT OneHot 规则。
   - concept 映射优先读取 `assist2017_concept_id` / `dgekt_concept_id`；未提供时由 Q-matrix 对应题目行推导第一个 concept。
   - 如果题目 ID 不能映射为 ASSIST2017 整数、超出 1..3162、Q-matrix 缺题、题目没有 concept，或显式 concept 与 Q-matrix 不一致，会抛出明确映射错误，不返回伪诊断。
-- 当前支持范围：V1.2 只支持本地 ASSIST2017 checkpoint + `Dataset/assist2017` + `Dataset/H/2017.csv`。小型 demo 内容集仍使用自己的 `question_id`，系统会为 dashboard smoke 生成稳定 ASSIST2017 question id 并随事件传入 DGEKT；这只证明真实 checkpoint 推理链路可运行，不代表完整 ASSISTments2017 内容语义导入。
+- 当前支持范围：本地 ASSIST2017 checkpoint + `Dataset/assist2017` + `Dataset/H/2017.csv`，以及 V1.6 显式配置的 offline evidence artifact。小型 demo 内容集仍使用自己的 `question_id`，系统会为 dashboard smoke 生成稳定 ASSIST2017 question id 并随事件传入 DGEKT；这只证明真实 checkpoint 推理链路可运行，不代表完整 ASSISTments2017 内容语义导入。
 - DGEKT prediction facts 规范化：
   - `diagnose` 会在 `eval()` / `no_grad` 下读取 ensemble logits，输出 numeric `prediction_probability`。
   - `prediction_probability < 0.6` 会生成 weak concept proxy，`1 - prediction_probability >= 0.4` 会生成 forgetting risk proxy。
@@ -929,10 +971,11 @@ data/
   - TeachingTrace 的 `diagnose` 阶段会记录 `kt_engine`、`kt_engine_diagnostics` 和 `prediction_facts`；`KTDiagnosis.metadata` 包含 DGEKT model provenance 和 inference input 摘要。
   - RAG 和 StudentMemory 仍只影响解释、偏好和策略，不覆盖 DGEKT 产生的 mastery / risk / prediction facts。
 - DGEKT attribution evidence 规范化：
-  - `explain_prediction` 返回 `AttributionEvidence.prediction_probability`、`raw_model_target`、`mapped_teaching_content`、`scorer`、`top_paths`、`key_history`、`weak_concepts`，并注入 TeachingTrace expert evidence。
-  - `key_history` 反映最近已判题交互对本次 DGEKT 输入序列的贡献，包括 ASSIST2017 question / concept、正确性、序列位置、MathTutor concept 和可读摘要。
-  - `top_paths` 记录 history question 到 target question 的可审计路径摘要，包括 Q-matrix concept relation、question relation、recency strength、`path_strength`、`relation_strength`、`relation_source=q_matrix_recent_history_proxy`、`weak_concept_hit` 和 `partial_evidence_reason`。
-  - 当前实现是在线 partial attribution：没有读取原工程离线 `attribution_paths.csv` / `key_history.csv` scorer 输出，因此每条 path 都标注 `partial_evidence=true` 和 `evidence_status=partial`，研究者可审计但不能当作完整双图归因。
+  - `explain_prediction` 返回 `AttributionEvidence.prediction_probability`、`raw_model_target`、`mapped_teaching_content`、`evidence_status`、`evidence_source`、`scorer`、`top_paths`、`key_history`、`weak_concepts`、`path_ablation` 和 `evidence_gaps`，并注入 TeachingTrace expert evidence。
+  - 显式配置 `MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR` 时，adapter 读取 `diagnosis_cases.json`、`attribution_paths.csv`、`key_history.csv`、`path_ablation.csv` 和 `weak_concepts.csv`。
+  - `complete/offline` 需要 sample、student target、checkpoint provenance、canonical question/concept 和 CSV schema 全部匹配。
+  - 未配置或未命中时，online proxy 只能输出 `partial` / `unavailable`；缺列、malformed row、numeric 解析失败、重复 sample、checkpoint provenance mismatch 或 canonical mapping mismatch 会输出 `invalid`。
+  - `prediction_probability` 和 `weak_concepts` 是 KT facts；offline attribution 解释这些事实，不覆盖这些事实。
 - 本地 memory 是默认实现，Mem0 adapter 后续接入。
 - 本地 RAG fallback 是默认实现，VikingDB adapter 后续接入。
 

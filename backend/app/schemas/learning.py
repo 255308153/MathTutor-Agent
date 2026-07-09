@@ -76,6 +76,7 @@ class AttributionEvidence(BaseModel):
     target_assist2017_concept_id: int | None = None
     prediction_probability: float | None = None
     evidence_status: str | None = None
+    evidence_source: str | None = None
     partial_evidence: bool = False
     partial_evidence_reason: str | None = None
     raw_model_target: dict[str, Any] = Field(default_factory=dict)
@@ -86,6 +87,8 @@ class AttributionEvidence(BaseModel):
     top_paths: list[dict[str, Any]] = Field(default_factory=list)
     key_history: list[dict[str, Any]] = Field(default_factory=list)
     weak_concepts: list[dict[str, Any]] = Field(default_factory=list)
+    path_ablation: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_gaps: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class MathTutorState(BaseModel):

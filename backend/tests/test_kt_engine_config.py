@@ -25,6 +25,10 @@ from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.storage.progress_store import InMemoryProgressStore
 
 
+ROOT = Path(__file__).resolve().parents[2]
+DGEKT_OFFLINE_EVIDENCE_FIXTURE = ROOT / "data" / "dgekt" / "offline_evidence_fixture"
+
+
 class FakeDGEKTModel:
     training = False
 
@@ -84,6 +88,15 @@ def test_default_kt_engine_is_mock() -> None:
     settings = MathTutorSettings()
 
     assert settings.kt_engine == "mock"
+    assert isinstance(create_kt_engine(settings), MockKTStateEngine)
+
+
+def test_mock_engine_ignores_configured_offline_evidence_path() -> None:
+    settings = MathTutorSettings(
+        kt_engine="mock",
+        dgekt_offline_evidence_dir="/path/that/does/not/exist",
+    )
+
     assert isinstance(create_kt_engine(settings), MockKTStateEngine)
 
 
@@ -291,6 +304,104 @@ def test_dgekt_online_scorer_marks_no_history_partial_reason(
     )
     assert evidence.top_paths[0]["path_strength"] == 0.0
     assert evidence.key_history == []
+
+
+def test_dgekt_offline_evidence_hit_returns_complete_attribution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+        offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-offline-fixture",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-offline-fixture",
+                student_id="student-dgekt-offline-fixture",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "assist2017_question_id": 3,
+                    "assist2017_concept_id": 2,
+                    "is_correct": False,
+                },
+            )
+        ],
+    )
+
+    diagnosis = engine.diagnose(progress, target_question_id="q_frac_001")
+    evidence = engine.explain_prediction(progress, target_question_id="q_frac_001")
+
+    assert diagnosis.prediction_probability == 0.2
+    assert diagnosis.weak_concepts[0]["mastery"] == 0.2
+    assert evidence.prediction_probability == 0.2
+    assert evidence.evidence_status == "complete"
+    assert evidence.evidence_source == "offline"
+    assert evidence.partial_evidence is False
+    assert evidence.scorer["name"] == "dgekt_offline_path_scorer"
+    assert evidence.raw_model_target["sample_id"] == "fixture-s1-t2-q3"
+    assert evidence.raw_model_target["canonical_question_id"] == "q_frac_001"
+    assert evidence.mapped_teaching_content["concept_id"] == "c_fraction_addition"
+    assert evidence.top_paths[0]["path_id"] == "path-fixture-history-q3"
+    assert evidence.top_paths[0]["path_score"] == 0.842
+    assert evidence.top_paths[0]["risk_score"] == 0.8
+    assert evidence.top_paths[0]["mastery_score"] == 0.2
+    assert evidence.path_ablation[0]["impact"] == 0.16
+    assert evidence.evidence_gaps == []
+
+
+def test_dgekt_offline_target_gap_keeps_online_partial_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+        offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
+    )
+    progress = KTLearningProgress(
+        student_id="student-dgekt-offline-fixture",
+        recent_events=[
+            LearningEvent(
+                session_id="session-dgekt-offline-gap",
+                student_id="student-dgekt-offline-fixture",
+                type="answer_submitted",
+                payload={
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "concept_name": "异分母分数加法",
+                    "assist2017_question_id": 3,
+                    "assist2017_concept_id": 2,
+                    "is_correct": False,
+                },
+            )
+        ],
+    )
+
+    evidence = engine.explain_prediction(progress, target_question_id="assist2017:4")
+
+    assert evidence.evidence_status == "unavailable"
+    assert evidence.partial_evidence is True
+    assert "partial proxy fallback" in evidence.partial_evidence_reason
+    assert evidence.evidence_gaps[0]["category"] == "target_not_found"
+    assert evidence.top_paths[0]["partial_evidence"] is True
+    assert evidence.top_paths[0]["offline_evidence_status"] == "unavailable"
+    assert evidence.scorer["fallback_scorer"]["name"] == "dgekt_online_graph_proxy_scorer"
 
 
 def test_dgekt_explicit_unsupported_target_fails_with_typed_error(
@@ -796,6 +907,332 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
         )
     else:
         assert any(gap["reason"] == "无可用记忆" for gap in assembled["evidence_gaps"])
+
+
+def test_v16_offline_evidence_flows_from_recommendation_to_answer_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+        offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
+    )
+    session_id = "session-v16-dgekt-offline-e2e"
+    student_id = "student-dgekt-offline-fixture"
+    canonical_question_id = "q_frac_001"
+    canonical_concept_id = "c_fraction_addition"
+    store = InMemoryProgressStore()
+    store.save(
+        KTLearningProgress(
+            student_id=student_id,
+            concept_states=[
+                ConceptState(
+                    concept_id=canonical_concept_id,
+                    concept_name="异分母分数加法",
+                    teaching_type="procedure",
+                    mastery=0.18,
+                    forgetting_risk=0.8,
+                    recent_accuracy=0.2,
+                    evidence_count=1,
+                    status="weak",
+                )
+            ],
+            weak_concepts=[
+                {
+                    "concept_id": canonical_concept_id,
+                    "concept_name": "异分母分数加法",
+                    "mastery": 0.18,
+                }
+            ],
+            forgetting_risks=[
+                {
+                    "concept_id": canonical_concept_id,
+                    "concept_name": "异分母分数加法",
+                    "forgetting_risk": 0.8,
+                }
+            ],
+        )
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=store,
+        ),
+    )
+    client = TestClient(create_app())
+
+    recommendation_response = client.post(
+        "/api/events",
+        json={
+            "session_id": session_id,
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "我下一步应该练什么？",
+            "payload": {
+                "preferred_concept_id": canonical_concept_id,
+                "preferred_teaching_type": "procedure",
+            },
+        },
+    )
+    assert recommendation_response.status_code == 200
+    recommended_question = recommendation_response.json()["recommended_questions"][0]
+    assert recommended_question["question_id"] == canonical_question_id
+    assert recommended_question["concept_id"] == canonical_concept_id
+    assert recommended_question["assist2017_question_id"] == 3
+
+    answer_response = client.post(
+        "/api/events",
+        json={
+            "session_id": session_id,
+            "student_id": student_id,
+            "type": "answer_submitted",
+            "message": "我选 1/6",
+            "payload": {
+                "question_id": recommended_question["question_id"],
+                "answer": "1/6",
+            },
+        },
+    )
+
+    assert answer_response.status_code == 200
+    body = answer_response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    stages = {event["stage"]: event for event in body["teaching_trace"]}
+    kt_diagnosis = expert["kt_diagnosis"]
+    attribution = expert["attribution_evidence"]
+    assembled = expert["assembled_context"]
+    rag_sources = expert["rag_sources"]
+    plan_metadata = stages["plan"]["metadata"]
+
+    assert body["state_summary"]["intent"] == "answer_submission"
+    assert body["state_summary"]["progress_version"] == 2
+    assert "判定为不正确" in body["response"]
+
+    assert kt_diagnosis["prediction_probability"] == 0.2
+    assert kt_diagnosis["weak_concepts"][0]["concept_id"] == canonical_concept_id
+    assert kt_diagnosis["forgetting_risks"][0]["concept_id"] == canonical_concept_id
+    assert assembled["authoritative_kt_facts"]["prediction_probability"] == 0.2
+    assert assembled["authoritative_kt_facts"]["weak_concepts"] == (
+        kt_diagnosis["weak_concepts"]
+    )
+
+    assert attribution["evidence_status"] == "complete"
+    assert attribution["evidence_source"] == "offline"
+    assert attribution["partial_evidence"] is False
+    assert attribution["prediction_probability"] == kt_diagnosis["prediction_probability"]
+    assert attribution["target_question_id"] == canonical_question_id
+    assert attribution["target_concept_id"] == canonical_concept_id
+    assert attribution["target_assist2017_question_id"] == 3
+    assert attribution["target_assist2017_concept_id"] == 2
+    assert attribution["raw_model_target"]["sample_id"] == "fixture-s1-t2-q3"
+    assert attribution["raw_model_target"]["canonical_question_id"] == canonical_question_id
+    assert attribution["mapped_teaching_content"]["question_id"] == canonical_question_id
+    assert attribution["mapped_teaching_content"]["concept_id"] == canonical_concept_id
+    assert attribution["scorer"]["name"] == "dgekt_offline_path_scorer"
+    assert attribution["scorer"]["run_id"] == "dgekt-fixture-run-20260709"
+    assert attribution["top_paths"][0]["path_id"] == "path-fixture-history-q3"
+    assert attribution["top_paths"][0]["target_question_id"] == canonical_question_id
+    assert attribution["top_paths"][0]["target_concept_id"] == canonical_concept_id
+    assert attribution["top_paths"][0]["partial_evidence"] is False
+    assert attribution["key_history"][0]["target_question_id"] == canonical_question_id
+    assert attribution["key_history"][0]["target_concept_id"] == canonical_concept_id
+    assert attribution["path_ablation"][0]["impact"] == 0.16
+    assert attribution["evidence_gaps"] == []
+
+    assert any(source["question_id"] == canonical_question_id for source in rag_sources)
+    assert any(source["concept_id"] == canonical_concept_id for source in rag_sources)
+    assert any(source["assist2017_question_id"] == 3 for source in rag_sources)
+    assert any(
+        asset["question_id"] == canonical_question_id
+        for asset in assembled["normalized_context"]["knowledge_resource"]
+    )
+    assert any(
+        asset["concept_id"] == canonical_concept_id
+        for asset in assembled["normalized_context"]["knowledge_resource"]
+    )
+
+    diagnose_metadata = stages["diagnose"]["metadata"]
+    attribution_chain = diagnose_metadata["attribution_chain"]
+    assert diagnose_metadata["prediction_facts"]["prediction_probability"] == 0.2
+    assert attribution_chain["raw_model_target"]["target_question_id"] == 3
+    assert attribution_chain["raw_model_target"]["canonical_question_id"] == canonical_question_id
+    assert attribution_chain["mapped_teaching_content"]["question_id"] == canonical_question_id
+    assert attribution_chain["attribution_evidence"]["evidence_status"] == "complete"
+    assert attribution_chain["attribution_evidence"]["scorer"]["name"] == (
+        "dgekt_offline_path_scorer"
+    )
+    assert attribution_chain["attribution_evidence"]["weak_concept_hit_count"] == 0
+    assert plan_metadata["mistake_diagnosis"]["concept"]["concept_id"] == canonical_concept_id
+    assert any(
+        target["concept_id"] == canonical_concept_id
+        for target in plan_metadata["selected_canonical_targets"]
+    )
+    assert any(
+        source["question_id"] == canonical_question_id
+        for source in plan_metadata["planner_evidence"]["rag_sources"]
+    )
+
+
+def test_v16_next_step_target_uses_same_offline_evidence_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+        offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
+    )
+    student_id = "student-dgekt-offline-fixture"
+    store = InMemoryProgressStore()
+    store.save(
+        KTLearningProgress(
+            student_id=student_id,
+            recent_events=[
+                LearningEvent(
+                    session_id="session-v16-next-step-offline",
+                    student_id=student_id,
+                    type="answer_submitted",
+                    payload={
+                        "question_id": "q_frac_001",
+                        "concept_id": "c_fraction_addition",
+                        "concept_name": "异分母分数加法",
+                        "assist2017_question_id": 3,
+                        "assist2017_concept_id": 2,
+                        "is_correct": False,
+                    },
+                )
+            ],
+        )
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=store,
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v16-next-step-offline",
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "我下一步应该练什么？",
+            "payload": {
+                "question_id": "q_frac_001",
+                "preferred_concept_id": "c_fraction_addition",
+                "preferred_teaching_type": "procedure",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    attribution = expert["attribution_evidence"]
+    diagnose_event = next(event for event in body["teaching_trace"] if event["stage"] == "diagnose")
+
+    assert body["state_summary"]["intent"] == "next_step_advice"
+    assert body["recommended_questions"]
+    assert attribution["evidence_status"] == "complete"
+    assert attribution["evidence_source"] == "offline"
+    assert attribution["target_question_id"] == "q_frac_001"
+    assert attribution["mapped_teaching_content"]["concept_id"] == "c_fraction_addition"
+    assert attribution["scorer"]["matching_method"] == "student_target_exact"
+    assert diagnose_event["metadata"]["attribution_chain"]["attribution_evidence"][
+        "evidence_status"
+    ] == "complete"
+
+
+def test_v16_offline_evidence_gap_reaches_api_trace_without_overwriting_kt_facts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.api import events as events_api
+    from backend.app.main import create_app
+
+    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    patch_fake_dgekt_runtime(monkeypatch, checkpoint)
+    engine = DGEKTStateEngine(
+        dataset="assist2017",
+        checkpoint_path=str(checkpoint),
+        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        dataset_dir=str(dataset_dir),
+        q_matrix_path=str(q_matrix),
+        offline_evidence_dir=str(tmp_path / "missing-offline-evidence"),
+    )
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            kt_engine=engine,
+            store=InMemoryProgressStore(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v16-gap-api",
+            "student_id": "student-dgekt-offline-fixture",
+            "type": "answer_submitted",
+            "message": "我选 1/6",
+            "payload": {
+                "question_id": "q_frac_001",
+                "answer": "1/6",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    attribution = expert["attribution_evidence"]
+    assembled = expert["assembled_context"]
+    gap = attribution["evidence_gaps"][0]
+
+    assert attribution["evidence_status"] == "unavailable"
+    assert attribution["evidence_source"] == "offline"
+    assert attribution["partial_evidence"] is True
+    assert attribution["top_paths"][0]["partial_evidence"] is True
+    assert attribution["top_paths"][0]["offline_evidence_status"] == "unavailable"
+    assert gap["category"] == "missing_artifact"
+    assert expert["kt_diagnosis"]["prediction_probability"] == 0.2
+    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
+    assert assembled["authoritative_kt_facts"]["prediction_probability"] == 0.2
+    assert any(
+        context_gap["gap_type"] == "missing_artifact"
+        and context_gap["evidence_status"] == "unavailable"
+        and context_gap["evidence_source"] == "offline"
+        for context_gap in assembled["evidence_gaps"]
+    )
+    assert "判定为不正确" in body["response"]
 
 
 def test_dgekt_mapping_error_returns_readable_api_error(

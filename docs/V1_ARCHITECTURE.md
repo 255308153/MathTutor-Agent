@@ -245,7 +245,7 @@ Coverage gap category：
 - 默认 `MATHTUTOR_CONTENT_SOURCE=demo`、`MATHTUTOR_RAG_SOURCE=demo`、`MATHTUTOR_KT_ENGINE=mock`，不读取 full ASSISTments2017、checkpoint、Mem0、VikingDB 或 OpenViking。
 - full data 只能通过 `--dataset-mode full --source-rows ... --q-matrix ...` 或等价显式配置启用。
 - raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、build output 和 full generated artifact 不进入 Git。
-- DGEKT 继续 opt-in；V1.5 只让 canonical mapping 和内容底座更稳定，不实现完整 DGEKT offline scorer。
+- DGEKT 继续 opt-in；V1.6 只在显式配置 offline evidence artifact 时读取 DGEKT explainability 输出，默认 demo/mock 不加载 checkpoint 或 full outputs。
 
 ## 5. 双输入模型
 
@@ -663,13 +663,17 @@ MockKTStateEngine
 DGEKTStateEngine
 读取真实模型、Q-matrix、序列数据、解释信号。
 
-V1.3 起，DGEKTStateEngine 在显式启用时还会输出 online partial attribution evidence：
+V1.6 起，DGEKTStateEngine 在显式启用 DGEKT 时通过同一个 `explain_prediction` seam 输出 attribution evidence：
 
 - `raw_model_target`：DGEKT 使用的 ASSIST2017 question / concept target。
 - `mapped_teaching_content`：映射回 MathTutor question / concept / teaching_type 的教学内容引用。
 - `key_history`：最近进入 one-hot 序列的已判题历史。
-- `top_paths`：基于 recent history + Q-matrix 的 partial attribution path，包含 `path_strength`、`relation_strength`、`relation_source`、`weak_concept_hit` 和 `partial_evidence_reason`。
-- `scorer.name=dgekt_online_graph_proxy_scorer`：说明这是在线代理 scorer，不是原工程离线 `attribution_paths.csv` / `key_history.csv` 的完整双图归因。
+- `top_paths`：优先来自 offline `attribution_paths.csv`；未配置或未命中时只可退回 recent history + Q-matrix 的 partial proxy path。
+- `path_ablation`：offline `path_ablation.csv` 中删除关键 path 后的 prediction 变化。
+- `evidence_status` / `evidence_source`：区分 `complete/offline`、`partial`、`unavailable` 和 `invalid`。
+- `evidence_gaps`：记录 missing artifact、缺列、malformed row、numeric 解析失败、target 未命中、checkpoint provenance mismatch 或 canonical mapping mismatch。
+
+只有 `evidence_status=complete` 且 `evidence_source=offline` 的结果可解释为完整离线归因。online proxy 必须保留 partial reason；Offline attribution 只解释 prediction，不覆盖 KT diagnosis facts。
 
 未来可扩展：
 SAFKTStateEngine
@@ -677,6 +681,40 @@ BKTStateEngine
 ```
 
 Planner 永远依赖 `KTStateEngine` 接口，不直接依赖 DGEKT 文件路径或 PyTorch 模型细节。
+
+### V1.6 offline evidence adapter
+
+V1.6 新增 `DGEKTOfflineEvidenceAdapter`，它读取原 DGEKT explainability 输出形状：
+
+```text
+diagnosis_cases.json
+attribution_paths.csv
+key_history.csv
+path_ablation.csv
+weak_concepts.csv
+```
+
+adapter 只在 `MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR` 被显式配置时启用。它用 `diagnosis_cases.json` 定位 sample、student、target question/concept 和 checkpoint provenance，再把 CSV 归一为 `AttributionEvidence`：
+
+```text
+recommendation / answer event
+-> KTDiagnosis prediction facts
+-> DGEKTStateEngine.explain_prediction
+-> DGEKTOfflineEvidenceAdapter lookup
+-> AttributionEvidence
+-> assembled_context.evidence_gaps
+-> TeachingTrace expert evidence
+-> dashboard 模型证据面板
+```
+
+证据边界：
+
+- KT facts are authoritative：`prediction_probability`、mastery、weak concepts、forgetting risk 仍来自 KT engine。
+- Offline attribution explains prediction, not overwrite prediction facts。
+- RAG 只支持解释与 citation；不能覆盖 prediction facts。
+- Context 只组装 evidence 与 gap；不能决定 learning facts。
+
+invalid / unavailable 结果必须可见：缺 artifact、缺列、重复 sample、checkpoint provenance 不一致、canonical mapping 不一致、target 未命中时，系统只能展示 gap 和 fallback 状态，不能把 online proxy 伪装成 complete offline evidence。
 
 ## 13. 推荐排序器
 
@@ -1239,7 +1277,7 @@ RAG 引用溯源
 MockKTStateEngine
 KTDiagnosis
 AttributionEvidence schema
-DGEKTStateEngine + online partial attribution scorer
+DGEKTStateEngine + opt-in offline attribution evidence adapter
 ```
 
 ### Milestone 5：教学规划
@@ -1278,9 +1316,32 @@ RAG 引用展示
 ```text
 DGEKTStateEngine
 return_explanation=True
-Dual-Graph Path Attribution
+Dual-Graph Path Attribution artifact adapter
 Weak concept / forgetting risk 映射
 ```
+
+### 内部正式试用约束
+
+内部正式试用不得早于 **V1.8**。V1.5 是真实 ASSISTments2017 内容底座和 artifact 生产线，V1.6 / V1.7 仍属于技术验证与专家试用阶段；只有 V1.8 同时满足模型证据、长期记忆、生产级检索、持久化状态、可解释 trace 和反馈闭环后，才允许邀请真实内部学习者连续使用。
+
+```text
+V1.5: 真实数据内容底座，开发 / 研究验证。
+V1.6: 真实 DGEKT offline attribution / checkpoint evidence，技术内测。
+V1.7: Mem0 长期记忆 + VikingDB / OpenViking RAG adapter，小范围专家试用。
+V1.8: 内部正式试用版。
+V1.9: 内部试用优化版。
+V2.0: 产品化 beta。
+```
+
+V1.8 必须满足：
+
+- 用户会话、学习状态和关键 TeachingTrace 可持久化。
+- 真实 DGEKT evidence、Mem0 记忆和生产级 RAG adapter 均通过验收。
+- 答题、推荐、解释、错因、复习计划形成闭环。
+- 学生记忆可查看、可清理、可禁用。
+- KT / RAG / Memory / Context 的证据边界可审计。
+- 异常、缺失内容和 provider 失败有明确降级或错误提示。
+- 至少 3-5 个真实内部用户完成连续学习流程。
 
 ## 26. 核心设计原则
 

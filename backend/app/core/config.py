@@ -34,8 +34,11 @@ class MathTutorSettings(BaseSettings):
     kt_engine: Literal["mock", "dgekt"] = "mock"
     dgekt_dataset: str = "assist2017"
     dgekt_checkpoint_path: str = ""
+    dgekt_checkpoint_id: str = ""
     dgekt_dataset_dir: str = ""
     dgekt_q_matrix_path: str = ""
+    dgekt_offline_evidence_dir: str = ""
+    dgekt_canonical_mapping_path: str = ""
 
 
 @lru_cache

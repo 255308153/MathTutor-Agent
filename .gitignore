@@ -46,6 +46,14 @@ data/imported/*
 data/imported/**/*.pkl
 data/imported/**/*.pt
 data/imported/**/*.pth
+data/dgekt/**
+!data/dgekt/
+!data/dgekt/offline_evidence_fixture/
+!data/dgekt/offline_evidence_fixture/attribution_paths.csv
+!data/dgekt/offline_evidence_fixture/key_history.csv
+!data/dgekt/offline_evidence_fixture/path_ablation.csv
+!data/dgekt/offline_evidence_fixture/weak_concepts.csv
+!data/dgekt/offline_evidence_fixture/diagnosis_cases.json
 checkpoints/
 *.pkl
 *.pt

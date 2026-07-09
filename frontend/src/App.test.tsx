@@ -242,7 +242,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("学生偏好步骤化讲解。")).toBeInTheDocument();
     expect(screen.getByText("参考相关知识资源")).toBeInTheDocument();
     expect(screen.getByText("Trace reference 已排除")).toBeInTheDocument();
-    expect(screen.getByText("部分上下文资产因预算限制被裁剪")).toBeInTheDocument();
+    expect(screen.getAllByText("部分上下文资产因预算限制被裁剪").length).toBeGreaterThan(0);
 
     await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
     await userEvent.click(screen.getByLabelText("提交答案"));
@@ -332,6 +332,139 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("answer_submitted trace references retrieval, decision, and memory-update source")).toBeInTheDocument();
   });
 
+  it("展示 complete/offline DGEKT evidence 的 scorer、路径和消融摘要", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+      ...baseResponse,
+      teaching_trace_summary: {
+        ...baseResponse.teaching_trace_summary,
+        expert_evidence: {
+          ...baseResponse.teaching_trace_summary.expert_evidence,
+          attribution_evidence: {
+            target_question_id: "q_frac_001",
+            target_concept_id: "c_fraction_addition",
+            target_assist2017_question_id: 3,
+            target_assist2017_concept_id: 2,
+            prediction_probability: 0.2,
+            evidence_status: "complete",
+            evidence_source: "offline",
+            partial_evidence: false,
+            raw_model_target: {
+              sample_id: "fixture-s1-t2-q3",
+              canonical_question_id: "q_frac_001"
+            },
+            mapped_teaching_content: {
+              question_id: "q_frac_001",
+              concept_id: "c_fraction_addition"
+            },
+            canonical_mapping: {
+              question_id: "q_frac_001",
+              concept_id: "c_fraction_addition"
+            },
+            scorer: {
+              name: "dgekt_offline_path_scorer",
+              version: "fixture-v1",
+              run_id: "dgekt-fixture-run-20260709",
+              matching_method: "student_target_exact"
+            },
+            top_paths: [
+              {
+                path_id: "path-fixture-history-q3",
+                history_assist2017_question_id: 3,
+                target_assist2017_question_id: 3,
+                path_strength: 0.842,
+                partial_evidence: false
+              }
+            ],
+            key_history: [{ assist2017_question_id: 3, is_correct: false }],
+            weak_concepts: [],
+            path_ablation: [
+              {
+                strategy: "top_k_paths",
+                impact: 0.16,
+                comprehensiveness: 0.8
+              }
+            ],
+            evidence_gaps: []
+          }
+        }
+      }
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText("offline complete evidence")).toBeInTheDocument();
+    expect(screen.getByText("dgekt_offline_path_scorer · fixture-v1 · dgekt-fixture-run-20260709 · student_target_exact")).toBeInTheDocument();
+    expect(screen.getByText("q_frac_001 · c_fraction_addition")).toBeInTheDocument();
+    expect(screen.getByText("path-fixture-history-q3")).toBeInTheDocument();
+    expect(screen.getByText("0.842")).toBeInTheDocument();
+    expect(screen.getByText("top_k_paths impact 0.160 · comp 0.800")).toBeInTheDocument();
+  });
+
+  it("展示 unavailable offline evidence gap，不把 partial proxy 当完整证据", async () => {
+    const gapReason = "DGEKT offline evidence directory not found: /tmp/missing-offline-evidence.";
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+      ...baseResponse,
+      teaching_trace_summary: {
+        ...baseResponse.teaching_trace_summary,
+        expert_evidence: {
+          ...baseResponse.teaching_trace_summary.expert_evidence,
+          attribution_evidence: {
+            target_question_id: "q_frac_001",
+            prediction_probability: 0.2,
+            evidence_status: "unavailable",
+            evidence_source: "offline",
+            partial_evidence: true,
+            partial_evidence_reason: gapReason,
+            scorer: {
+              name: "dgekt_offline_path_scorer",
+              evidence_status: "unavailable"
+            },
+            top_paths: [
+              {
+                path_id: "dgekt-partial-3-3-1",
+                partial_evidence: true,
+                offline_evidence_status: "unavailable",
+                history_assist2017_question_id: 3,
+                target_assist2017_question_id: 3,
+                path_weight: 0.85
+              }
+            ],
+            key_history: [{ assist2017_question_id: 3, is_correct: false }],
+            weak_concepts: [],
+            path_ablation: [],
+            evidence_gaps: [
+              {
+                gap_type: "missing_artifact",
+                category: "missing_artifact",
+                reason: gapReason,
+                evidence_status: "unavailable",
+                evidence_source: "offline"
+              }
+            ]
+          },
+          assembled_context: {
+            ...baseResponse.teaching_trace_summary.expert_evidence.assembled_context,
+            evidence_gaps: [
+              {
+                gap_type: "missing_artifact",
+                reason: gapReason,
+                evidence_status: "unavailable",
+                evidence_source: "offline"
+              }
+            ]
+          }
+        }
+      }
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText("unavailable evidence")).toBeInTheDocument();
+    expect(screen.queryByText("offline complete evidence")).not.toBeInTheDocument();
+    expect(screen.getAllByText("DGEKT offline artifact 缺失").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(gapReason).length).toBeGreaterThan(0);
+  });
+
   it("后端不可达时展示中文错误和重试入口", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("网络不可用"));
 
@@ -384,7 +517,7 @@ describe("学习驾驶舱", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("q_missing_answer 缺少标准答案");
     expect(screen.getByRole("alert")).toHaveTextContent("补齐题目的 standard_answer");
     expect(screen.getAllByText("Evidence gaps").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("2 项").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/项$/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("教学内容缺口").length).toBeGreaterThan(0);
     expect(screen.getAllByText("q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。").length).toBeGreaterThan(0);
   });

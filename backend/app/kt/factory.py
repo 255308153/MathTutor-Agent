@@ -14,7 +14,10 @@ def create_kt_engine(settings: MathTutorSettings | None = None) -> KTStateEngine
         return DGEKTStateEngine(
             dataset=active_settings.dgekt_dataset,
             checkpoint_path=active_settings.dgekt_checkpoint_path,
+            checkpoint_id=active_settings.dgekt_checkpoint_id,
             dataset_dir=active_settings.dgekt_dataset_dir,
             q_matrix_path=active_settings.dgekt_q_matrix_path,
+            offline_evidence_dir=active_settings.dgekt_offline_evidence_dir,
+            canonical_mapping_path=active_settings.dgekt_canonical_mapping_path,
         )
     raise ValueError(f"Unsupported KT engine: {active_settings.kt_engine}")

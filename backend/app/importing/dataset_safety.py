@@ -14,6 +14,7 @@ BANNED_TRACKED_PATH_PATTERNS = [
     r"^data/import/(assist2017|full)(/|$)",
     r"^data/.*/[^/]*(train|test)[^/]*\.(csv|json|jsonl|txt|tsv)$",
     r"^data/imported/(?!assist2017_fixture/)",
+    r"(^|/)(attribution_paths|key_history|path_ablation|weak_concepts|weak_concept_hit|stability|explanation_baselines|diagnosis_cases)\.(csv|json|md)$",
     r"^outputs/",
     r"^logs/",
 ]
@@ -24,6 +25,8 @@ COMMITTABLE_FIXTURE_PATH_PATTERNS = [
     r"^data/import/[^/]+\.fixture\.csv$",
     r"^data/mapping/[^/]+\.fixture\.(csv|json)$",
     r"^data/imported/assist2017_fixture/(canonical_mapping|content_import|coverage_report|rag_documents|smoke_dataset)\.json$",
+    r"^data/dgekt/offline_evidence_fixture/(attribution_paths|key_history|path_ablation|weak_concepts)\.csv$",
+    r"^data/dgekt/offline_evidence_fixture/diagnosis_cases\.json$",
 ]
 
 

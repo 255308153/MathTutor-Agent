@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { sendLearningEvent } from "./api";
 import type {
+  AttributionEvidence,
   ContextAssetEvidence,
   EvidenceGap,
   MathTutorEventResponse,
@@ -333,9 +334,17 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const omittedContextAssets = contextAssets.filter(isExcludedAsset);
   const topPath = attribution?.top_paths?.[0];
   const keyHistory = attribution?.key_history?.[0];
-  const evidenceGaps = evidenceGapItems(evidence?.evidence_gaps ?? assembledContext?.evidence_gaps);
+  const pathAblation = attribution?.path_ablation?.[0];
+  const attributionGaps = evidenceGapItems(attribution?.evidence_gaps);
+  const evidenceGaps = uniqueEvidenceGaps([
+    ...evidenceGapItems(assembledContext?.evidence_gaps),
+    ...evidenceGapItems(evidence?.evidence_gaps),
+    ...attributionGaps
+  ]);
   const errorRecords = evidenceGapItems(evidence?.error_records);
-  const evidenceStatus = topPath?.partial_evidence ? "partial evidence" : "完整证据";
+  const firstEvidenceGap = attributionGaps[0] ?? evidenceGaps[0] ?? errorRecords[0];
+  const evidenceStatus = attributionEvidenceStatusLabel(attribution);
+  const scorerSummary = attributionScorerSummary(attribution);
   const contextBudget = formatContextBudget(assembledContext);
 
   return (
@@ -445,8 +454,24 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <span>{attribution ? evidenceStatus : "暂无"}</span>
           </p>
           <p>
+            <strong>Evidence source</strong>
+            <span>{attribution?.evidence_source ?? "暂无"}</span>
+          </p>
+          <p>
+            <strong>Scorer provenance</strong>
+            <span>{scorerSummary}</span>
+          </p>
+          <p>
             <strong>Evidence gaps</strong>
             <span>{evidenceGaps.length + errorRecords.length} 项</span>
+          </p>
+          <p>
+            <strong>Gap reason</strong>
+            <span>{firstEvidenceGap?.reason ?? firstEvidenceGap?.message ?? "暂无"}</span>
+          </p>
+          <p>
+            <strong>Canonical target</strong>
+            <span>{canonicalTargetLabel(attribution)}</span>
           </p>
           <p>
             <strong>Top path</strong>
@@ -455,6 +480,10 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
                 ? `${topPath.history_assist2017_question_id ?? topPath.history_question_id ?? "?"} -> ${topPath.target_assist2017_question_id ?? topPath.target_question_id ?? "?"}`
                 : "暂无"}
             </span>
+          </p>
+          <p>
+            <strong>Top path id</strong>
+            <span>{String(topPath?.path_id ?? "暂无")}</span>
           </p>
           <p>
             <strong>Path strength</strong>
@@ -467,6 +496,10 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
                 ? `${keyHistory.assist2017_question_id ?? keyHistory.question_id ?? "?"} · ${keyHistory.is_correct ? "正确" : "错误"}`
                 : "暂无"}
             </span>
+          </p>
+          <p>
+            <strong>Path ablation</strong>
+            <span>{pathAblationSummary(pathAblation)}</span>
           </p>
         </div>
         <pre>{JSON.stringify({
@@ -513,8 +546,77 @@ function evidenceGapItems(value: unknown): EvidenceGap[] {
   return Array.isArray(value) ? value.filter(isRecord) as EvidenceGap[] : [];
 }
 
+function uniqueEvidenceGaps(gaps: EvidenceGap[]) {
+  const seen = new Set<string>();
+  return gaps.filter((gap) => {
+    const key = [
+      gap.gap_type ?? gap.category,
+      gap.reason ?? gap.message,
+      gap.code,
+      gap.sample_id
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function attributionEvidenceStatusLabel(
+  attribution: AttributionEvidence | null | undefined
+) {
+  if (!attribution) return "暂无";
+  const status = String(
+    attribution.evidence_status
+      ?? (attribution.top_paths?.[0]?.partial_evidence ? "partial" : "complete")
+  );
+  const source = attribution.evidence_source;
+  if (status === "complete" && source === "offline") return "offline complete evidence";
+  if (status === "complete") return "complete evidence";
+  if (status === "partial") return source === "online_proxy" ? "partial online proxy" : "partial evidence";
+  if (status === "unavailable") return "unavailable evidence";
+  if (status === "invalid") return "invalid evidence";
+  return source ? `${source} · ${status}` : status;
+}
+
+function attributionScorerSummary(
+  attribution: AttributionEvidence | null | undefined
+) {
+  const scorer = attribution?.scorer;
+  if (!scorer) return "暂无";
+  const parts = [
+    scorer.name,
+    scorer.version,
+    scorer.run_id,
+    scorer.matching_method
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.map(String).join(" · ") : "未记录";
+}
+
+function canonicalTargetLabel(
+  attribution: AttributionEvidence | null | undefined
+) {
+  if (!attribution) return "暂无";
+  const question =
+    attribution.mapped_teaching_content?.question_id
+    ?? attribution.canonical_mapping?.question_id
+    ?? attribution.target_question_id;
+  const concept =
+    attribution.mapped_teaching_content?.concept_id
+    ?? attribution.canonical_mapping?.concept_id
+    ?? attribution.target_concept_id;
+  return [question, concept].filter(Boolean).map(String).join(" · ") || "暂无";
+}
+
+function pathAblationSummary(value: Record<string, unknown> | undefined) {
+  if (!value) return "暂无";
+  const strategy = value.strategy ? `${String(value.strategy)} ` : "";
+  const impact = formatNumber(value.impact);
+  const comprehensiveness = formatNumber(value.comprehensiveness);
+  return `${strategy}impact ${impact} · comp ${comprehensiveness}`;
 }
 
 function contextAssetItems(
@@ -586,7 +688,15 @@ function gapLabel(gap: EvidenceGap) {
     context_budget: "上下文预算裁剪",
     missing_content: "教学内容缺口",
     missing_mapping: "映射缺口",
-    missing_rag_citation: "RAG citation 缺口"
+    missing_rag_citation: "RAG citation 缺口",
+    missing_artifact: "DGEKT offline artifact 缺失",
+    missing_column: "DGEKT evidence 缺列",
+    malformed_row: "DGEKT evidence 行异常",
+    invalid_numeric_value: "DGEKT evidence 数值异常",
+    duplicate_sample: "DGEKT evidence sample 重复",
+    target_not_found: "DGEKT evidence 未匹配 target",
+    canonical_mapping_mismatch: "DGEKT canonical mapping 不一致",
+    checkpoint_provenance_mismatch: "DGEKT checkpoint provenance 不一致"
   }[gap.gap_type ?? gap.category ?? ""] ?? "Evidence gap";
 }
 
