@@ -79,5 +79,7 @@ def test_v11_dashboard_demo_flow_has_recommendation_grading_trace_and_evidence()
         "generate_response",
         "memory_update",
         "kt_tool_observation",
+        "rag_tool_observation",
+        "memory_tool_observation",
         "runtime_end",
     ]

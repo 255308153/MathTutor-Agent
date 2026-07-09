@@ -13,6 +13,8 @@ from .capabilities import (
 from .context import LearningTurnContext, RuntimeIntent
 from .tools import (
     KT_AUTHORITY_TOOL_ID,
+    RAG_RETRIEVAL_TOOL_ID,
+    STUDENT_MEMORY_TOOL_ID,
     MathToolRegistry,
     ToolInvocation,
     ToolObservation,
@@ -207,10 +209,10 @@ class MathTutorAgentRuntime:
         context: LearningTurnContext,
     ) -> list[ToolObservation]:
         expert_evidence = response.teaching_trace_summary.expert_evidence
-        diagnose_event = next(
-            (event for event in response.teaching_trace if event.stage == "diagnose"),
-            None,
-        )
+        load_context_event = self._trace_event(response, "load_context")
+        diagnose_event = self._trace_event(response, "diagnose")
+        plan_event = self._trace_event(response, "plan")
+        memory_update_event = self._trace_event(response, "memory_update")
         diagnostics = {}
         engine_name = self._kt_engine_name()
         error_records = expert_evidence.get("error_records") or []
@@ -234,22 +236,114 @@ class MathTutorAgentRuntime:
                 "learning_turn_context": context.public_summary(),
             },
         )
-        return [self.tool_registry.call(KT_AUTHORITY_TOOL_ID, invocation)]
+        observations = self._call_tool_if_available(KT_AUTHORITY_TOOL_ID, invocation)
+        assembled_context = expert_evidence.get("assembled_context") or {}
+        context_asset_selection = (
+            expert_evidence.get("context_asset_selection")
+            or (
+                assembled_context.get("asset_selection")
+                if isinstance(assembled_context, dict)
+                else None
+            )
+            or (plan_event.metadata.get("context_asset_selection") if plan_event else None)
+            or {}
+        )
+        load_context_metadata = load_context_event.metadata if load_context_event else {}
+        memory_update_metadata = memory_update_event.metadata if memory_update_event else {}
+        rag_invocation = ToolInvocation(
+            tool_id=RAG_RETRIEVAL_TOOL_ID,
+            turn_id=context.turn_id,
+            trace_id=response.trace_id,
+            input_summary={
+                "rag_sources": expert_evidence.get("rag_sources")
+                or load_context_metadata.get("rag_sources")
+                or [],
+                "rag_query": load_context_metadata.get("rag_query"),
+                "rag_filters": load_context_metadata.get("rag_filters"),
+                "rag_fallback_used": load_context_metadata.get("rag_fallback_used"),
+                "load_context": {
+                    "rag_query": load_context_metadata.get("rag_query"),
+                    "rag_filters": load_context_metadata.get("rag_filters"),
+                    "rag_context_count": load_context_metadata.get("rag_context_count"),
+                    "rag_fallback_used": load_context_metadata.get("rag_fallback_used"),
+                    "evidence_gap_records": load_context_metadata.get(
+                        "evidence_gap_records", []
+                    ),
+                },
+                "assembled_context": assembled_context,
+                "context_asset_selection": context_asset_selection,
+                "evidence_gaps": expert_evidence.get("evidence_gaps") or [],
+                "error_records": expert_evidence.get("error_records") or [],
+                "learning_event_type": context.learning_event.type,
+            },
+            context_summary={"learning_turn_context": context.public_summary()},
+        )
+        observations.extend(
+            self._call_tool_if_available(RAG_RETRIEVAL_TOOL_ID, rag_invocation)
+        )
+        memory_invocation = ToolInvocation(
+            tool_id=STUDENT_MEMORY_TOOL_ID,
+            turn_id=context.turn_id,
+            trace_id=response.trace_id,
+            input_summary={
+                "student_memories": expert_evidence.get("student_memories") or [],
+                "memory_query": load_context_metadata.get("memory_query"),
+                "load_context": {
+                    "memory_query": load_context_metadata.get("memory_query"),
+                    "memory_count": load_context_metadata.get("memory_count"),
+                    "evidence_gap_records": load_context_metadata.get(
+                        "evidence_gap_records", []
+                    ),
+                },
+                "memory_update": {
+                    "memory_update_count": memory_update_metadata.get("memory_update_count"),
+                    "provider_evidence_gaps": memory_update_metadata.get(
+                        "provider_evidence_gaps", []
+                    ),
+                },
+                "assembled_context": assembled_context,
+                "context_asset_selection": context_asset_selection,
+                "evidence_gaps": expert_evidence.get("evidence_gaps") or [],
+                "error_records": expert_evidence.get("error_records") or [],
+                "learning_event_type": context.learning_event.type,
+            },
+            context_summary={"learning_turn_context": context.public_summary()},
+        )
+        observations.extend(
+            self._call_tool_if_available(STUDENT_MEMORY_TOOL_ID, memory_invocation)
+        )
+        return observations
+
+    def _trace_event(
+        self,
+        response: MathTutorEventResponse,
+        stage: str,
+    ) -> TeachingTraceEvent | None:
+        return next((event for event in response.teaching_trace if event.stage == stage), None)
+
+    def _call_tool_if_available(
+        self,
+        tool_id: str,
+        invocation: ToolInvocation,
+    ) -> list[ToolObservation]:
+        if self.tool_registry.find(tool_id) is None:
+            return []
+        return [self.tool_registry.call(tool_id, invocation)]
 
     def _tool_observation_trace(
         self,
         observation: ToolObservation,
     ) -> TeachingTraceEvent:
         summary = observation.public_summary()
+        tool = self.tool_registry.find(observation.tool_id)
+        stage = tool.trace_stage if tool else "tool_observation"
+        actor = tool.trace_actor if tool else "system"
         return TeachingTraceEvent(
             type=TeachingTraceEventType.OBSERVATION,
-            stage="kt_tool_observation",
-            actor="kt",
+            stage=stage,
+            actor=actor,
             visibility=observation.visibility,
-            content=(
-                "Tool Registry 已记录 KT/DGEKT 权威学习事实 observation；"
-                "RAG、学生记忆与 LLM 不能覆盖 prediction facts。"
-            ),
+            content=self._tool_observation_content(observation),
             metadata={
                 "tool_observation": summary,
                 "tool_name": observation.tool_name,
@@ -265,6 +359,24 @@ class MathTutorAgentRuntime:
             },
             evidence_refs=observation.evidence_refs,
         )
+
+    def _tool_observation_content(self, observation: ToolObservation) -> str:
+        if observation.tool_id == KT_AUTHORITY_TOOL_ID:
+            return (
+                "Tool Registry 已记录 KT/DGEKT 权威学习事实 observation；"
+                "RAG、学生记忆与 LLM 不能覆盖 prediction facts。"
+            )
+        if observation.tool_id == RAG_RETRIEVAL_TOOL_ID:
+            return (
+                "Tool Registry 已记录 RAG 数学知识检索 observation；"
+                "RAG 只支持讲解和 citation，不能覆盖 KT facts。"
+            )
+        if observation.tool_id == STUDENT_MEMORY_TOOL_ID:
+            return (
+                "Tool Registry 已记录学生记忆 observation；"
+                "记忆只影响教学策略和表达方式，不能改写 mastery。"
+            )
+        return "Tool Registry 已记录只读工具 observation。"
 
     def _sanitize_trace_events(self, response: MathTutorEventResponse) -> None:
         response.teaching_trace = [

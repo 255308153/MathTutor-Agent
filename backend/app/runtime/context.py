@@ -30,6 +30,7 @@ class LearningTurnContext(BaseModel):
     kt_progress: KTLearningProgress
     context_asset_refs: list[str] = Field(default_factory=list)
     assembled_context_ref: str | None = None
+    tool_observation_refs: list[str] = Field(default_factory=list)
     trace_refs: list[str] = Field(default_factory=list)
     teaching_trace_id: str | None = None
     authority_boundaries: list[str] = Field(
@@ -57,6 +58,11 @@ class LearningTurnContext(BaseModel):
         assembled_context_ref = None
         if isinstance(assembled_context, dict) and assembled_context.get("context_id"):
             assembled_context_ref = str(assembled_context["context_id"])
+        tool_observation_refs = [
+            f"tool_observation:{event.metadata['tool_id']}"
+            for event in response.teaching_trace
+            if event.metadata.get("tool_id")
+        ]
         trace_refs = [f"trace:{response.trace_id}"]
         if assembled_context_ref:
             trace_refs.append(f"context:{assembled_context_ref}")
@@ -64,6 +70,7 @@ class LearningTurnContext(BaseModel):
             update={
                 "context_asset_refs": list(dict.fromkeys(context_asset_refs)),
                 "assembled_context_ref": assembled_context_ref,
+                "tool_observation_refs": list(dict.fromkeys(tool_observation_refs)),
                 "trace_refs": list(dict.fromkeys(trace_refs)),
                 "teaching_trace_id": response.trace_id,
                 "completed_at": datetime.now(UTC).isoformat(),
@@ -85,6 +92,7 @@ class LearningTurnContext(BaseModel):
             "current_session_id": self.kt_progress.current_session_id,
             "context_asset_refs": self.context_asset_refs,
             "assembled_context_ref": self.assembled_context_ref,
+            "tool_observation_refs": self.tool_observation_refs,
             "trace_refs": self.trace_refs,
             "teaching_trace_id": self.teaching_trace_id,
             "authority_boundaries": self.authority_boundaries,
