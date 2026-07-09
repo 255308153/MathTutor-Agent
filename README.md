@@ -279,6 +279,13 @@ V1.4 #31 增强 context retrieval / assembly 的可解释取舍：
 - evidence gaps 会区分 `student_memory` 缺失、`knowledge_resource` 缺失、`stale_task_state`、`low_confidence_observation`、`provider_failure` 和 `context_budget`。
 - 优先级保持为 KT facts first，其后是 current task/tool snapshots、student memory、knowledge resource、trace reference；KT facts 不进入可裁剪资产预算。
 
+V1.4 #32 让 dashboard 在 TeachingTrace expert evidence 中展示上下文证据：
+
+- `上下文证据` 面板会显示 selected / omitted context assets、asset type、source、summary、included_reason / excluded_reason、freshness、confidence、预算和压缩策略。
+- `student_memory` 标为 Memory evidence，`knowledge_resource` 标为 RAG citation，`tool_observation` 标为 Tool snapshot，`task_state` 和 `trace_reference` 只作为上下文引用展示。
+- evidence gap 和预算裁剪会可见；没有 context asset 时显示 fallback，但推荐卡、答题输入和学生回复仍按主学习流程运行。
+- dashboard 只消费后端返回的 `assembled_context` / `context_assets`，不直接访问 Mem0、VikingDB、OpenViking 或任何 provider SDK，也不会把 context evidence 写回 mastery / risk。
+
 ## V1.3 / V1.4 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：

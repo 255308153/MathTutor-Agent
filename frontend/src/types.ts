@@ -65,6 +65,54 @@ export interface TeachingTraceEvent {
   evidence_refs: string[];
 }
 
+export interface ContextAssetEvidence {
+  asset_id?: string;
+  asset_type?: string;
+  source_type?: string;
+  source_ref?: string;
+  summary?: string;
+  included_reason?: string | null;
+  excluded_reason?: string | null;
+  selection_status?: "included" | "excluded" | string;
+  confidence?: number;
+  freshness?: string;
+  budget_cost?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface EvidenceGap {
+  gap_type?: string;
+  category?: string;
+  reason?: string;
+  impact?: string;
+  severity?: string;
+  recoverable?: boolean;
+  stage?: string;
+  code?: string;
+  message?: string;
+  actionable_hint?: string;
+}
+
+export interface AssembledContextEvidence {
+  context_id?: string;
+  authoritative_kt_facts?: Record<string, unknown>;
+  normalized_context?: Record<string, unknown>;
+  asset_summaries?: ContextAssetEvidence[];
+  evidence_gaps?: EvidenceGap[];
+  evidence_refs?: string[];
+  budget_used?: number;
+  budget_limit?: number;
+  compression_summary?: {
+    strategy?: string;
+    selected_asset_count?: number;
+    excluded_asset_count?: number;
+    candidate_asset_count?: number;
+    budget_used?: number;
+    budget_limit?: number;
+    excluded_reasons?: string[];
+  };
+}
+
 export interface TeachingTraceSummary {
   trace_id: string;
   intent: string;
@@ -98,10 +146,14 @@ export interface TeachingTraceSummary {
       coverage?: Record<string, unknown> | null;
     }>;
     student_memories?: Array<Record<string, unknown>>;
-    context_assets?: Array<Record<string, unknown>>;
-    assembled_context?: Record<string, unknown> | null;
-    evidence_gaps?: Array<Record<string, unknown>>;
-    error_records?: Array<Record<string, unknown>>;
+    context_assets?: ContextAssetEvidence[];
+    context_asset_selection?: {
+      selected?: ContextAssetEvidence[];
+      omitted?: ContextAssetEvidence[];
+    };
+    assembled_context?: AssembledContextEvidence | null;
+    evidence_gaps?: EvidenceGap[];
+    error_records?: EvidenceGap[];
     planner_decision?: Record<string, unknown> | null;
     recommendations?: RecommendedQuestion[];
   };

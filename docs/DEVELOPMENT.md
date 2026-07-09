@@ -293,6 +293,14 @@ V1.4 #31 的检索、预算和裁剪规则：
 - evidence gap 分类包括 `student_memory`、`knowledge_resource`、`stale_task_state`、`low_confidence_observation`、`provider_failure`、`context_budget`。provider failure 只能作为 gap 透出，不能伪造 memory 或 RAG evidence。
 - KT facts 不参与资产预算裁剪，始终通过 `assembled_context.authoritative_kt_facts` 输出。
 
+V1.4 #32 的 dashboard 展示规则：
+
+- 前端类型读取 `context_assets`、`context_asset_selection`、`assembled_context.asset_summaries`、`evidence_gaps`、预算和 `compression_summary`。
+- TeachingTrace 的 `上下文证据` 面板只面向 expert evidence，展示 selected context assets、omitted context assets、included_reason、excluded_reason、source、freshness 和 confidence。
+- `student_memory`、`knowledge_resource`、`task_state`、`tool_observation`、`trace_reference` 在 dashboard 中用不同标签展示；RAG citation、memory evidence、tool observation snapshot 要能一眼区分。
+- Evidence gap 和 `context_budget` 裁剪要可见；没有上下文资产时显示 fallback 文案，但推荐卡、答题输入和学生回复保持简单，不因 context 缺失阻塞学习流程。
+- dashboard 不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK，不把 context evidence 写入 mastery、weak_concepts、forgetting_risk 或 prediction_probability。
+
 ## 5. 统一事件 API
 
 V1 后端通过统一事件入口接收聊天消息和学习事件：

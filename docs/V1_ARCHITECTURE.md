@@ -192,6 +192,7 @@ Context can assemble evidence, not decide learning facts.
 - LearningContextLayer 统一组织 context assets 和 assembled_context，但不决定学习事实。next-step advice 中，planner / recommender / response 只读取 `assembled_context.normalized_context` 的 student_memory、knowledge_resource、task_state 和 evidence gaps，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
 - `answer_submitted` 会额外生成 task_state、tool_observation 和 trace_reference 快照，把 pending question、grading、KT diagnosis、RAG retrieval、错因诊断、推荐候选和 memory update 来源串到 TeachingTrace；这些快照只做审计引用，不能取代 progress store、LearningEvent、KTDiagnosis、RAG 或 memory store。
 - Context retrieval 可以按类型、来源、student/session、question/concept、freshness 和 confidence 过滤，并按相关性与优先级裁剪到预算内。KT facts 位于 `authoritative_kt_facts`，不参与 context asset 预算裁剪；被裁剪或 provider 失败的资产只进入 `asset_summaries` / evidence gaps。
+- dashboard 只在 TeachingTrace expert evidence 中展示 selected / omitted context assets、included / excluded reason、预算和 evidence gaps；推荐卡、答题输入和学生回复不依赖 dashboard context 展示来决定学习事实。
 - 缺少学生记忆或 RAG 资源时，LearningContextLayer 记录 evidence gap，而不是伪造 asset 或覆盖 KT facts。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 
