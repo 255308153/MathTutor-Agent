@@ -342,6 +342,50 @@ def test_provider_health_reads_runtime_provider_gaps_without_mutating_them(
     assert "runtime-secret" not in json.dumps(body, ensure_ascii=False)
 
 
+def test_provider_health_normalizes_configuration_gap_as_not_configured() -> None:
+    health = build_provider_health(
+        MathTutorSettings(),
+        provider_gaps=[
+            {
+                "gap_type": "provider_configuration_missing",
+                "provider": "openviking",
+                "operation": "search",
+                "reason": "Authorization: Bearer config-secret api_key=also-secret",
+                "details": {
+                    "safe_summary": "OpenViking 缺少 endpoint 或 collection。",
+                    "api_key": "hidden-key",
+                    "cache_path": "/Users/lqc/private/provider-cache/index.bin",
+                    "raw_provider_payload": {"token": "raw-secret"},
+                },
+            }
+        ],
+    )
+
+    body = health.model_dump()
+    rag = {item["component"]: item for item in body["components"]}["rag"]
+    gap = rag["evidence_gaps"][0]
+
+    assert body["status"] == "degraded"
+    assert rag["status"] == "not_configured"
+    assert rag["severity"] == "warning"
+    assert gap["gap_type"] == "provider_configuration_missing"
+    assert gap["status"] == "not_configured"
+    assert gap["message"] == "provider readiness 缺少必要配置。"
+    assert gap["details"]["safe_summary"] == "OpenViking 缺少 endpoint 或 collection。"
+    serialized = json.dumps(body, ensure_ascii=False).lower()
+    for forbidden in (
+        "config-secret",
+        "also-secret",
+        "hidden-key",
+        "raw-secret",
+        "authorization",
+        "api_key",
+        "raw_provider_payload",
+        "/users/lqc/private",
+    ):
+        assert forbidden not in serialized
+
+
 def test_provider_health_degraded_snapshot_does_not_block_default_learning_flow() -> None:
     degraded_health = build_provider_health(
         MathTutorSettings(

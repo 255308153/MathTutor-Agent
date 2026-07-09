@@ -1525,6 +1525,7 @@ function runtimeVisibilitySummary(counts: Record<string, number>) {
 function runtimeStatusName(status: string | null | undefined, observed = true) {
   if (!observed) return "未调用";
   return {
+    healthy: "正常",
     completed: "完成",
     degraded: "降级",
     failed: "失败",

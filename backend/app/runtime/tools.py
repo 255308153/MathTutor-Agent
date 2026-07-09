@@ -7,17 +7,27 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ..provider_gaps import PROVIDER_EVIDENCE_GAP_TYPES
+from ..provider_gaps import PROVIDER_EVIDENCE_GAP_STATUS, PROVIDER_EVIDENCE_GAP_TYPES
 
 
 ToolProviderMode = Literal[
     "local_fallback",
     "fake_provider",
     "live_provider",
-    "unknown",
 ]
-ToolObservationStatus = Literal["completed", "degraded", "failed", "unavailable"]
+ToolObservationStatus = Literal[
+    "healthy",
+    "degraded",
+    "unavailable",
+    "not_configured",
+]
 ToolVisibility = Literal["student", "expert", "debug"]
+_STATUS_SEVERITY_ORDER = {
+    "healthy": 0,
+    "not_configured": 1,
+    "degraded": 2,
+    "unavailable": 3,
+}
 
 
 class ToolInvocation(BaseModel):
@@ -217,7 +227,7 @@ def rag_retrieval_evidence_tool() -> RuntimeTool:
             "provider_budget_exceeded",
             "context_budget",
         ),
-        provider_modes=("local_fallback", "fake_provider", "live_provider", "unknown"),
+        provider_modes=("local_fallback", "fake_provider", "live_provider"),
         evidence_boundary=RAG_EVIDENCE_BOUNDARY,
         trace_stage="rag_tool_observation",
         trace_actor="rag",
@@ -254,7 +264,7 @@ def student_memory_evidence_tool() -> RuntimeTool:
             "provider_schema_mismatch",
             "provider_budget_exceeded",
         ),
-        provider_modes=("local_fallback", "fake_provider", "live_provider", "unknown"),
+        provider_modes=("local_fallback", "fake_provider", "live_provider"),
         evidence_boundary=STUDENT_MEMORY_EVIDENCE_BOUNDARY,
         trace_stage="memory_tool_observation",
         trace_actor="memory",
@@ -288,7 +298,10 @@ def _kt_authoritative_facts_handler(invocation: ToolInvocation) -> ToolObservati
     attribution_status = attribution.get("evidence_status")
     partial_attribution = bool(attribution.get("partial_evidence"))
     missing_diagnosis = not diagnosis
-    degraded = bool(
+    provider_gaps = [
+        gap for gap in [*diagnose_gaps, *attribution_gaps] if _is_provider_gap(gap)
+    ]
+    has_non_provider_gap = bool(
         missing_diagnosis
         or diagnose_gaps
         or attribution_gaps
@@ -298,10 +311,12 @@ def _kt_authoritative_facts_handler(invocation: ToolInvocation) -> ToolObservati
     status: ToolObservationStatus
     if missing_diagnosis:
         status = "unavailable"
-    elif diagnose_gaps:
-        status = "degraded"
     else:
-        status = "degraded" if degraded else "completed"
+        status = _observation_status(
+            provider_gaps=provider_gaps,
+            has_non_provider_gap=has_non_provider_gap,
+        )
+    degraded = status != "healthy"
 
     weak_concepts = _list_of_dicts(diagnosis.get("weak_concepts"))
     forgetting_risks = _list_of_dicts(diagnosis.get("forgetting_risks"))
@@ -386,8 +401,14 @@ def _rag_retrieval_evidence_handler(invocation: ToolInvocation) -> ToolObservati
         default_provider="local_rag",
     )
     provider_gaps = [gap for gap in rag_gaps if _is_provider_gap(gap)]
-    degraded = bool(provider_gaps or omitted_assets or rag_gaps)
-    status: ToolObservationStatus = "degraded" if degraded else "completed"
+    has_non_provider_gap = bool(
+        omitted_assets or [gap for gap in rag_gaps if not _is_provider_gap(gap)]
+    )
+    status = _observation_status(
+        provider_gaps=provider_gaps,
+        has_non_provider_gap=has_non_provider_gap,
+    )
+    degraded = status != "healthy"
     citation_refs = _rag_citation_refs(rag_sources)
     evidence_refs = _turn_trace_refs(invocation)
     if citation_refs:
@@ -460,8 +481,14 @@ def _student_memory_evidence_handler(invocation: ToolInvocation) -> ToolObservat
         default_provider="local_fallback",
     )
     provider_gaps = [gap for gap in memory_gaps if _is_provider_gap(gap)]
-    degraded = bool(provider_gaps or omitted_assets or memory_gaps)
-    status: ToolObservationStatus = "degraded" if degraded else "completed"
+    has_non_provider_gap = bool(
+        omitted_assets or [gap for gap in memory_gaps if not _is_provider_gap(gap)]
+    )
+    status = _observation_status(
+        provider_gaps=provider_gaps,
+        has_non_provider_gap=has_non_provider_gap,
+    )
+    degraded = status != "healthy"
     evidence_refs = _turn_trace_refs(invocation)
     evidence_refs.extend(
         _memory_ref(memory) for memory in student_memories if _memory_ref(memory)
@@ -553,7 +580,7 @@ def _provider_mode_for_kt_engine(engine_name: str) -> ToolProviderMode:
         return "fake_provider"
     if "dgekt" in lowered:
         return "live_provider"
-    return "unknown"
+    return "local_fallback"
 
 
 def _evidence_refs(
@@ -716,6 +743,23 @@ def _is_provider_gap(gap: dict[str, Any]) -> bool:
     return _gap_type(gap) in PROVIDER_EVIDENCE_GAP_TYPES
 
 
+def _observation_status(
+    *,
+    provider_gaps: list[dict[str, Any]],
+    has_non_provider_gap: bool,
+) -> ToolObservationStatus:
+    statuses = [
+        PROVIDER_EVIDENCE_GAP_STATUS.get(_gap_type(gap), "unavailable")
+        for gap in provider_gaps
+    ]
+    if has_non_provider_gap:
+        statuses.append("degraded")
+    if not statuses:
+        return "healthy"
+    status = max(statuses, key=lambda item: _STATUS_SEVERITY_ORDER[item])
+    return status  # type: ignore[return-value]
+
+
 def _has_asset_type(assets: list[dict[str, Any]], asset_type: str) -> bool:
     return any(asset.get("asset_type") == asset_type for asset in assets)
 
@@ -762,11 +806,11 @@ def _provider_mode_from_name(provider: str) -> ToolProviderMode:
         return "fake_provider"
     if any(token in lowered for token in ("mem0", "viking", "openviking", "dgekt")):
         return "live_provider"
-    return "unknown"
+    return "local_fallback"
 
 
 def _coerce_provider_mode(mode: str) -> ToolProviderMode:
-    if mode in {"local_fallback", "fake_provider", "live_provider", "unknown"}:
+    if mode in {"local_fallback", "fake_provider", "live_provider"}:
         return mode  # type: ignore[return-value]
     return _provider_mode_from_name(mode)
 
