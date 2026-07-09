@@ -301,6 +301,23 @@ V1.4 #32 的 dashboard 展示规则：
 - Evidence gap 和 `context_budget` 裁剪要可见；没有上下文资产时显示 fallback 文案，但推荐卡、答题输入和学生回复保持简单，不因 context 缺失阻塞学习流程。
 - dashboard 不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK，不把 context evidence 写入 mastery、weak_concepts、forgetting_risk 或 prediction_probability。
 
+V1.4 #33 的端到端验收规则：
+
+- 后端 smoke 位于 `backend/tests/test_learning_context_e2e.py`，使用 `InMemoryProgressStore`、`InMemoryStudentMemoryStore` 和 `InMemoryContextAssetStore`，不依赖 Mem0、VikingDB、OpenViking 或外部 provider key。
+- 验收链路必须覆盖 next-step advice、KT diagnosis、context assemble、recommendation / response、answer submission、task_state / tool_observation / trace_reference asset、TeachingTrace expert evidence 和 ContextAssetStore assembly record。
+- 同一个 canonical concept / question 必须能在 KT weak / forgetting facts、student_memory、knowledge_resource、推荐理由、`assembled_context.normalized_context`、planner selected target 和 TeachingTrace context evidence 中追踪到。
+- 测试会把伪造的 mastery / prediction_probability 放进 student memory evidence；期望结果是 KTDiagnosis、state_summary 和 `assembled_context.authoritative_kt_facts` 仍保持 KT 输出，context 只能作为策略证据。
+- ContextAssetStore 验收只检查引用、摘要和 assembly record。runtime 真相仍在 progress store、LearningEvent、KTDiagnosis、RAG、memory store 和 TeachingTrace。
+- 前端 smoke 位于 `frontend/src/App.test.tsx`，验证答题提交追加的 task / tool / trace 证据能在 dashboard `上下文证据` 面板中看到。
+
+本地收口命令：
+
+```bash
+python3 -m pytest backend/tests
+cd frontend && npm test -- --run
+cd frontend && npm run build
+```
+
 ## 5. 统一事件 API
 
 V1 后端通过统一事件入口接收聊天消息和学习事件：

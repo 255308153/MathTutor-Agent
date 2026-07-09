@@ -286,6 +286,22 @@ V1.4 #32 让 dashboard 在 TeachingTrace expert evidence 中展示上下文证�
 - evidence gap 和预算裁剪会可见；没有 context asset 时显示 fallback，但推荐卡、答题输入和学生回复仍按主学习流程运行。
 - dashboard 只消费后端返回的 `assembled_context` / `context_assets`，不直接访问 Mem0、VikingDB、OpenViking 或任何 provider SDK，也不会把 context evidence 写回 mastery / risk。
 
+V1.4 #33 收口了 LearningContextLayer 端到端验收：
+
+- 后端 smoke 覆盖 `next-step advice -> assembled_context -> recommendation / response -> answer_submitted -> task_state / tool_observation / trace_reference -> TeachingTrace`。
+- 同一个 canonical concept / question 会出现在 KT facts、student_memory、knowledge_resource、推荐理由、`assembled_context` 和 TeachingTrace 证据中。
+- 测试会故意在 student memory 中放入 mastery / prediction_probability 伪事实，验证 context 不能覆盖 KTDiagnosis、mastery、weak_concepts、forgetting_risk 或 prediction_probability。
+- 前端 smoke 验证 dashboard 能展示答题提交后追加的 task / tool / trace context evidence，同时不改变推荐卡、答题输入和学生回复主流程。
+- 本地验收不需要 Mem0、VikingDB、OpenViking 或外部 provider 凭据；后续 provider adapter 只能替换存储 / 检索后端，不能成为学习事实来源。
+
+推荐的本地验收命令：
+
+```bash
+python3 -m pytest backend/tests
+cd frontend && npm test -- --run
+cd frontend && npm run build
+```
+
 ## V1.3 / V1.4 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：
@@ -299,6 +315,7 @@ V1.4 #32 让 dashboard 在 TeachingTrace expert evidence 中展示上下文证�
 - 学生长期记忆默认是本地内存实现，服务重启后不会持久化。
 - RAG 使用本地 JSON fallback，不是生产向量库。
 - 前端是单学习者演示驾驶舱，没有登录、权限和班级管理。
+- LearningContextLayer E2E 当前覆盖 demo canonical question / concept 和小型本地 context assets，尚未接入真实 Mem0 / VikingDB / OpenViking provider adapter。
 - 当前 mapping 已知缺口会通过 coverage 诊断显式暴露：fixture 中仍有缺失 question、缺失 concept、缺失 teaching content 和缺失 RAG doc，用于驱动后续 V1.3 导入切片。
 
 下一阶段真实集成优先级：

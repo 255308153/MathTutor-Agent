@@ -193,6 +193,9 @@ Context can assemble evidence, not decide learning facts.
 - `answer_submitted` 会额外生成 task_state、tool_observation 和 trace_reference 快照，把 pending question、grading、KT diagnosis、RAG retrieval、错因诊断、推荐候选和 memory update 来源串到 TeachingTrace；这些快照只做审计引用，不能取代 progress store、LearningEvent、KTDiagnosis、RAG 或 memory store。
 - Context retrieval 可以按类型、来源、student/session、question/concept、freshness 和 confidence 过滤，并按相关性与优先级裁剪到预算内。KT facts 位于 `authoritative_kt_facts`，不参与 context asset 预算裁剪；被裁剪或 provider 失败的资产只进入 `asset_summaries` / evidence gaps。
 - dashboard 只在 TeachingTrace expert evidence 中展示 selected / omitted context assets、included / excluded reason、预算和 evidence gaps；推荐卡、答题输入和学生回复不依赖 dashboard context 展示来决定学习事实。
+- V1.4 #33 的端到端 smoke 使用本地 fallback 验证 `next-step advice -> assembled_context -> recommendation / response -> answer_submitted -> task_state / tool_observation / trace_reference -> TeachingTrace / dashboard`，并要求同一个 canonical concept / question 在 KT facts、student_memory、knowledge_resource、推荐理由和 TeachingTrace evidence 中可追踪。
+- ContextAssetStore 的架构职责是保存 context refs、summaries、selection / assembly records，不能成为 progress、event、KTDiagnosis、RAG 或 memory 的唯一 runtime source of truth。
+- Mem0、VikingDB、OpenViking 后续只能作为可选 adapter 接入 memory / RAG / context retrieval；默认本地 runtime 不要求这些 provider 凭据，也不能让 provider evidence 覆盖 KT facts。
 - 缺少学生记忆或 RAG 资源时，LearningContextLayer 记录 evidence gap，而不是伪造 asset 或覆盖 KT facts。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 
