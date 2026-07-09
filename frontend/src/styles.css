@@ -402,6 +402,31 @@ button:disabled {
   color: #45525f;
 }
 
+.provider-severity {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 22px;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-weight: 850;
+}
+
+.provider-severity-info {
+  background: #edf7f1;
+  color: #23734f;
+}
+
+.provider-severity-warning {
+  background: #fff7de;
+  color: #76551c;
+}
+
+.provider-severity-error {
+  background: #fff0ea;
+  color: #8f3d12;
+}
+
 .provider-component-list {
   display: grid;
   gap: 8px;

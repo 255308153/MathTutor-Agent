@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Any
 
 from .core.config import MathTutorSettings, get_settings
 from .schemas.provider_health import (
@@ -38,7 +39,14 @@ def _memory_health(
 ) -> ProviderHealthComponent:
     mode = settings.memory_provider_mode
     if mode == "live_provider":
-        configured = bool(settings.mem0_api_key)
+        missing_fields = [] if settings.mem0_api_key else ["MATHTUTOR_MEM0_API_KEY"]
+        configured = not missing_fields
+        hint = (
+            "Mem0 live provider 已显式启用并具备基础配置；本健康检查不访问外部网络。"
+            if configured
+            else "Mem0 live provider 已显式启用，但缺少 MATHTUTOR_MEM0_API_KEY；"
+            "补齐凭据或切回默认 local_fallback。"
+        )
         return ProviderHealthComponent(
             component="memory",
             display_name="Memory / 长期记忆",
@@ -48,11 +56,12 @@ def _memory_health(
             status="healthy" if configured else "not_configured",
             severity="info" if configured else "warning",
             recoverable=True,
-            actionable_hint=(
-                "Mem0 live provider 已显式启用并具备基础配置；本健康检查不访问外部网络。"
-                if configured
-                else "Mem0 live provider 已显式启用，但缺少 MATHTUTOR_MEM0_API_KEY；"
-                "补齐凭据或切回默认 local_fallback。"
+            actionable_hint=hint,
+            evidence_gaps=_configuration_gaps(
+                provider="mem0",
+                operation="memory_readiness",
+                missing_fields=missing_fields,
+                hint=hint,
             ),
             last_checked_at=checked_at,
         )
@@ -86,31 +95,49 @@ def _memory_health(
 def _rag_health(settings: MathTutorSettings, checked_at: str) -> ProviderHealthComponent:
     mode = settings.rag_provider_mode
     if mode == "live_provider":
-        provider = settings.rag_live_provider
+        provider = str(settings.rag_live_provider or "").strip()
+        provider_known = provider in {"vikingdb", "openviking"}
         api_key = (
             settings.openviking_api_key
             if provider == "openviking"
             else settings.vikingdb_api_key
         )
-        configured = bool(
-            api_key
-            and settings.rag_provider_endpoint
-            and settings.rag_provider_collection
+        missing_fields = []
+        if not provider_known:
+            missing_fields.append("MATHTUTOR_RAG_LIVE_PROVIDER")
+        if not settings.rag_provider_endpoint:
+            missing_fields.append("MATHTUTOR_RAG_PROVIDER_ENDPOINT")
+        if not settings.rag_provider_collection:
+            missing_fields.append("MATHTUTOR_RAG_PROVIDER_COLLECTION")
+        if not api_key:
+            missing_fields.append(
+                "MATHTUTOR_OPENVIKING_API_KEY"
+                if provider == "openviking"
+                else "MATHTUTOR_VIKINGDB_API_KEY"
+            )
+        configured = not missing_fields
+        provider_name = provider if provider_known else "vikingdb/openviking"
+        hint = (
+            f"{provider_name} live RAG 已显式启用并具备基础配置；本健康检查不访问外部网络。"
+            if configured
+            else f"{provider_name} live RAG 已显式启用，但缺少 "
+            f"{'、'.join(missing_fields)}；补齐配置或切回默认 local_fallback。"
         )
         return ProviderHealthComponent(
             component="rag",
             display_name="RAG / 知识检索",
             mode=mode,
-            provider=provider,
+            provider=provider_name,
             configured=configured,
             status="healthy" if configured else "not_configured",
             severity="info" if configured else "warning",
             recoverable=True,
-            actionable_hint=(
-                f"{provider} live RAG 已显式启用并具备基础配置；本健康检查不访问外部网络。"
-                if configured
-                else f"{provider} live RAG 已显式启用，但缺少 endpoint、collection 或 API key；"
-                "补齐配置或切回默认 local_fallback。"
+            actionable_hint=hint,
+            evidence_gaps=_configuration_gaps(
+                provider=provider_name,
+                operation="rag_readiness",
+                missing_fields=missing_fields,
+                hint=hint,
             ),
             last_checked_at=checked_at,
         )
@@ -234,6 +261,32 @@ def _overall_status(statuses: Iterable[ProviderHealthStatus]) -> ProviderHealthS
     if "not_configured" in status_set:
         return "degraded"
     return "healthy"
+
+
+def _configuration_gaps(
+    *,
+    provider: str,
+    operation: str,
+    missing_fields: list[str],
+    hint: str,
+) -> list[dict[str, Any]]:
+    if not missing_fields:
+        return []
+    return [
+        {
+            "gap_type": "provider_configuration_missing",
+            "code": "provider_configuration_missing",
+            "category": "provider_configuration_missing",
+            "provider": provider,
+            "operation": operation,
+            "reason": f"{provider} readiness 缺少必要配置：{'、'.join(missing_fields)}。",
+            "message": f"{provider} readiness 缺少必要配置。",
+            "severity": "warning",
+            "recoverable": True,
+            "actionable_hint": hint,
+            "details": {"missing_fields": missing_fields},
+        }
+    ]
 
 
 def _summary(status: ProviderHealthStatus) -> str:

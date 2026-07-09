@@ -32,6 +32,7 @@ import type {
   MathTutorEventResponse,
   ProviderHealthComponent,
   ProviderHealthResponse,
+  ProviderHealthSeverity,
   ProviderHealthStatus,
   RecommendedQuestion,
   StudentMemory
@@ -512,6 +513,9 @@ function ProviderHealthRow({ component }: { component: ProviderHealthComponent }
       <div className="provider-component-facts">
         <span>{component.provider}</span>
         <span>{component.mode}</span>
+        <span className={`provider-severity provider-severity-${component.severity}`}>
+          {severityName(component.severity)}
+        </span>
         <span>{component.configured ? "已配置" : "未配置"}</span>
         <span>{component.recoverable ? "可恢复" : "需人工处理"}</span>
       </div>
@@ -1065,6 +1069,14 @@ function statusName(status: ProviderHealthStatus | undefined) {
     unavailable: "不可用",
     not_configured: "未配置"
   }[status ?? "not_configured"];
+}
+
+function severityName(severity: ProviderHealthSeverity) {
+  return {
+    info: "信息",
+    warning: "警告",
+    error: "错误"
+  }[severity];
 }
 
 function formatDateTime(value: string) {
