@@ -277,6 +277,61 @@ describe("学习驾驶舱", () => {
     expect(screen.getAllByText("暂无").length).toBeGreaterThan(0);
   });
 
+  it("展示答题提交追加的 task/tool/trace 上下文证据", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+      ...baseResponse,
+      trace_id: "tt-answer-context",
+      teaching_trace_summary: {
+        ...baseResponse.teaching_trace_summary,
+        expert_evidence: {
+          ...baseResponse.teaching_trace_summary.expert_evidence,
+          context_asset_selection: {
+            selected: [
+              {
+                asset_id: "answer-task-state",
+                asset_type: "task_state",
+                source_type: "learning_loop_event",
+                source_ref: "event:tt-answer-context:answer_submitted",
+                summary: "answer_submitted question=q_frac_001; is_correct=false",
+                included_reason: "记录答题 task_state 快照；权威 runtime state 仍在 progress/event/trace",
+                freshness: "fresh",
+                confidence: 1
+              },
+              {
+                asset_id: "answer-mistake-tool",
+                asset_type: "tool_observation",
+                source_type: "mistake_diagnoser",
+                source_ref: "mistake:tt-answer-context:diagnosis",
+                summary: "mistake diagnosis snapshot for q_frac_001",
+                included_reason: "记录错因诊断工具观察快照",
+                freshness: "fresh",
+                confidence: 0.85
+              },
+              {
+                asset_id: "answer-trace-ref",
+                asset_type: "trace_reference",
+                source_type: "teaching_trace",
+                source_ref: "trace:tt-answer-context:answer_submission",
+                summary: "answer_submitted trace references retrieval, decision, and memory-update source",
+                included_reason: "记录 trace 引用，串联检索路径、决策证据和 memory update 来源",
+                freshness: "fresh",
+                confidence: 1
+              }
+            ],
+            omitted: []
+          }
+        }
+      }
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText("上下文证据")).toBeInTheDocument();
+    expect(screen.getByText("answer_submitted question=q_frac_001; is_correct=false")).toBeInTheDocument();
+    expect(screen.getByText("记录错因诊断工具观察快照")).toBeInTheDocument();
+    expect(screen.getByText("answer_submitted trace references retrieval, decision, and memory-update source")).toBeInTheDocument();
+  });
+
   it("后端不可达时展示中文错误和重试入口", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("网络不可用"));
 

@@ -329,8 +329,8 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const recommendations = evidence?.recommendations ?? [];
   const assembledContext = evidence?.assembled_context ?? null;
   const contextAssets = contextAssetItems(evidence);
-  const selectedContextAssets = contextAssets.filter((asset) => !isExcludedAsset(asset)).slice(0, 6);
-  const omittedContextAssets = contextAssets.filter(isExcludedAsset).slice(0, 4);
+  const selectedContextAssets = contextAssets.filter((asset) => !isExcludedAsset(asset));
+  const omittedContextAssets = contextAssets.filter(isExcludedAsset);
   const topPath = attribution?.top_paths?.[0];
   const keyHistory = attribution?.key_history?.[0];
   const evidenceGaps = evidenceGapItems(evidence?.evidence_gaps ?? assembledContext?.evidence_gaps);
@@ -520,17 +520,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function contextAssetItems(
   evidence: MathTutorEventResponse["teaching_trace_summary"]["expert_evidence"] | undefined
 ): ContextAssetEvidence[] {
-  const assembled = evidence?.assembled_context?.asset_summaries ?? [];
-  if (assembled.length > 0) return assembled;
+  const items: ContextAssetEvidence[] = [];
+  const seen = new Set<string>();
+  const addAsset = (asset: ContextAssetEvidence, selectionStatus?: "included" | "excluded") => {
+    const normalized = {
+      ...asset,
+      selection_status: asset.selection_status ?? selectionStatus
+    };
+    const key = contextAssetKey(normalized);
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(normalized);
+  };
+
+  for (const asset of evidence?.assembled_context?.asset_summaries ?? []) {
+    addAsset(asset);
+  }
   const selected = evidence?.context_asset_selection?.selected ?? [];
   const omitted = evidence?.context_asset_selection?.omitted ?? [];
-  if (selected.length + omitted.length > 0) {
-    return [
-      ...selected.map((asset) => ({ ...asset, selection_status: "included" })),
-      ...omitted.map((asset) => ({ ...asset, selection_status: "excluded" }))
-    ];
+  for (const asset of selected) {
+    addAsset(asset, "included");
   }
-  return evidence?.context_assets ?? [];
+  for (const asset of omitted) {
+    addAsset(asset, "excluded");
+  }
+  for (const asset of evidence?.context_assets ?? []) {
+    addAsset(asset);
+  }
+  return items;
 }
 
 function isExcludedAsset(asset: ContextAssetEvidence) {
