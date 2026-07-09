@@ -4,8 +4,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.api import events as events_api
 from backend.app.core.config import MathTutorSettings
 from backend.app.main import create_app
 from backend.app.provider_health import build_provider_health
@@ -216,6 +218,116 @@ def test_provider_health_live_configuration_does_not_expose_secret_values() -> N
     serialized = json.dumps(body, ensure_ascii=False)
     assert "mem0-secret-value" not in serialized
     assert "viking-secret-value" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("gap_type", "expected_status", "expected_severity", "expected_message"),
+    [
+        ("provider_failure", "unavailable", "error", "provider evidence 当前不可用。"),
+        ("provider_timeout", "unavailable", "warning", "provider 请求超时。"),
+        ("provider_auth_error", "unavailable", "error", "provider 凭据或权限不可用。"),
+        ("provider_empty_result", "degraded", "info", "provider 未返回可用 evidence。"),
+        ("provider_schema_mismatch", "degraded", "warning", "provider 响应无法规范化。"),
+        ("provider_budget_exceeded", "degraded", "warning", "provider quota、rate limit 或预算已触发。"),
+    ],
+)
+def test_provider_health_normalizes_provider_gap_categories(
+    gap_type: str,
+    expected_status: str,
+    expected_severity: str,
+    expected_message: str,
+) -> None:
+    health = build_provider_health(
+        MathTutorSettings(
+            memory_provider_mode="live_provider",
+            mem0_api_key="configured-key",
+        ),
+        provider_gaps=[
+            {
+                "gap_type": gap_type,
+                "provider": "mem0",
+                "operation": "search",
+                "reason": "Authorization: Bearer live-secret api_key=also-secret",
+                "details": {
+                    "safe_summary": "保留安全摘要",
+                    "raw_provider_payload": {"secret": "raw-secret"},
+                    "sdk_response": {"debug": "sdk-secret"},
+                    "embedding_vector": [0.1, 0.2, 0.3],
+                    "provider_debug": {"token": "debug-secret"},
+                    "cache_path": "/Users/lqc/private/provider-cache/live-secret.bin",
+                },
+            }
+        ],
+    )
+
+    body = health.model_dump()
+    memory = {item["component"]: item for item in body["components"]}["memory"]
+    gap = memory["evidence_gaps"][0]
+
+    assert body["status"] == expected_status
+    assert memory["status"] == expected_status
+    assert memory["severity"] == expected_severity
+    assert memory["actionable_hint"] == gap["actionable_hint"]
+    assert gap["gap_type"] == gap_type
+    assert gap["code"] == gap_type
+    assert gap["category"] == gap_type
+    assert gap["provider"] == "mem0"
+    assert gap["operation"] == "search"
+    assert gap["status"] == expected_status
+    assert gap["severity"] == expected_severity
+    assert gap["recoverable"] is True
+    assert gap["message"] == expected_message
+    assert gap["impact"]
+    assert gap["actionable_hint"]
+    assert gap["details"]["safe_summary"] == "保留安全摘要"
+    assert gap["details"]["cache_path"] == "<local_path_redacted>"
+
+    serialized = json.dumps(body, ensure_ascii=False).lower()
+    for forbidden in (
+        "live-secret",
+        "also-secret",
+        "raw-secret",
+        "sdk-secret",
+        "debug-secret",
+        "authorization",
+        "api_key",
+        "raw_provider_payload",
+        "sdk_response",
+        "embedding_vector",
+        "provider_debug",
+        "/users/lqc/private",
+    ):
+        assert forbidden not in serialized
+
+
+def test_provider_health_reads_runtime_provider_gaps_without_mutating_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_gap = {
+        "gap_type": "provider_timeout",
+        "provider": "openviking",
+        "operation": "search",
+        "reason": "provider timed out with Bearer runtime-secret",
+        "details": {"safe_summary": "最近一次 RAG provider 搜索超时"},
+    }
+    provider = _RuntimeProvider([runtime_gap])
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        _RuntimeLoop(memories=_RuntimeProvider([]), rag=provider),
+    )
+    client = TestClient(create_app())
+
+    response = client.get("/api/provider-health")
+
+    assert response.status_code == 200
+    body = response.json()
+    rag = {item["component"]: item for item in body["components"]}["rag"]
+    assert rag["status"] == "unavailable"
+    assert rag["evidence_gaps"][0]["gap_type"] == "provider_timeout"
+    assert rag["evidence_gaps"][0]["message"] == "provider 请求超时。"
+    assert provider.last_evidence_gaps == [runtime_gap]
+    assert "runtime-secret" not in json.dumps(body, ensure_ascii=False)
 
 
 def test_provider_health_degraded_snapshot_does_not_block_default_learning_flow() -> None:
@@ -456,6 +568,17 @@ def test_provider_health_does_not_change_kt_facts() -> None:
 def _assert_iso_timestamp(value: str) -> None:
     parsed = datetime.fromisoformat(value)
     assert parsed.tzinfo is not None
+
+
+class _RuntimeProvider:
+    def __init__(self, gaps: list[dict[str, object]]) -> None:
+        self.last_evidence_gaps = gaps
+
+
+class _RuntimeLoop:
+    def __init__(self, *, memories: _RuntimeProvider, rag: _RuntimeProvider) -> None:
+        self.memories = memories
+        self.rag = rag
 
 
 def _write_dgekt_readiness_files(tmp_path: Path) -> tuple[Path, Path, Path]:

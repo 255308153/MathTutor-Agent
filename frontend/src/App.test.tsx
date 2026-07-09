@@ -419,6 +419,43 @@ const ktArtifactProviderHealthResponse: ProviderHealthResponse = {
   })
 };
 
+const providerGapSanitizedHealthResponse: ProviderHealthResponse = {
+  ...baseProviderHealthResponse,
+  status: "unavailable",
+  summary: "Provider gap 已归一为安全诊断；默认学习流程仍可继续。",
+  components: baseProviderHealthResponse.components.map((component) => {
+    if (component.component === "rag") {
+      return {
+        ...component,
+        mode: "live_provider",
+        provider: "openviking",
+        configured: true,
+        status: "unavailable",
+        severity: "warning",
+        actionable_hint: "provider 请求超时；请检查 endpoint、网络和 timeout 配置。",
+        evidence_gaps: [
+          {
+            gap_type: "provider_timeout",
+            reason: "provider 请求超时。",
+            severity: "warning",
+            recoverable: true,
+            actionable_hint: "检查 endpoint、网络和 timeout 配置；必要时切回 local_fallback。",
+            details: {
+              raw_provider_payload: "raw_provider_payload_should_not_render",
+              sdk_response: "sdk_response_should_not_render",
+              embedding_vector: [0.1, 0.2, 0.3],
+              provider_debug: "provider_debug_should_not_render",
+              authorization: "Bearer token_should_not_render",
+              safe_summary: "safe_summary_should_not_render"
+            }
+          }
+        ]
+      };
+    }
+    return component;
+  })
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -489,6 +526,24 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("LearningContextLayer")).toBeInTheDocument();
     expect(screen.getByText("context_evidence_assembly")).toBeInTheDocument();
     expect(screen.getByText(/不改写学习事实/)).toBeInTheDocument();
+  });
+
+  it("展示 provider gap 中文摘要，但不渲染 raw payload、SDK response、embedding 或 debug details", async () => {
+    mockMathTutorApi({
+      providerHealthResponse: providerGapSanitizedHealthResponse
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Provider gap 已归一为安全诊断；默认学习流程仍可继续。")).toBeInTheDocument();
+    expect(screen.getByText("provider 请求超时")).toBeInTheDocument();
+    expect(screen.getByText("provider 请求超时。")).toBeInTheDocument();
+    expect(screen.getAllByText(/检查 endpoint、网络和 timeout 配置/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/raw_provider_payload_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sdk_response_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/provider_debug_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/token_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/safe_summary_should_not_render/)).not.toBeInTheDocument();
   });
 
   it("可以加载建议、提交推荐题答案，并展示 trace 与证据", async () => {
@@ -797,7 +852,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getAllByText("Selected asset").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("RAG citation 已排除")).toBeInTheDocument();
     expect(screen.getAllByText("fake provider").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getAllByText("provider timeout").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("provider 请求超时").length).toBeGreaterThan(0);
     expect(screen.getAllByText("fake_vikingdb search timed out; local flow continues.").length).toBeGreaterThan(0);
     expect(screen.queryByText(/hidden-provider-memory/)).not.toBeInTheDocument();
     expect(screen.queryByText(/hidden-rag/)).not.toBeInTheDocument();

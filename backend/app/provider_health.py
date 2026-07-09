@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 from typing import Any
 
 from .core.config import MathTutorSettings, get_settings
 from .mapping.assist2017_mapping import DEFAULT_MAPPING_PATH
+from .provider_gaps import PROVIDER_EVIDENCE_GAP_TYPES, RAW_PROVIDER_KEYS
 from .rag.knowledge_rag import RAG_PATH
 from .schemas.provider_health import (
     ProviderHealthComponent,
@@ -25,10 +27,55 @@ DGEKT_OFFLINE_EVIDENCE_FILES = (
     "path_ablation.csv",
     "weak_concepts.csv",
 )
+PROVIDER_GAP_HEALTH = {
+    "provider_failure": {
+        "status": "unavailable",
+        "severity": "error",
+        "message": "provider evidence 当前不可用。",
+        "impact": "该 provider 暂时不能提供可信 evidence；默认学习流程继续使用可用的本地或 fixture evidence。",
+        "actionable_hint": "查看 provider 服务状态、endpoint、网络和 adapter 日志；不要把失败 provider 的 evidence 写入学习事实。",
+    },
+    "provider_timeout": {
+        "status": "unavailable",
+        "severity": "warning",
+        "message": "provider 请求超时。",
+        "impact": "该 provider 本次未能按时返回 evidence；学习流程只能使用已有本地或 fixture evidence。",
+        "actionable_hint": "检查 endpoint、网络和 timeout 配置；必要时切回 local_fallback 或 fake_provider 验证主流程。",
+    },
+    "provider_auth_error": {
+        "status": "unavailable",
+        "severity": "error",
+        "message": "provider 凭据或权限不可用。",
+        "impact": "系统不会信任认证失败 provider 的 evidence，也不会把失败原因写成 mastery 或 prediction facts。",
+        "actionable_hint": "检查 API key、权限、provider 选择和本地 env 配置；不要把 credentials 提交到仓库。",
+    },
+    "provider_empty_result": {
+        "status": "degraded",
+        "severity": "info",
+        "message": "provider 未返回可用 evidence。",
+        "impact": "没有可用记忆或 citation 时，系统不会伪造 memory/RAG evidence。",
+        "actionable_hint": "检查 query、metadata filter、namespace、collection 或学生记忆内容。",
+    },
+    "provider_schema_mismatch": {
+        "status": "degraded",
+        "severity": "warning",
+        "message": "provider 响应无法规范化。",
+        "impact": "malformed provider evidence 已被丢弃，不会进入 RAG citation、memory 或 KT facts。",
+        "actionable_hint": "检查 provider SDK 返回字段、metadata 别名和 adapter schema。",
+    },
+    "provider_budget_exceeded": {
+        "status": "degraded",
+        "severity": "warning",
+        "message": "provider quota、rate limit 或预算已触发。",
+        "impact": "系统只使用已经取得的 evidence，不等待 provider 覆盖 KT facts。",
+        "actionable_hint": "检查 quota、rate limit、调用预算和 provider 账单设置；必要时降低 live 调用频率。",
+    },
+}
 
 
 def build_provider_health(
     settings: MathTutorSettings | None = None,
+    provider_gaps: Iterable[Mapping[str, Any]] | None = None,
 ) -> ProviderHealthResponse:
     active_settings = settings or get_settings()
     checked_at = datetime.now(UTC).isoformat()
@@ -39,6 +86,7 @@ def build_provider_health(
         _content_rag_artifact_health(active_settings, checked_at),
         _learning_context_health(active_settings, checked_at),
     ]
+    components = _apply_provider_gaps(components, provider_gaps or [])
     status = _overall_status(component.status for component in components)
     return ProviderHealthResponse(
         status=status,
@@ -391,6 +439,177 @@ def _overall_status(statuses: Iterable[ProviderHealthStatus]) -> ProviderHealthS
     if "not_configured" in status_set:
         return "degraded"
     return "healthy"
+
+
+def _apply_provider_gaps(
+    components: list[ProviderHealthComponent],
+    provider_gaps: Iterable[Mapping[str, Any]],
+) -> list[ProviderHealthComponent]:
+    normalized_by_component: dict[str, list[dict[str, Any]]] = {}
+    for gap in provider_gaps:
+        component = _provider_gap_component(gap)
+        normalized = _provider_health_gap(gap)
+        normalized_by_component.setdefault(component, []).append(normalized)
+
+    if not normalized_by_component:
+        return components
+
+    updated: list[ProviderHealthComponent] = []
+    for component in components:
+        component_gaps = normalized_by_component.get(component.component, [])
+        if not component_gaps:
+            updated.append(component)
+            continue
+        status = _most_severe_status(
+            [component.status, *(str(gap["status"]) for gap in component_gaps)]
+        )
+        severity = _most_severe_severity(
+            [component.severity, *(str(gap["severity"]) for gap in component_gaps)]
+        )
+        primary_gap = component_gaps[0]
+        updated.append(
+            component.model_copy(
+                update={
+                    "status": status,
+                    "severity": severity,
+                    "recoverable": component.recoverable and bool(primary_gap["recoverable"]),
+                    "actionable_hint": primary_gap["actionable_hint"],
+                    "evidence_gaps": [
+                        *component.evidence_gaps,
+                        *component_gaps,
+                    ],
+                }
+            )
+        )
+    return updated
+
+
+def _provider_health_gap(gap: Mapping[str, Any]) -> dict[str, Any]:
+    gap_type = str(gap.get("gap_type") or gap.get("category") or gap.get("code") or "")
+    if gap_type not in PROVIDER_EVIDENCE_GAP_TYPES:
+        gap_type = "provider_failure"
+    presentation = PROVIDER_GAP_HEALTH[gap_type]
+    provider = _safe_text(gap.get("provider") or "provider")
+    operation = _safe_text(gap.get("operation") or "readiness")
+    details = _sanitize_health_value(gap.get("details") or {})
+    if not isinstance(details, dict):
+        details = {}
+    return {
+        "gap_type": gap_type,
+        "code": gap_type,
+        "category": gap_type,
+        "provider": provider,
+        "operation": operation,
+        "stage": _safe_text(gap.get("stage") or "provider_health"),
+        "status": presentation["status"],
+        "severity": presentation["severity"],
+        "recoverable": bool(gap.get("recoverable", True)),
+        "reason": presentation["message"],
+        "message": presentation["message"],
+        "impact": presentation["impact"],
+        "actionable_hint": presentation["actionable_hint"],
+        "details": {
+            "source_gap_type": gap_type,
+            **details,
+        },
+    }
+
+
+def _provider_gap_component(gap: Mapping[str, Any]) -> str:
+    explicit = str(gap.get("health_component") or "")
+    if explicit in {"memory", "rag", "kt", "content_rag_artifact", "learning_context"}:
+        return explicit
+    provider = str(gap.get("provider") or "").lower()
+    operation = str(gap.get("operation") or "").lower()
+    if "mem0" in provider or "memory" in provider or "memory" in operation:
+        return "memory"
+    if (
+        "viking" in provider
+        or "openviking" in provider
+        or "rag" in provider
+        or "search" in operation
+        or "citation" in operation
+    ):
+        return "rag"
+    if "dgekt" in provider or "kt" in provider or "diagnos" in operation:
+        return "kt"
+    return "learning_context"
+
+
+def _most_severe_status(statuses: Iterable[str]) -> ProviderHealthStatus:
+    order = {
+        "healthy": 0,
+        "not_configured": 1,
+        "degraded": 2,
+        "unavailable": 3,
+    }
+    value = max(statuses, key=lambda status: order.get(status, 0))
+    return value if value in order else "healthy"
+
+
+def _most_severe_severity(severities: Iterable[str]) -> str:
+    order = {"info": 0, "warning": 1, "error": 2}
+    value = max(severities, key=lambda severity: order.get(severity, 0))
+    return value if value in order else "info"
+
+
+def _sanitize_health_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if _is_sensitive_health_key(key_text):
+                continue
+            sanitized[key_text] = _sanitize_health_value(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_health_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_health_value(item) for item in value]
+    if isinstance(value, str):
+        return _safe_text(value)
+    return value
+
+
+def _is_sensitive_health_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    compact = normalized.replace("_", "")
+    if normalized in RAW_PROVIDER_KEYS:
+        return True
+    if any(token in normalized for token in ("raw_provider", "sdk_response", "provider_debug")):
+        return True
+    if "embedding" in normalized or "vector" in normalized:
+        return True
+    return any(
+        token in compact
+        for token in (
+            "apikey",
+            "authorization",
+            "bearer",
+            "credential",
+            "secret",
+            "token",
+            "password",
+        )
+    )
+
+
+def _safe_text(value: Any) -> str:
+    text = str(value)
+    replacements = [
+        (r"(?i)(authorization\s*:\s*bearer\s+)\S+", r"\1<redacted>"),
+        (r"(?i)(bearer\s+)\S+", r"\1<redacted>"),
+        (r"(?i)(api[_-]?key\s*[=:]\s*)\S+", r"\1<redacted>"),
+        (r"(?i)(x-api-key\s*[=:]\s*)\S+", r"\1<redacted>"),
+        (r"(?i)(credential[s]?\s*[=:]\s*)\S+", r"\1<redacted>"),
+        (r"(?i)(secret\s*[=:]\s*)\S+", r"\1<redacted>"),
+        (r"(?i)(token\s*[=:]\s*)\S+", r"\1<redacted>"),
+        (r"(?i)(/Users/|/var/|/tmp/|/private/|/Volumes/)[^\s\"']+", "<local_path_redacted>"),
+        (r"(?i)[A-Z]:\\[^\s\"']+", "<local_path_redacted>"),
+    ]
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text)
+    return text
 
 
 def _dgekt_offline_evidence_gaps(

@@ -1,6 +1,6 @@
 # V1.8 Provider Health 与可观测性
 
-本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99、#100 与 #101：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG、KT/DGEKT、Content/RAG artifact 与 LearningContextLayer readiness 诊断。
+本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99、#100、#101 与 #102：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG、KT/DGEKT、Content/RAG artifact、LearningContextLayer readiness 诊断，以及 provider gap 安全归一与敏感信息清洗。
 
 ## API
 
@@ -92,6 +92,30 @@ Content/RAG artifact readiness 使用同一个 `content_rag_artifact` 组件报�
 | 已配置导入路径但 artifact 不存在 | `imported_artifacts` | `unavailable` | 只报告 artifact 类别，不泄漏敏感本地路径。 |
 
 LearningContextLayer readiness 会显示当前是否仍是默认 `local_fallback`，或是否正在组装 provider/imported 证据。它只表达上下文证据组装能力；上游 provider 或 artifact 降级时只保留 evidence gap，不改写 mastery、weak concepts、forgetting risk、prediction probability 或任何 KT facts。
+
+## #102 Provider Gap 安全归一
+
+Provider Health 会复用现有 provider evidence gap 词汇，并把最近一次只读采集到的 provider gap 归一为稳定诊断字段。默认 `/api/provider-health` 不主动访问 Mem0、VikingDB、OpenViking 或 DGEKT live runtime；它只读取当前 provider adapter 已记录的 `last_evidence_gaps`，不会写 memory、progress、context、RAG、TeachingTrace 或 KT state。
+
+当前归一分类：
+
+| gap_type | health status | severity | 说明 |
+| --- | --- | --- | --- |
+| `provider_failure` | `unavailable` | `error` | provider evidence 当前不可用，本地或 fixture evidence 继续可用。 |
+| `provider_timeout` | `unavailable` | `warning` | provider 未在 timeout 内返回 evidence。 |
+| `provider_auth_error` | `unavailable` | `error` | provider 凭据或权限不可用，不信任失败 provider evidence。 |
+| `provider_empty_result` | `degraded` | `info` | provider 未返回可用记忆或 citation，不伪造 evidence。 |
+| `provider_schema_mismatch` | `degraded` | `warning` | provider raw response 无法规范化，malformed evidence 会被丢弃。 |
+| `provider_budget_exceeded` | `degraded` | `warning` | quota、rate limit 或预算触发，只使用已取得 evidence。 |
+
+每个归一后的 gap 至少包含 `gap_type`、`code`、`category`、`provider`、`operation`、`status`、`severity`、`recoverable`、`message`、`impact`、`actionable_hint` 与已清洗 `details`。前端状态面板只渲染 gap label、中文 reason/message 与 actionable hint，不展开 raw `details`。
+
+清洗规则：
+
+- 移除 `raw_provider_payload`、`sdk_response`、`embedding`、`embedding_vector`、`vector`、`provider_debug` 等 SDK 噪声字段。
+- 移除或清洗 `api_key`、`authorization`、`bearer token`、`credential`、`secret`、`password` 等敏感字段和值。
+- 清洗 `/Users/...`、`/tmp/...`、`/private/...`、provider cache、checkpoint、dataset 或 artifact 绝对路径，只保留安全摘要或配置项名称。
+- Health 输出只表达诊断，不进入 mastery、prediction facts、RAG citation 权威字段或 active context decision。
 
 ## 只读边界
 
