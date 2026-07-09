@@ -132,7 +132,7 @@ V1.8 Provider Health 只读诊断：
 curl http://127.0.0.1:8000/api/provider-health
 ```
 
-默认会显示 Memory / RAG / KT / Content/RAG artifact / LearningContextLayer 的本地 fallback、mock 或 demo 状态可运行。Mem0、VikingDB、OpenViking 和真实 DGEKT 仍然是显式 opt-in；缺少 live provider、DGEKT checkpoint/dataset/Q-matrix/offline evidence 或 imported artifact 配置时只返回中文 readiness 诊断，不影响默认本地学习流程。
+默认会显示 Memory / RAG / KT / Content/RAG artifact / LearningContextLayer 的本地 fallback、mock 或 demo 状态可运行。Mem0、VikingDB、OpenViking 和真实 DGEKT 仍然是显式 opt-in；缺少 live provider、DGEKT checkpoint/dataset/Q-matrix/offline evidence 或 imported artifact 配置时只返回中文 readiness 诊断，不影响默认本地学习流程。Provider timeout、auth error、empty result、schema mismatch、budget exceeded 和通用 failure 会被归一为安全 gap 摘要，并清洗 credentials、raw provider payload、SDK response、embedding/vector、debug 字段和敏感本地路径。
 
 启动 React 学习驾驶舱：
 

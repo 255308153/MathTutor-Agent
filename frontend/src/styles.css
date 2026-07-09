@@ -478,6 +478,33 @@ button:disabled {
   line-height: 1.45;
 }
 
+.provider-gap-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provider-gap-list li {
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid #d9914b;
+  background: #fffaf2;
+  padding: 8px 9px;
+}
+
+.provider-gap-list strong {
+  color: #604316;
+  font-size: 0.78rem;
+}
+
+.provider-gap-list span {
+  color: #47564f;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .memory-panel {
   display: grid;
   gap: 12px;

@@ -502,6 +502,7 @@ function ProviderHealthPanel({
 }
 
 function ProviderHealthRow({ component }: { component: ProviderHealthComponent }) {
+  const gaps = component.evidence_gaps ?? [];
   return (
     <div className="provider-component">
       <div className="provider-component-heading">
@@ -520,6 +521,17 @@ function ProviderHealthRow({ component }: { component: ProviderHealthComponent }
         <span>{component.recoverable ? "可恢复" : "需人工处理"}</span>
       </div>
       <p>{component.actionable_hint}</p>
+      {gaps.length > 0 && (
+        <ul className="provider-gap-list">
+          {gaps.map((gap, index) => (
+            <li key={`${component.component}-${gap.gap_type ?? gap.category ?? "gap"}-${index}`}>
+              <strong>{gapLabel(gap)}</strong>
+              <span>{gap.reason ?? gap.message ?? "Provider evidence 缺口"}</span>
+              {gap.actionable_hint && <small>{gap.actionable_hint}</small>}
+            </li>
+          ))}
+        </ul>
+      )}
       <small>{formatDateTime(component.last_checked_at)}</small>
     </div>
   );
@@ -1318,12 +1330,12 @@ function gapLabel(gap: EvidenceGap) {
     knowledge_resource: "缺少 RAG citation",
     stale_task_state: "task_state 已过期",
     low_confidence_observation: "低置信度 tool observation",
-    provider_failure: "provider failure",
-    provider_timeout: "provider timeout",
-    provider_auth_error: "provider auth error",
-    provider_empty_result: "provider empty result",
-    provider_schema_mismatch: "provider schema mismatch",
-    provider_budget_exceeded: "provider budget exceeded",
+    provider_failure: "provider 通用失败",
+    provider_timeout: "provider 请求超时",
+    provider_auth_error: "provider 认证失败",
+    provider_empty_result: "provider 空结果",
+    provider_schema_mismatch: "provider schema 不匹配",
+    provider_budget_exceeded: "provider 预算超限",
     context_budget: "上下文预算裁剪",
     missing_content: "教学内容缺口",
     missing_mapping: "映射缺口",
