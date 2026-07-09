@@ -103,6 +103,10 @@ export interface AssembledContextEvidence {
   authoritative_kt_facts?: Record<string, unknown>;
   normalized_context?: Record<string, unknown>;
   asset_summaries?: ContextAssetEvidence[];
+  asset_selection?: {
+    selected?: ContextAssetEvidence[];
+    omitted?: ContextAssetEvidence[];
+  };
   evidence_gaps?: EvidenceGap[];
   evidence_refs?: string[];
   budget_used?: number;
