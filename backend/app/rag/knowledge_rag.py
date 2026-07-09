@@ -262,11 +262,23 @@ def create_knowledge_rag(settings: MathTutorSettings | None = None) -> Knowledge
 
         return FakeKnowledgeRAGProvider()
     if active_settings.rag_provider_mode == "live_provider":
-        raise RAGProviderConfigurationError(
-            "MATHTUTOR_RAG_PROVIDER_MODE=live_provider 已显式选择 VikingDB/OpenViking "
-            "live provider，但 V1.7 #71 只固定 contract，不加载向量库 SDK。"
-            "请保持 local_fallback，或在后续 RAG adapter issue 中接入真实 provider。"
+        from .viking_provider import create_viking_knowledge_rag_adapter
+
+        return create_viking_knowledge_rag_adapter(
+            active_settings,
+            fallback=_create_local_fallback_or_none(active_settings),
         )
+    return _create_local_knowledge_rag(active_settings)
+
+
+def _create_local_fallback_or_none(active_settings: MathTutorSettings) -> KnowledgeRAG | None:
+    try:
+        return _create_local_knowledge_rag(active_settings)
+    except RAGArtifactConfigurationError:
+        return None
+
+
+def _create_local_knowledge_rag(active_settings: MathTutorSettings) -> KnowledgeRAG:
     if active_settings.rag_source == "demo":
         return LocalKnowledgeRAG()
     if active_settings.rag_source == "imported":

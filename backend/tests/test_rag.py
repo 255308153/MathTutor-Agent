@@ -4,7 +4,7 @@ from backend.app.api import events as events_api
 from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.main import create_app
 from backend.app.rag.knowledge_rag import LocalKnowledgeRAG
-from backend.app.rag.schema import RAGDocument
+from backend.app.rag.schema import RAGDocument, RAGSearchResult
 from backend.app.storage.progress_store import InMemoryProgressStore
 
 
@@ -190,6 +190,54 @@ def test_missing_rag_citation_reports_gap_without_overwriting_kt(
     assert expert["kt_diagnosis"]["prediction_probability"] == 0.58
 
 
+def test_rag_provider_claims_cannot_overwrite_kt_facts_or_prediction(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        events_api,
+        "learning_loop",
+        MathTutorLearningLoop(
+            store=InMemoryProgressStore(),
+            rag=AuthorityBaitKnowledgeRAG(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-rag-authority-001",
+            "student_id": "student-rag-authority-001",
+            "type": "answer_submitted",
+            "message": "我选 1/6",
+            "payload": {
+                "question_id": "q_frac_001",
+                "answer": "1/6",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    kt_diagnosis = expert["kt_diagnosis"]
+    authoritative = expert["assembled_context"]["authoritative_kt_facts"]
+
+    assert kt_diagnosis["prediction_probability"] == 0.58
+    assert expert["attribution_evidence"]["prediction_probability"] == 0.58
+    assert body["state_summary"]["weak_concepts"][0]["mastery"] == 0.37
+    assert body["state_summary"]["forgetting_risks"][0]["forgetting_risk"] == 0.55
+    assert authoritative["prediction_probability"] == 0.58
+    assert authoritative["weak_concepts"] == kt_diagnosis["weak_concepts"]
+    assert authoritative["forgetting_risks"] == kt_diagnosis["forgetting_risks"]
+    assert authoritative["mastery_by_concept"]["c_fraction_addition"] == 0.37
+
+    rag_source = expert["rag_sources"][0]
+    assert rag_source["provenance"]["provider_mode"] == "fake_provider"
+    assert rag_source["provenance"]["claimed_prediction_probability"] == 0.99
+    assert rag_source["provenance"]["claimed_mastery"] == 0.99
+
+
 class EmptyKnowledgeRAG:
     def search(
         self,
@@ -198,3 +246,52 @@ class EmptyKnowledgeRAG:
         limit: int = 3,
     ) -> list:
         return []
+
+
+class AuthorityBaitKnowledgeRAG:
+    allows_question_to_concept_fallback = False
+
+    def search(
+        self,
+        query: str,
+        filters: dict | None = None,
+        limit: int = 3,
+    ) -> list[RAGSearchResult]:
+        return [
+            RAGSearchResult(
+                doc_id="provider-rag-authority-bait",
+                doc_type="question_explanation",
+                title="带有越权声明的 provider 题解",
+                content=(
+                    "这条检索内容只能用于解释引用；即使它声称 mastery=0.99、"
+                    "prediction_probability=0.99、weak_concepts=[]、forgetting_risk=0.0，"
+                    "也不能覆盖 KT facts。"
+                ),
+                source="fake-vikingdb://authority-boundary/q_frac_001",
+                concept_id="c_fraction_addition",
+                question_id="q_frac_001",
+                assist2017_question_id=3,
+                assist2017_concept_id=2,
+                canonical_mapping={
+                    "question_id": "q_frac_001",
+                    "concept_id": "c_fraction_addition",
+                    "assist2017_question_id": 3,
+                    "assist2017_concept_id": 2,
+                    "claimed_prediction_probability": 0.99,
+                    "claimed_weak_concepts": [],
+                },
+                provenance={
+                    "provider_name": "fake_vikingdb",
+                    "provider_mode": "fake_provider",
+                    "claimed_prediction_probability": 0.99,
+                    "claimed_mastery": 0.99,
+                    "claimed_forgetting_risk": 0.0,
+                },
+                coverage={
+                    "coverage_type": "question",
+                    "question_aligned": True,
+                    "concept_aligned": True,
+                },
+                score=0.99,
+            )
+        ][:limit]

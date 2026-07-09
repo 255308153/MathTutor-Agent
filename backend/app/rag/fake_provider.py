@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from .schema import RAGSearchResult
+from .viking_provider import (
+    matches_rag_metadata_filter,
+    normalize_rag_metadata_filters,
+)
 
 
 class FakeKnowledgeRAGProvider:
@@ -11,8 +15,14 @@ class FakeKnowledgeRAGProvider:
     provider_mode = "fake_provider"
     allows_question_to_concept_fallback = True
 
-    def __init__(self, records: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        records: list[dict[str, Any]] | None = None,
+        *,
+        provider_supports_metadata_filter: bool = True,
+    ) -> None:
         self._records = records if records is not None else _fake_provider_records()
+        self.provider_supports_metadata_filter = provider_supports_metadata_filter
 
     def search(
         self,
@@ -20,9 +30,12 @@ class FakeKnowledgeRAGProvider:
         filters: dict[str, Any] | None = None,
         limit: int = 3,
     ) -> list[RAGSearchResult]:
-        filters = filters or {}
+        filters = normalize_rag_metadata_filters(filters or {})
         candidates = [
-            record for record in self._records if self._matches_filters(record, filters)
+            record
+            for record in self._records
+            if not self.provider_supports_metadata_filter
+            or self._matches_filters(record, filters)
         ]
         terms = self._terms(query)
         scored = [
@@ -31,11 +44,15 @@ class FakeKnowledgeRAGProvider:
         ]
         scored.sort(key=lambda item: (-item[0], item[1]["id"]))
         positive = [(score, record) for score, record in scored if score > 0]
-        selected = positive[:limit] if positive else scored[:limit]
-        return [
+        fetch_limit = max(limit * 5, 10) if filters and not self.provider_supports_metadata_filter else limit
+        selected = positive[:fetch_limit] if positive else scored[:fetch_limit]
+        results = [
             self._to_domain_result(record, score=score)
             for score, record in selected
         ]
+        filtered = [result for result in results if matches_rag_metadata_filter(result, filters)]
+        filtered.sort(key=lambda result: (-result.score, result.doc_id))
+        return filtered[:limit]
 
     def _matches_filters(self, record: dict[str, Any], filters: dict[str, Any]) -> bool:
         payload = record["payload"]
@@ -77,7 +94,10 @@ class FakeKnowledgeRAGProvider:
             assist2017_concept_id=payload.get("assist2017_concept_id"),
             canonical_mapping=dict(payload.get("canonical_mapping") or {}),
             provenance={
+                "provider_name": "fake_vikingdb",
                 "provider_mode": "fake_provider",
+                "collection": "fake_rag_contract_fixture",
+                "provider_record_id": record["id"],
                 "source": payload["source"],
             },
             coverage=dict(payload.get("coverage") or {}),
