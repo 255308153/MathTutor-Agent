@@ -558,6 +558,16 @@ git diff --check
 | `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`。 |
 | `git diff --check` | 通过。 |
 
+## V1.8 Provider Health 与可观测性
+
+V1.8 Provider Health gate 让学习驾驶舱展示“系统状态 / Provider 状态”，并新增只读 readiness API。基线说明见 [docs/V1_8_PROVIDER_HEALTH.md](docs/V1_8_PROVIDER_HEALTH.md)。
+
+- `GET /api/health` 保持向后兼容，继续只返回 `{"status":"ok"}`。
+- `GET /api/provider-health` 返回 Memory、RAG、KT、Content/RAG artifact 和 LearningContextLayer 的统一状态合约。
+- 默认 `local_fallback / mock / demo` 路径显示为可运行，不要求 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、full ASSISTments2017 数据、generated vector index 或网络访问。
+- Mem0、VikingDB、OpenViking 和 DGEKT live/checkpoint 仍是 opt-in；默认 provider health 不实例化 live adapter，也不访问外部 provider。
+- Provider Health 只做诊断与运营可见性，不能写 memory、progress、context、RAG、TeachingTrace 或 KT state。
+
 ## V1.6 已知限制与下一阶段优先级
 
 当前仍是技术内测版本：

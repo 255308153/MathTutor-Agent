@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   deleteStudentMemory,
+  fetchProviderHealth,
   fetchStudentMemories,
   sendLearningEvent,
   updateStudentMemoryControl
@@ -29,6 +30,9 @@ import type {
   ContextAssetEvidence,
   EvidenceGap,
   MathTutorEventResponse,
+  ProviderHealthComponent,
+  ProviderHealthResponse,
+  ProviderHealthStatus,
   RecommendedQuestion,
   StudentMemory
 } from "./types";
@@ -53,18 +57,25 @@ export default function App() {
   const [current, setCurrent] = useState<MathTutorEventResponse | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [memories, setMemories] = useState<StudentMemory[]>([]);
+  const [providerHealth, setProviderHealth] = useState<ProviderHealthResponse | null>(null);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
+  const [isProviderHealthLoading, setIsProviderHealthLoading] = useState(false);
   const [pendingMemoryControlId, setPendingMemoryControlId] = useState("");
   const [confirmingMemoryDeleteId, setConfirmingMemoryDeleteId] = useState("");
   const [error, setError] = useState("");
   const [memoryError, setMemoryError] = useState("");
+  const [providerHealthError, setProviderHealthError] = useState("");
   const [memoryNotice, setMemoryNotice] = useState("");
   const activeStudentId = studentId || DEFAULT_STUDENT_ID;
 
   useEffect(() => {
     void requestNextStep("我下一步应该练什么？");
+  }, []);
+
+  useEffect(() => {
+    void loadProviderHealth();
   }, []);
 
   useEffect(() => {
@@ -159,6 +170,19 @@ export default function App() {
       setMemoryError(err instanceof Error ? err.message : "学生记忆读取失败");
     } finally {
       setIsMemoryLoading(false);
+    }
+  }
+
+  async function loadProviderHealth() {
+    setIsProviderHealthLoading(true);
+    setProviderHealthError("");
+    try {
+      const response = await fetchProviderHealth();
+      setProviderHealth(response);
+    } catch (err) {
+      setProviderHealthError(err instanceof Error ? err.message : "Provider 状态读取失败");
+    } finally {
+      setIsProviderHealthLoading(false);
     }
   }
 
@@ -367,6 +391,13 @@ export default function App() {
             {isLoading && <p className="loading-line">正在处理学习事件...</p>}
           </article>
 
+          <ProviderHealthPanel
+            health={providerHealth}
+            isLoading={isProviderHealthLoading}
+            error={providerHealthError}
+            onRefresh={() => void loadProviderHealth()}
+          />
+
           <MemoryPanel
             memories={memories}
             selectedMemoryId={selectedMemoryId}
@@ -407,6 +438,86 @@ export default function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function ProviderHealthPanel({
+  health,
+  isLoading,
+  error,
+  onRefresh
+}: {
+  health: ProviderHealthResponse | null;
+  isLoading: boolean;
+  error: string;
+  onRefresh: () => void;
+}) {
+  const components = health?.components ?? [];
+  return (
+    <article className="panel provider-health-panel">
+      <div className="panel-title panel-title-with-action">
+        <span>
+          <Activity size={18} />
+          <h2>系统状态 / Provider 状态</h2>
+        </span>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          aria-label="刷新 Provider 状态"
+          title="刷新 Provider 状态"
+        >
+          <RefreshCw size={16} />
+        </button>
+      </div>
+
+      <div className="provider-health-summary">
+        <span className={`provider-status provider-status-${health?.status ?? "not_configured"}`}>
+          {statusName(health?.status)}
+        </span>
+        <strong>{health?.summary ?? "正在读取 Provider 状态..."}</strong>
+        <small>{health ? `更新时间 ${formatDateTime(health.generated_at)}` : "等待读取"}</small>
+      </div>
+
+      {isLoading && <p className="loading-line">正在读取 Provider 状态...</p>}
+      {error && (
+        <div className="memory-error" role="status">
+          <span>{error}</span>
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={15} />
+            重试
+          </button>
+        </div>
+      )}
+
+      <div className="provider-component-list">
+        {components.map((component) => (
+          <ProviderHealthRow key={component.component} component={component} />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ProviderHealthRow({ component }: { component: ProviderHealthComponent }) {
+  return (
+    <div className="provider-component">
+      <div className="provider-component-heading">
+        <strong>{component.display_name}</strong>
+        <span className={`provider-status provider-status-${component.status}`}>
+          {statusName(component.status)}
+        </span>
+      </div>
+      <div className="provider-component-facts">
+        <span>{component.provider}</span>
+        <span>{component.mode}</span>
+        <span>{component.configured ? "已配置" : "未配置"}</span>
+        <span>{component.recoverable ? "可恢复" : "需人工处理"}</span>
+      </div>
+      <p>{component.actionable_hint}</p>
+      <small>{formatDateTime(component.last_checked_at)}</small>
+    </div>
   );
 }
 
@@ -945,6 +1056,15 @@ function memoryProviderName(source: string) {
     mem0: "Mem0",
     mem0_unavailable: "Mem0 unavailable"
   }[source] ?? source;
+}
+
+function statusName(status: ProviderHealthStatus | undefined) {
+  return {
+    healthy: "正常",
+    degraded: "降级",
+    unavailable: "不可用",
+    not_configured: "未配置"
+  }[status ?? "not_configured"];
 }
 
 function formatDateTime(value: string) {

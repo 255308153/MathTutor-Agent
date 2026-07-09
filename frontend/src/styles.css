@@ -344,6 +344,115 @@ button:disabled {
   margin-bottom: 16px;
 }
 
+.provider-health-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.provider-health-summary {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #dde5e0;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 12px;
+}
+
+.provider-health-summary strong {
+  color: #17201b;
+  line-height: 1.4;
+}
+
+.provider-health-summary small,
+.provider-component small {
+  color: #617069;
+  overflow-wrap: anywhere;
+}
+
+.provider-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 56px;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.provider-status-healthy {
+  background: #eaf6ef;
+  color: #23734f;
+}
+
+.provider-status-degraded {
+  background: #fff7de;
+  color: #76551c;
+}
+
+.provider-status-unavailable {
+  background: #fff5ef;
+  color: #8f3d12;
+}
+
+.provider-status-not_configured {
+  background: #eef2f4;
+  color: #45525f;
+}
+
+.provider-component-list {
+  display: grid;
+  gap: 8px;
+}
+
+.provider-component {
+  border: 1px solid #dde5e0;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 10px;
+}
+
+.provider-component-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-component-heading strong {
+  min-width: 0;
+  color: #17201b;
+  overflow-wrap: anywhere;
+}
+
+.provider-component-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.provider-component-facts span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  background: #edf4f1;
+  color: #275247;
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.provider-component p {
+  margin-bottom: 6px;
+  color: #47564f;
+  line-height: 1.45;
+}
+
 .memory-panel {
   display: grid;
   gap: 12px;
@@ -978,6 +1087,11 @@ pre {
   .memory-layout,
   .memory-facts {
     grid-template-columns: 1fr;
+  }
+
+  .provider-component-heading {
+    display: grid;
+    justify-items: start;
   }
 
   .factor-grid {
