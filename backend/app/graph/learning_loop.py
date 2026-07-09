@@ -379,6 +379,7 @@ class MathTutorLearningLoop:
             session_id=state.session_id,
             concept_id=concept_id,
             question_id=question_id,
+            intent=state.intent,
             top_k=8,
         )
         if not retrieved:

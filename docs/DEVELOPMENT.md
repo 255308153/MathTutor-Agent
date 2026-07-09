@@ -284,6 +284,15 @@ V1.4 #30 的 `answer_submitted` 上下文快照规则：
 - `trace_reference` 记录 retrieval refs、planner decision ref 和 memory update source，用来追踪本轮证据路径。
 - 代码入口是 `LearningContextLayer.collect_answer_submission_assets()`；主循环只在 planner 之后或未判题 fallback plan 中调用它。
 
+V1.4 #31 的检索、预算和裁剪规则：
+
+- `InMemoryContextAssetStore.search()` 与 `LearningContextLayer.retrieve_assets()` 支持 `asset_types`、`source_types`、`student_id`、`session_id`、`concept_id`、`question_id`、`freshness`、`min_confidence` 和 `intent`。
+- 检索排序先看 question / concept 命中，再看 session 命中、asset priority、freshness、confidence 和更新时间，保证同一输入下稳定可复现。
+- `assemble_context(token_budget=...)` 只把 selected assets 写入 `normalized_context`；被已有 `excluded_reason` 标记或因预算超限裁剪的资产仍会保留在 `asset_summaries`，供 TeachingTrace 审计。
+- `budget_used` / `budget_limit` 是当前本地 fallback 的近似上下文成本，不是模型 tokenizer 精确 token 数；`compression_summary` 会记录策略、候选数、选中数、裁剪数和裁剪理由。
+- evidence gap 分类包括 `student_memory`、`knowledge_resource`、`stale_task_state`、`low_confidence_observation`、`provider_failure`、`context_budget`。provider failure 只能作为 gap 透出，不能伪造 memory 或 RAG evidence。
+- KT facts 不参与资产预算裁剪，始终通过 `assembled_context.authoritative_kt_facts` 输出。
+
 ## 5. 统一事件 API
 
 V1 后端通过统一事件入口接收聊天消息和学习事件：

@@ -271,6 +271,14 @@ V1.4 #30 让 `answer_submitted` 路径也生成可审计上下文快照：
 - TeachingTrace expert evidence 会展示 selected / omitted context assets；例如正确作答或未判题时，错因诊断 asset 会以 omitted reason 出现。
 - 这些资产只是审计快照和引用路径，不能替代 progress store、LearningEvent、KTDiagnosis、RAG 或 memory store 作为 runtime 真相。
 
+V1.4 #31 增强 context retrieval / assembly 的可解释取舍：
+
+- `retrieve_assets()` 支持按 `asset_type`、`student_id`、`session_id`、`concept_id`、`question_id`、`source_type`、`freshness` 和最低 `confidence` 过滤。
+- 排序优先考虑当前 question / concept、当前 session、上下文优先级、freshness 和 confidence；同等条件下使用更新时间保持稳定。
+- `assemble_context()` 会按预算选择资产，输出 `budget_used`、`budget_limit`、`compression_summary`，并在 `asset_summaries` 标记 `selection_status`、`included_reason`、`excluded_reason` 和 `budget_cost`。
+- evidence gaps 会区分 `student_memory` 缺失、`knowledge_resource` 缺失、`stale_task_state`、`low_confidence_observation`、`provider_failure` 和 `context_budget`。
+- 优先级保持为 KT facts first，其后是 current task/tool snapshots、student memory、knowledge resource、trace reference；KT facts 不进入可裁剪资产预算。
+
 ## V1.3 / V1.4 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：

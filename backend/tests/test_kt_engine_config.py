@@ -789,7 +789,13 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
         asset["concept_id"] == canonical_concept_id
         for asset in assembled["normalized_context"]["knowledge_resource"]
     )
-    assert any(gap["reason"] == "无可用记忆" for gap in assembled["evidence_gaps"])
+    if assembled["normalized_context"]["student_memory"]:
+        assert any(
+            memory.get("included_reason")
+            for memory in assembled["normalized_context"]["student_memory"]
+        )
+    else:
+        assert any(gap["reason"] == "无可用记忆" for gap in assembled["evidence_gaps"])
 
 
 def test_dgekt_mapping_error_returns_readable_api_error(
