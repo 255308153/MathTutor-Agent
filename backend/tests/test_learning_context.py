@@ -509,3 +509,260 @@ def test_context_assets_cannot_override_mastery_or_prediction_facts() -> None:
     assert assembled.normalized_context["student_memory"][0]["metadata"]["evidence"][
         "prediction_probability"
     ] == 0.99
+
+
+def test_answer_submission_records_task_tool_and_trace_context_assets_for_wrong_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.api import events as events_api
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+    from backend.app.storage.progress_store import InMemoryProgressStore
+
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-context-answer-wrong",
+            "student_id": "student-context-answer-wrong",
+            "type": "answer_submitted",
+            "message": "我选 1/6",
+            "payload": {"question_id": "q_frac_001", "answer": "1/6"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    context_assets = expert["context_assets"]
+    plan_metadata = {
+        event["stage"]: event["metadata"] for event in body["teaching_trace"]
+    }["plan"]
+
+    task_assets = [
+        asset
+        for asset in context_assets
+        if asset["asset_type"] == "task_state"
+        and asset["source_ref"].endswith(":answer_submitted")
+    ]
+    assert task_assets
+    task_metadata = task_assets[0]["metadata"]
+    assert task_assets[0]["source_ref"].startswith(f"event:{body['trace_id']}")
+    assert task_metadata["state_reference_only"] is True
+    assert task_metadata["submitted_answer"] == "1/6"
+    assert task_metadata["grading_result"]["is_correct"] is False
+    assert task_metadata["next_action"]["type"].endswith("_after_mistake")
+
+    tool_assets = [
+        asset for asset in context_assets if asset["asset_type"] == "tool_observation"
+    ]
+    tool_sources = {asset["source_type"] for asset in tool_assets}
+    assert {"kt", "rag", "mistake_diagnoser", "recommender"}.issubset(tool_sources)
+
+    kt_asset = next(asset for asset in tool_assets if asset["source_type"] == "kt")
+    assert kt_asset["metadata"]["snapshot"] is True
+    assert kt_asset["metadata"]["source"] == "kt"
+    assert kt_asset["metadata"]["trace_id"] == body["trace_id"]
+    assert kt_asset["metadata"]["generated_at"]
+    assert kt_asset["freshness"] == "fresh"
+    assert kt_asset["metadata"]["prediction_probability"] == expert["kt_diagnosis"][
+        "prediction_probability"
+    ]
+
+    rag_asset = next(asset for asset in tool_assets if asset["source_type"] == "rag")
+    assert rag_asset["metadata"]["source_count"] >= 1
+    mistake_asset = next(
+        asset for asset in tool_assets if asset["source_type"] == "mistake_diagnoser"
+    )
+    assert mistake_asset["included_reason"] == "记录错因诊断工具观察快照"
+    assert mistake_asset["metadata"]["mistake_diagnosis"]["concept"]["concept_id"] == (
+        "c_fraction_addition"
+    )
+
+    trace_asset = next(
+        asset
+        for asset in context_assets
+        if asset["asset_type"] == "trace_reference"
+        and asset["source_ref"].endswith(":answer_submission")
+    )
+    assert trace_asset["metadata"]["decision_ref"] == f"planner:{body['trace_id']}"
+    assert trace_asset["metadata"]["memory_update_source"] == (
+        f"event:{body['trace_id']}:answer_submitted"
+    )
+
+    selected = plan_metadata["context_asset_selection"]["selected"]
+    assert any(asset["source_type"] == "kt" for asset in selected)
+    assert any(asset["source_type"] == "recommender" for asset in selected)
+    assert expert["context_asset_selection"]["selected"]
+    assert expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"] == (
+        expert["kt_diagnosis"]["prediction_probability"]
+    )
+    assert body["state_summary"]["weak_concepts"] == expert["kt_diagnosis"]["weak_concepts"]
+
+
+def test_answer_submission_records_omitted_mistake_snapshot_for_correct_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.api import events as events_api
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+    from backend.app.storage.progress_store import InMemoryProgressStore
+
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-context-answer-correct",
+            "student_id": "student-context-answer-correct",
+            "type": "answer_submitted",
+            "message": "答案是 3/4",
+            "payload": {"question_id": "q_frac_001", "answer": "3/4"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    context_assets = expert["context_assets"]
+    plan_metadata = {
+        event["stage"]: event["metadata"] for event in body["teaching_trace"]
+    }["plan"]
+
+    task_asset = next(
+        asset
+        for asset in context_assets
+        if asset["asset_type"] == "task_state"
+        and asset["source_ref"].endswith(":answer_submitted")
+    )
+    assert task_asset["metadata"]["grading_result"]["is_correct"] is True
+    assert task_asset["metadata"]["next_action"]["type"] == "reinforce_mastery"
+
+    omitted = plan_metadata["context_asset_selection"]["omitted"]
+    assert any(
+        asset["source_type"] == "mistake_diagnoser"
+        and asset["excluded_reason"] == "正确作答或未判题，本轮没有错因诊断"
+        for asset in omitted
+    )
+    assert any(
+        asset["source_type"] == "mistake_diagnoser"
+        for asset in expert["context_asset_selection"]["omitted"]
+    )
+    assert expert["kt_diagnosis"]["prediction_probability"] == 0.58
+    assert expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"] == 0.58
+
+
+def test_ungraded_answer_submission_records_task_tool_and_trace_context_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.api import events as events_api
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+    from backend.app.storage.progress_store import InMemoryProgressStore
+
+    class MissingAnswerRepository:
+        def get_question(self, question_id: str) -> dict[str, object] | None:
+            if question_id != "q_missing_answer":
+                return None
+            return {
+                "question_id": "q_missing_answer",
+                "stem": "计算：1/2 + 1/4 = ?",
+                "explanation": "先通分，再相加。",
+                "concept_id": "c_fraction_addition",
+                "concept_name": "异分母分数加法",
+                "difficulty": 0.35,
+                "teaching_type": "procedure",
+                "mistake_patterns": ["没有通分"],
+                "rag_doc_ids": [],
+                "content_availability": self.content_availability({}),
+            }
+
+        def content_availability(self, question: dict[str, object]) -> dict[str, object]:
+            return {
+                "status": "partial",
+                "has_stem": True,
+                "has_answer": False,
+                "has_explanation": True,
+                "missing_fields": ["standard_answer"],
+                "missing_labels": ["标准答案"],
+                "fallback_message": (
+                    "q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。"
+                ),
+            }
+
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        content=MissingAnswerRepository(),
+        rag=EmptyRAG(),
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-context-answer-ungraded",
+            "student_id": "student-context-answer-ungraded",
+            "type": "answer_submitted",
+            "message": "我提交一个无法判题的答案",
+            "payload": {"question_id": "q_missing_answer", "answer": "3/4"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    plan_metadata = {
+        event["stage"]: event["metadata"] for event in body["teaching_trace"]
+    }["plan"]
+    context_assets = expert["context_assets"]
+
+    assert body["state_summary"]["next_action"]["type"] == "record_ungraded_answer"
+    task_asset = next(
+        asset
+        for asset in context_assets
+        if asset["asset_type"] == "task_state"
+        and asset["source_ref"].endswith(":answer_submitted")
+    )
+    assert task_asset["metadata"]["submitted_answer"] == "3/4"
+    assert task_asset["metadata"]["grading_result"]["is_correct"] is None
+    assert task_asset["metadata"]["grading_result"]["grading_source"] == (
+        "missing_teaching_content"
+    )
+    assert task_asset["metadata"]["next_action"]["type"] == "record_ungraded_answer"
+
+    tool_sources = {
+        asset["source_type"]
+        for asset in context_assets
+        if asset["asset_type"] == "tool_observation"
+    }
+    assert {"kt", "rag", "mistake_diagnoser", "recommender"}.issubset(tool_sources)
+    assert any(
+        asset["asset_type"] == "trace_reference"
+        and asset["source_ref"].endswith(":answer_submission")
+        for asset in context_assets
+    )
+    assert any(
+        asset["source_type"] == "mistake_diagnoser"
+        for asset in plan_metadata["context_asset_selection"]["omitted"]
+    )
+    assert any(
+        asset["source_type"] == "rag"
+        for asset in plan_metadata["context_asset_selection"]["omitted"]
+    )
+    assert expert["planner_decision"]["decision"] == "record_ungraded_answer"
+    assert expert["assembled_context"]["authoritative_kt_facts"] == {
+        "weak_concepts": [],
+        "forgetting_risks": [],
+        "prediction_probability": 0.58,
+        "mastery_by_concept": {},
+    }

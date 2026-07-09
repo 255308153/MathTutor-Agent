@@ -263,6 +263,14 @@ V1.4 #29 / #35 进一步让“下一步建议”真实消费 normalized context�
 - RAG 没命中时不伪造 knowledge_resource，也不覆盖 KT facts，而是在 evidence gaps 标记“RAG 未找到相关知识资源”。
 - planner / recommender / response 读取 `assembled_context` 中的 normalized context，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
 
+V1.4 #30 让 `answer_submitted` 路径也生成可审计上下文快照：
+
+- `task_state` asset 记录 pending question、submitted answer、grading result 和 next action，`source_ref` 指向本轮 event / progress / trace。
+- `tool_observation` asset 记录 KT diagnosis、RAG retrieval、mistake diagnosis 和 recommendation candidates；KT 快照会标记 `source=kt`、`trace_id`、`generated_at`、`freshness=fresh`。
+- `trace_reference` asset 串联本轮检索来源、planner decision 和 memory update 来源。
+- TeachingTrace expert evidence 会展示 selected / omitted context assets；例如正确作答或未判题时，错因诊断 asset 会以 omitted reason 出现。
+- 这些资产只是审计快照和引用路径，不能替代 progress store、LearningEvent、KTDiagnosis、RAG 或 memory store 作为 runtime 真相。
+
 ## V1.3 / V1.4 已知限制与下一阶段优先级
 
 当前仍是本地可演示版本：

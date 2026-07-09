@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from ..schemas.learning import KTLearningProgress, LearningEvent
+from ..schemas.learning import KTDiagnosis, KTLearningProgress, LearningEvent
 
 
 ContextAssetType = Literal[
@@ -305,6 +305,254 @@ class LearningContextLayer:
                 included_reason="trace reference links context choices back to the current run",
             )
         )
+
+        return self.store.write_many(assets)
+
+    def collect_answer_submission_assets(
+        self,
+        *,
+        student_id: str,
+        session_id: str,
+        learning_event: LearningEvent,
+        kt_progress: KTLearningProgress,
+        kt_diagnosis: KTDiagnosis | None,
+        rag_context: list[dict[str, Any]],
+        teaching_plan: dict[str, Any] | None,
+        recommended_questions: list[dict[str, Any]],
+        trace_id: str,
+    ) -> list[ContextAsset]:
+        if learning_event.type != "answer_submitted":
+            return []
+
+        generated_at = datetime.now(UTC).isoformat()
+        question_id = (
+            str(learning_event.payload["question_id"])
+            if learning_event.payload.get("question_id")
+            else None
+        )
+        concept_id = (
+            str(learning_event.payload["concept_id"])
+            if learning_event.payload.get("concept_id")
+            else None
+        )
+        next_action = teaching_plan.get("selected_action") if teaching_plan else None
+        mistake_diagnosis = teaching_plan.get("mistake_diagnosis") if teaching_plan else None
+
+        assets = [
+            ContextAsset(
+                asset_type="task_state",
+                source_type="learning_loop_event",
+                source_ref=f"event:{trace_id}:answer_submitted",
+                summary=(
+                    f"answer_submitted question={question_id}; "
+                    f"is_correct={learning_event.payload.get('is_correct')}"
+                ),
+                metadata={
+                    "snapshot": True,
+                    "state_reference_only": True,
+                    "progress_ref": f"progress:{student_id}:v{kt_progress.version}",
+                    "event_ref": f"event:{trace_id}:answer_submitted",
+                    "trace_id": trace_id,
+                    "pending_question": kt_progress.pending_question,
+                    "submitted_answer": learning_event.payload.get("answer"),
+                    "grading_result": {
+                        "is_correct": learning_event.payload.get("is_correct"),
+                        "correct_answer_available": "correct_answer" in learning_event.payload,
+                        "grading_source": learning_event.payload.get("grading_source"),
+                    },
+                    "next_action": next_action,
+                },
+                evidence_refs=[
+                    f"progress:{student_id}:v{kt_progress.version}",
+                    f"event:{trace_id}:answer_submitted",
+                    f"trace:{trace_id}",
+                ],
+                confidence=1.0,
+                freshness="fresh",
+                student_id=student_id,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+                included_reason=(
+                    "记录答题 task_state 快照；权威 runtime state 仍在 progress/event/trace"
+                ),
+            ),
+            ContextAsset(
+                asset_type="tool_observation",
+                source_type="kt",
+                source_ref=f"kt:{trace_id}:diagnosis",
+                summary=(
+                    "KT diagnosis snapshot: "
+                    f"{len(kt_diagnosis.weak_concepts if kt_diagnosis else [])} weak concepts, "
+                    f"prediction={kt_diagnosis.prediction_probability if kt_diagnosis else None}"
+                ),
+                metadata={
+                    "snapshot": True,
+                    "source": "kt",
+                    "trace_id": trace_id,
+                    "generated_at": generated_at,
+                    "weak_concepts": kt_diagnosis.weak_concepts if kt_diagnosis else [],
+                    "forgetting_risks": kt_diagnosis.forgetting_risks if kt_diagnosis else [],
+                    "prediction_probability": (
+                        kt_diagnosis.prediction_probability if kt_diagnosis else None
+                    ),
+                    "evidence": kt_diagnosis.evidence if kt_diagnosis else [],
+                    "metadata": kt_diagnosis.metadata if kt_diagnosis else {},
+                    "authoritative_snapshot": True,
+                },
+                evidence_refs=[f"kt-diagnosis:{trace_id}", f"trace:{trace_id}"],
+                confidence=1.0,
+                freshness="fresh",
+                student_id=student_id,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+                included_reason="记录 KT 工具观察快照；不能覆盖当前 KT facts",
+            ),
+            ContextAsset(
+                asset_type="tool_observation",
+                source_type="rag",
+                source_ref=f"rag:{trace_id}:retrieval",
+                summary=f"RAG retrieval snapshot: {len(rag_context)} sources",
+                metadata={
+                    "snapshot": True,
+                    "source": "rag",
+                    "trace_id": trace_id,
+                    "generated_at": generated_at,
+                    "source_count": len(rag_context),
+                    "sources": [
+                        {
+                            "doc_id": item.get("doc_id"),
+                            "doc_type": item.get("doc_type"),
+                            "source": item.get("source"),
+                            "concept_id": item.get("concept_id"),
+                            "question_id": item.get("question_id"),
+                        }
+                        for item in rag_context
+                    ],
+                },
+                evidence_refs=[
+                    str(item.get("source") or item.get("doc_id"))
+                    for item in rag_context
+                    if item.get("source") or item.get("doc_id")
+                ]
+                or [f"trace:{trace_id}"],
+                confidence=0.8 if rag_context else 0.4,
+                freshness="fresh",
+                student_id=student_id,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+                included_reason=(
+                    "记录 RAG 检索工具观察快照"
+                    if rag_context
+                    else None
+                ),
+                excluded_reason=(
+                    None
+                    if rag_context
+                    else "本轮没有 RAG 检索结果，未生成 knowledge evidence"
+                ),
+            ),
+            ContextAsset(
+                asset_type="tool_observation",
+                source_type="mistake_diagnoser",
+                source_ref=f"mistake:{trace_id}:diagnosis",
+                summary=(
+                    f"mistake diagnosis snapshot for {question_id}"
+                    if mistake_diagnosis
+                    else "mistake diagnosis omitted"
+                ),
+                metadata={
+                    "snapshot": True,
+                    "source": "mistake_diagnoser",
+                    "trace_id": trace_id,
+                    "generated_at": generated_at,
+                    "mistake_diagnosis": mistake_diagnosis,
+                },
+                evidence_refs=[f"trace:{trace_id}"],
+                confidence=0.85 if mistake_diagnosis else 0.5,
+                freshness="fresh",
+                student_id=student_id,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+                included_reason=(
+                    "记录错因诊断工具观察快照"
+                    if mistake_diagnosis
+                    else None
+                ),
+                excluded_reason=(
+                    None
+                    if mistake_diagnosis
+                    else "正确作答或未判题，本轮没有错因诊断"
+                ),
+            ),
+            ContextAsset(
+                asset_type="tool_observation",
+                source_type="recommender",
+                source_ref=f"recommender:{trace_id}:candidates",
+                summary=f"recommendation candidates snapshot: {len(recommended_questions)} selected",
+                metadata={
+                    "snapshot": True,
+                    "source": "recommender",
+                    "trace_id": trace_id,
+                    "generated_at": generated_at,
+                    "selected_question_ids": [
+                        question.get("question_id") for question in recommended_questions
+                    ],
+                    "candidates": [
+                        {
+                            "question_id": question.get("question_id"),
+                            "concept_id": question.get("concept_id"),
+                            "score": question.get("score"),
+                            "reason": question.get("reason"),
+                        }
+                        for question in recommended_questions
+                    ],
+                },
+                evidence_refs=[
+                    f"question:{question.get('question_id')}"
+                    for question in recommended_questions
+                    if question.get("question_id")
+                ]
+                or [f"trace:{trace_id}"],
+                confidence=0.85,
+                freshness="fresh",
+                student_id=student_id,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+                included_reason="记录推荐器候选快照",
+            ),
+            ContextAsset(
+                asset_type="trace_reference",
+                source_type="teaching_trace",
+                source_ref=f"trace:{trace_id}:answer_submission",
+                summary="answer_submitted trace references retrieval, decision, and memory-update source",
+                metadata={
+                    "snapshot": True,
+                    "trace_id": trace_id,
+                    "retrieval_refs": [
+                        str(item.get("source") or item.get("doc_id"))
+                        for item in rag_context
+                        if item.get("source") or item.get("doc_id")
+                    ],
+                    "decision_ref": f"planner:{trace_id}",
+                    "memory_update_source": f"event:{trace_id}:answer_submitted",
+                    "selected_action": next_action,
+                    "state_reference_only": True,
+                },
+                evidence_refs=[f"trace:{trace_id}", f"planner:{trace_id}"],
+                confidence=1.0,
+                freshness="fresh",
+                student_id=student_id,
+                session_id=session_id,
+                concept_id=concept_id,
+                question_id=question_id,
+                included_reason="记录 trace 引用，串联检索路径、决策证据和 memory update 来源",
+            ),
+        ]
 
         return self.store.write_many(assets)
 

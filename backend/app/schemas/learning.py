@@ -157,6 +157,7 @@ class MathTutorState(BaseModel):
                 ],
                 "student_memories": self.student_memories,
                 "context_assets": self.context_assets,
+                "context_asset_selection": _context_asset_selection(self.context_assets),
                 "assembled_context": self.assembled_context,
                 "evidence_gaps": (self.assembled_context or {}).get("evidence_gaps", []),
                 "error_records": self.error_records,
@@ -181,3 +182,25 @@ class MathTutorEventResponse(BaseModel):
     recommended_questions: list[dict[str, Any]] = Field(default_factory=list)
     teaching_trace: list[TeachingTraceEvent] = Field(default_factory=list)
     teaching_trace_summary: TeachingTraceSummary
+
+
+def _context_asset_selection(assets: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    selected: list[dict[str, Any]] = []
+    omitted: list[dict[str, Any]] = []
+    for asset in assets:
+        item = {
+            "asset_id": asset.get("asset_id"),
+            "asset_type": asset.get("asset_type"),
+            "source_type": asset.get("source_type"),
+            "source_ref": asset.get("source_ref"),
+            "summary": asset.get("summary"),
+            "included_reason": asset.get("included_reason"),
+            "excluded_reason": asset.get("excluded_reason"),
+            "confidence": asset.get("confidence"),
+            "freshness": asset.get("freshness"),
+        }
+        if asset.get("excluded_reason"):
+            omitted.append(item)
+        else:
+            selected.append(item)
+    return {"selected": selected, "omitted": omitted}
