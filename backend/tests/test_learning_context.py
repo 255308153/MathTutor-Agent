@@ -869,6 +869,86 @@ def test_next_step_api_drops_deleted_memory_from_search_and_old_context_assets(
     ]
 
 
+def test_memory_control_does_not_change_authoritative_kt_facts() -> None:
+    enabled = _learning_response_with_controlled_memory("enabled")
+    disabled = _learning_response_with_controlled_memory("disabled")
+    deleted = _learning_response_with_controlled_memory("deleted")
+
+    enabled_expert = enabled.teaching_trace_summary.expert_evidence
+    disabled_expert = disabled.teaching_trace_summary.expert_evidence
+    deleted_expert = deleted.teaching_trace_summary.expert_evidence
+
+    for response in (enabled, disabled, deleted):
+        expert = response.teaching_trace_summary.expert_evidence
+        assembled = expert["assembled_context"]
+        kt_diagnosis = expert["kt_diagnosis"]
+        assert assembled["authoritative_kt_facts"]["prediction_probability"] == (
+            kt_diagnosis["prediction_probability"]
+        )
+        assert assembled["authoritative_kt_facts"]["weak_concepts"] == kt_diagnosis[
+            "weak_concepts"
+        ]
+        assert assembled["authoritative_kt_facts"]["forgetting_risks"] == kt_diagnosis[
+            "forgetting_risks"
+        ]
+        assert response.state_summary["weak_concepts"] == kt_diagnosis["weak_concepts"]
+        assert response.state_summary["forgetting_risks"] == kt_diagnosis["forgetting_risks"]
+        assert response.state_summary["concept_states"] == []
+        assert assembled["authoritative_kt_facts"]["mastery_by_concept"] == {}
+
+    assert enabled_expert["kt_diagnosis"] == disabled_expert["kt_diagnosis"] == (
+        deleted_expert["kt_diagnosis"]
+    )
+    assert enabled_expert["assembled_context"]["authoritative_kt_facts"] == (
+        disabled_expert["assembled_context"]["authoritative_kt_facts"]
+    ) == deleted_expert["assembled_context"]["authoritative_kt_facts"]
+    assert enabled_expert["student_memories"]
+    assert disabled_expert["student_memories"] == []
+    assert deleted_expert["student_memories"] == []
+
+
+def _learning_response_with_controlled_memory(status: str):
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+    from backend.app.storage.progress_store import InMemoryProgressStore
+
+    student_id = f"student-kt-boundary-{status}"
+    memories = InMemoryStudentMemoryStore()
+    memory = memories.write(
+        StudentMemory(
+            student_id=student_id,
+            memory_type="preference",
+            content="学生偏好步骤化讲解，并希望先练比例题。",
+            evidence={
+                "preferred_teaching_type": "procedure",
+                "preferred_concept_id": "c_ratio",
+                "mastery_by_concept": {"c_fraction_addition": 1.0},
+                "prediction_probability": 0.99,
+                "weak_concepts": [],
+                "forgetting_risks": [],
+            },
+        )
+    )
+    if status == "disabled":
+        assert memories.disable(student_id=student_id, memory_id=memory.memory_id) is not None
+    elif status == "deleted":
+        assert memories.delete(student_id=student_id, memory_id=memory.memory_id) is not None
+
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        memories=memories,
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    return loop.handle_event(
+        LearningEvent(
+            session_id=f"session-kt-boundary-{status}",
+            student_id=student_id,
+            type="chat_message",
+            message="我下一步应该练什么？",
+            payload={},
+        )
+    )
+
+
 def test_next_step_api_consumes_knowledge_resource_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

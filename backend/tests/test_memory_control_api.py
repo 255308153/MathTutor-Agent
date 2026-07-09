@@ -3,14 +3,52 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import events as events_api
+from backend.app.context.learning_context import InMemoryContextAssetStore, LearningContextLayer
+from backend.app.graph.learning_loop import MathTutorLearningLoop
 from backend.app.main import create_app
 from backend.app.memory.fake_provider import FakeStudentMemoryProvider
+from backend.app.memory.mem0_provider import Mem0StudentMemoryStore
 from backend.app.memory.store import InMemoryStudentMemoryStore, StudentMemory, StudentMemoryStore
+from backend.app.storage.progress_store import InMemoryProgressStore
+
+
+class FailingMem0ControlClient:
+    def __init__(
+        self,
+        *,
+        record: dict[str, Any] | None = None,
+        get_all_exc: Exception | None = None,
+        update_exc: Exception | None = None,
+        delete_exc: Exception | None = None,
+    ) -> None:
+        self.records = [record or _mem0_memory_record()]
+        self.get_all_exc = get_all_exc
+        self.update_exc = update_exc
+        self.delete_exc = delete_exc
+
+    def get_all(self, *_: Any, **__: Any) -> list[dict[str, Any]]:
+        if self.get_all_exc:
+            raise self.get_all_exc
+        return list(self.records)
+
+    def search(self, *_: Any, **__: Any) -> list[dict[str, Any]]:
+        return list(self.records)
+
+    def update(self, *_: Any, **__: Any) -> dict[str, Any]:
+        if self.update_exc:
+            raise self.update_exc
+        return self.records[0]
+
+    def delete(self, *_: Any, **__: Any) -> None:
+        if self.delete_exc:
+            raise self.delete_exc
+        self.records.clear()
 
 
 @pytest.mark.parametrize(
@@ -186,6 +224,128 @@ def test_student_memory_delete_api_removes_memory_from_ordinary_results(
     assert store.search(student_id=student_id, query="比例 步骤", limit=5) == []
 
 
+@pytest.mark.parametrize(
+    ("path_suffix", "operation"),
+    [
+        ("memories", "list_recent"),
+        ("memories/mem0-control-memory", "get"),
+    ],
+)
+def test_provider_view_failure_returns_structured_recoverable_error(
+    monkeypatch: pytest.MonkeyPatch,
+    path_suffix: str,
+    operation: str,
+) -> None:
+    store = Mem0StudentMemoryStore(
+        client=FailingMem0ControlClient(
+            get_all_exc=TimeoutError("provider timed out api_key=hidden-secret")
+        ),
+        api_key="test-key",
+    )
+    monkeypatch.setattr(events_api, "learning_loop", SimpleNamespace(memories=store))
+    client = TestClient(create_app())
+
+    response = client.get(f"/api/students/student-mem0-control/{path_suffix}")
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "provider_timeout"
+    assert detail["category"] == "provider_timeout"
+    assert detail["provider"] == "mem0"
+    assert detail["operation"] == operation
+    assert detail["recoverable"] is True
+    assert "local flow continues" in detail["actionable_hint"]
+    assert "hidden-secret" not in json.dumps(detail, ensure_ascii=False)
+
+
+def test_provider_control_failure_is_structured_and_learning_flow_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Mem0StudentMemoryStore(
+        client=FailingMem0ControlClient(
+            update_exc=TimeoutError("provider timed out while updating control")
+        ),
+        api_key="test-key",
+    )
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        memories=store,
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    control_response = client.post(
+        "/api/students/student-mem0-control/memories/mem0-control-memory/disable",
+        json={"actor": "student", "reason": "暂时禁用"},
+    )
+
+    assert control_response.status_code == 503
+    detail = control_response.json()["detail"]
+    assert detail["code"] == "provider_timeout"
+    assert detail["provider"] == "mem0"
+    assert detail["operation"] == "memory_control"
+    assert detail["recoverable"] is True
+    assert store.get(
+        student_id="student-mem0-control",
+        memory_id="mem0-control-memory",
+    ).status == "enabled"
+
+    event_response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-control-provider-failure",
+            "student_id": "student-mem0-control",
+            "type": "chat_message",
+            "message": "我下一步应该练什么？",
+            "payload": {},
+        },
+    )
+    assert event_response.status_code == 200
+    body = event_response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    assert "diagnose" in body["teaching_trace_summary"]["stages"]
+    assert "context_assemble" in body["teaching_trace_summary"]["stages"]
+    assert expert["kt_diagnosis"]["weak_concepts"] == body["state_summary"]["weak_concepts"]
+    assert expert["assembled_context"]["authoritative_kt_facts"][
+        "prediction_probability"
+    ] == expert["kt_diagnosis"]["prediction_probability"]
+
+
+def test_provider_delete_failure_is_structured_and_does_not_tombstone_locally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Mem0StudentMemoryStore(
+        client=FailingMem0ControlClient(
+            delete_exc=TimeoutError("provider timed out while deleting memory")
+        ),
+        api_key="test-key",
+    )
+    monkeypatch.setattr(events_api, "learning_loop", SimpleNamespace(memories=store))
+    client = TestClient(create_app())
+
+    delete_response = client.request(
+        "DELETE",
+        "/api/students/student-mem0-control/memories/mem0-control-memory",
+        json={"actor": "student", "reason": "删除错误记忆"},
+    )
+
+    assert delete_response.status_code == 503
+    detail = delete_response.json()["detail"]
+    assert detail["code"] == "provider_timeout"
+    assert detail["operation"] == "memory_delete"
+    assert detail["recoverable"] is True
+    assert store.get(
+        student_id="student-mem0-control",
+        memory_id="mem0-control-memory",
+    ).status == "enabled"
+    assert store.search(
+        student_id="student-mem0-control",
+        query="比例 步骤",
+        limit=5,
+    )[0].memory_id == "mem0-control-memory"
+
+
 def test_student_memory_detail_api_returns_404_for_missing_memory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -197,3 +357,26 @@ def test_student_memory_detail_api_returns_404_for_missing_memory(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "学生记忆不存在"
+
+
+def _mem0_memory_record() -> dict[str, Any]:
+    return {
+        "id": "mem0-control-memory",
+        "memory": "学生偏好比例题的步骤化讲解。",
+        "user_id": "student-mem0-control",
+        "metadata": {
+            "memory_id": "mem0-control-memory",
+            "student_id": "student-mem0-control",
+            "memory_type": "preference",
+            "evidence": {"preferred_concept_id": "c_ratio"},
+            "provenance": {"source_event": "event:mem0-control"},
+            "summary": "偏好比例题步骤讲解",
+            "enabled": True,
+            "status": "enabled",
+            "created_at": "2026-07-09T08:00:00+00:00",
+            "updated_at": "2026-07-09T08:00:00+00:00",
+            "dedupe_key": "memory:mem0-control",
+            "source": "mem0",
+        },
+        "score": 0.9,
+    }

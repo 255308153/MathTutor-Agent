@@ -6,6 +6,7 @@ from typing import Any
 from ..provider_gaps import provider_evidence_gap, provider_exception_gap
 from .store import (
     MemoryProviderConfigurationError,
+    MemoryProviderOperationError,
     MemoryStatus,
     MemoryType,
     StudentMemory,
@@ -25,6 +26,8 @@ RAW_PROVIDER_KEYS = {
     "vector",
     "embedding",
 }
+
+_PROVIDER_UPDATE_UNAVAILABLE = object()
 
 
 class MemoryProviderSchemaError(RuntimeError):
@@ -143,7 +146,7 @@ class Mem0StudentMemoryStore:
             if existing is not None:
                 merged = self._merge_memories(existing, prepared)
                 updated = self._provider_update(merged)
-                if updated is None:
+                if updated is None or updated is _PROVIDER_UPDATE_UNAVAILABLE:
                     return merged
                 return self._to_domain_memory(updated, fallback=merged, student_id=memory.student_id)
 
@@ -281,33 +284,31 @@ class Mem0StudentMemoryStore:
         if memory is None:
             return None
         deleted = apply_memory_delete(memory, actor=actor, reason=reason)
-        self._mark_tombstoned(student_id, memory_id)
         self._clear_provider_gaps()
         try:
             if self._provider_delete(memory_id):
+                self._mark_tombstoned(student_id, memory_id)
                 return deleted
             updated = self._provider_update(deleted)
+            if updated is _PROVIDER_UPDATE_UNAVAILABLE:
+                self._raise_operation_unavailable(
+                    operation="memory_delete",
+                    reason=(
+                        "Mem0 hard delete and metadata tombstone are unavailable; "
+                        "memory delete was not persisted."
+                    ),
+                )
+            self._mark_tombstoned(student_id, memory_id)
             if updated is None:
                 return deleted
             return self._to_domain_memory(updated, fallback=deleted, student_id=student_id)
         except Exception as exc:
+            if isinstance(exc, MemoryProviderOperationError):
+                raise
             if not self.fallback_on_error:
                 raise
             gap = self._record_error("memory_delete", exc)
-            return deleted.model_copy(
-                update={
-                    "source": "mem0_unavailable",
-                    "provenance": deleted.provenance
-                    | {
-                        "provider_failure": {
-                            "operation": "memory_delete",
-                            "provider": "mem0",
-                            "gap_type": gap["gap_type"],
-                            "reason": gap["reason"],
-                        }
-                    },
-                }
-            )
+            raise MemoryProviderOperationError(gap) from exc
 
     def _set_enabled(
         self,
@@ -330,27 +331,21 @@ class Mem0StudentMemoryStore:
         self._clear_provider_gaps()
         try:
             updated = self._provider_update(controlled)
+            if updated is _PROVIDER_UPDATE_UNAVAILABLE:
+                self._raise_operation_unavailable(
+                    operation="memory_control",
+                    reason="Mem0 update is unavailable; memory control was not persisted.",
+                )
             if updated is None:
                 return controlled
             return self._to_domain_memory(updated, fallback=controlled, student_id=student_id)
         except Exception as exc:
+            if isinstance(exc, MemoryProviderOperationError):
+                raise
             if not self.fallback_on_error:
                 raise
             gap = self._record_error("memory_control", exc)
-            return controlled.model_copy(
-                update={
-                    "source": "mem0_unavailable",
-                    "provenance": controlled.provenance
-                    | {
-                        "provider_failure": {
-                            "operation": "memory_control",
-                            "provider": "mem0",
-                            "gap_type": gap["gap_type"],
-                            "reason": gap["reason"],
-                        }
-                    },
-                }
-            )
+            raise MemoryProviderOperationError(gap) from exc
 
     def _build_client(self, *, api_key: str) -> Any:
         try:
@@ -401,7 +396,7 @@ class Mem0StudentMemoryStore:
         ]
         return _first_success(attempts)
 
-    def _provider_update(self, memory: StudentMemory) -> Any | None:
+    def _provider_update(self, memory: StudentMemory) -> Any:
         metadata = self._metadata_for(memory)
         payload = {"memory": memory.content, "text": memory.content, "metadata": metadata}
         attempts = [
@@ -417,7 +412,7 @@ class Mem0StudentMemoryStore:
         try:
             return _first_success(attempts)
         except (AttributeError, TypeError, RuntimeError):
-            return None
+            return _PROVIDER_UPDATE_UNAVAILABLE
 
     def _provider_delete(self, memory_id: str) -> bool:
         attempts = [
@@ -654,6 +649,17 @@ class Mem0StudentMemoryStore:
 
     def _has_gap(self, gap_type: str) -> bool:
         return any(gap.get("gap_type") == gap_type for gap in self.last_evidence_gaps)
+
+    def _raise_operation_unavailable(self, *, operation: str, reason: str) -> None:
+        gap = provider_evidence_gap(
+            gap_type="provider_failure",
+            provider="mem0",
+            operation=operation,
+            reason=reason,
+        )
+        self.last_error = gap
+        self._record_gap(gap)
+        raise MemoryProviderOperationError(gap)
 
     def _mark_tombstoned(self, student_id: str, memory_id: str) -> None:
         self._tombstones_by_student.setdefault(student_id, set()).add(memory_id)
