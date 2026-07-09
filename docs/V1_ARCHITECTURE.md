@@ -48,6 +48,8 @@ MathTutorAgentRuntime
 
 `MathCapabilityRegistry` 只注册数学学习能力 manifest，并根据 intent 选择本轮激活能力。首批能力包括答题诊断与错因分析、下一步建议与复习规划、数学概念讲解与提示。Capability 只描述用途、适用 intent、预期工具、选择原因和权威边界；当前执行仍委托 `MathTutorLearningLoop`，不得直接写 KT facts、RAG 结果或学生记忆。
 
+`MathToolRegistry` 是数学学习工具目录，不是裸 provider 列表。V1.9 首个工具是 `kt_authoritative_facts`，用于把本轮已经由 KT / DGEKT 产出的 `KTDiagnosis` 与 attribution 摘要登记为只读 tool observation，并进入 TeachingTrace。工具 manifest 必须声明用途、输入输出摘要、失败模式、provider mode、证据边界和 trace 展示方式；observation 只能解释本轮诊断事实，不能覆盖 prediction probability、weak concepts、forgetting risks 或 attribution provenance。registry 与 trace 输出会清洗 checkpoint 路径、私有本地路径、密钥和 provider raw payload，默认 mock 仍是 local fallback，DGEKT checkpoint 仍必须显式 opt-in。
+
 ## 2. 参考项目与吸收点
 
 ### DeepTutor

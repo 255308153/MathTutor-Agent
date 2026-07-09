@@ -1399,6 +1399,7 @@ function stageName(stage: string) {
     runtime_start: "Runtime 开始",
     load_context: "读取上下文",
     diagnose: "KT 诊断",
+    kt_tool_observation: "KT 工具观察",
     context_assemble: "上下文组装",
     plan: "教学规划",
     generate_response: "生成回复",

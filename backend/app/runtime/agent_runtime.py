@@ -11,6 +11,14 @@ from .capabilities import (
     default_capability_registry,
 )
 from .context import LearningTurnContext, RuntimeIntent
+from .tools import (
+    KT_AUTHORITY_TOOL_ID,
+    MathToolRegistry,
+    ToolInvocation,
+    ToolObservation,
+    default_tool_registry,
+    sanitize_runtime_value,
+)
 
 
 class MathTutorAgentRuntime:
@@ -20,9 +28,11 @@ class MathTutorAgentRuntime:
         self,
         learning_loop: MathTutorLearningLoop | None = None,
         capability_registry: MathCapabilityRegistry | None = None,
+        tool_registry: MathToolRegistry | None = None,
     ) -> None:
         self.learning_loop = learning_loop or default_learning_loop
         self.capability_registry = capability_registry or default_capability_registry
+        self.tool_registry = tool_registry or default_tool_registry()
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         turn_context = self._build_turn_context(event)
@@ -52,6 +62,14 @@ class MathTutorAgentRuntime:
             ],
         )
         response = self.learning_loop.handle_event(event)
+        tool_observations = self._collect_tool_observations(
+            response=response,
+            context=turn_context,
+        )
+        response.teaching_trace.extend(
+            self._tool_observation_trace(observation)
+            for observation in tool_observations
+        )
         completed_progress = self.learning_loop.store.get_or_create(
             event.student_id
         ).model_copy(deep=True)
@@ -80,7 +98,13 @@ class MathTutorAgentRuntime:
             evidence_refs=completed_context.trace_refs,
         )
         response.teaching_trace = [start_event, *response.teaching_trace, end_event]
-        self._attach_runtime_summary(response, completed_context, capability_selection)
+        self._sanitize_trace_events(response)
+        self._attach_runtime_summary(
+            response,
+            completed_context,
+            capability_selection,
+            tool_observations,
+        )
         return response
 
     def _build_turn_context(self, event: LearningEvent) -> LearningTurnContext:
@@ -141,6 +165,7 @@ class MathTutorAgentRuntime:
         response: MathTutorEventResponse,
         context: LearningTurnContext,
         capability_selection: CapabilitySelection,
+        tool_observations: list[ToolObservation],
     ) -> None:
         response.teaching_trace_summary.stages = [
             event.stage for event in response.teaching_trace
@@ -150,12 +175,20 @@ class MathTutorAgentRuntime:
         expert_evidence["learning_turn_context"] = context.public_summary()
         expert_evidence["active_capability"] = capability_summary
         expert_evidence["capability_manifest"] = self.capability_registry.manifest()
+        expert_evidence["tool_registry_manifest"] = self.tool_registry.manifest()
+        expert_evidence["tool_observations"] = [
+            observation.public_summary() for observation in tool_observations
+        ]
         expert_evidence["runtime"] = {
             "runtime_name": context.runtime_name,
             "turn_id": context.turn_id,
             "subject": context.subject,
             "intent": context.intent,
             "active_capability_id": capability_summary["capability_id"],
+            "tool_observation_count": len(tool_observations),
+            "tool_observation_refs": [
+                f"tool_observation:{observation.tool_id}" for observation in tool_observations
+            ],
             "status": "completed",
             "state_reference_only": True,
             "boundary": (
@@ -163,4 +196,94 @@ class MathTutorAgentRuntime:
                 "and KT remains authoritative."
             ),
         }
-        response.teaching_trace_summary.expert_evidence = expert_evidence
+        response.teaching_trace_summary.expert_evidence = sanitize_runtime_value(
+            expert_evidence
+        )
+
+    def _collect_tool_observations(
+        self,
+        *,
+        response: MathTutorEventResponse,
+        context: LearningTurnContext,
+    ) -> list[ToolObservation]:
+        expert_evidence = response.teaching_trace_summary.expert_evidence
+        diagnose_event = next(
+            (event for event in response.teaching_trace if event.stage == "diagnose"),
+            None,
+        )
+        diagnostics = {}
+        engine_name = self._kt_engine_name()
+        error_records = expert_evidence.get("error_records") or []
+        if diagnose_event is not None:
+            diagnostics = diagnose_event.metadata.get("kt_engine_diagnostics") or {}
+            engine_name = str(diagnose_event.metadata.get("kt_engine") or engine_name)
+            error_records = diagnose_event.metadata.get("error_records") or error_records
+        invocation = ToolInvocation(
+            tool_id=KT_AUTHORITY_TOOL_ID,
+            turn_id=context.turn_id,
+            trace_id=response.trace_id,
+            input_summary={
+                "kt_engine": engine_name,
+                "kt_engine_diagnostics": diagnostics,
+                "kt_diagnosis": expert_evidence.get("kt_diagnosis"),
+                "attribution_evidence": expert_evidence.get("attribution_evidence"),
+                "error_records": error_records,
+                "learning_event_type": context.learning_event.type,
+            },
+            context_summary={
+                "learning_turn_context": context.public_summary(),
+            },
+        )
+        return [self.tool_registry.call(KT_AUTHORITY_TOOL_ID, invocation)]
+
+    def _tool_observation_trace(
+        self,
+        observation: ToolObservation,
+    ) -> TeachingTraceEvent:
+        summary = observation.public_summary()
+        return TeachingTraceEvent(
+            type=TeachingTraceEventType.OBSERVATION,
+            stage="kt_tool_observation",
+            actor="kt",
+            visibility=observation.visibility,
+            content=(
+                "Tool Registry 已记录 KT/DGEKT 权威学习事实 observation；"
+                "RAG、学生记忆与 LLM 不能覆盖 prediction facts。"
+            ),
+            metadata={
+                "tool_observation": summary,
+                "tool_name": observation.tool_name,
+                "tool_id": observation.tool_id,
+                "provider": observation.provider,
+                "provider_mode": observation.provider_mode,
+                "status": observation.status,
+                "degraded": observation.degraded,
+                "fallback_used": observation.fallback_used,
+                "result_summary": summary["result_summary"],
+                "evidence_boundary": observation.evidence_boundary,
+                "state_write_policy": observation.state_write_policy,
+            },
+            evidence_refs=observation.evidence_refs,
+        )
+
+    def _sanitize_trace_events(self, response: MathTutorEventResponse) -> None:
+        response.teaching_trace = [
+            event.model_copy(
+                update={
+                    "content": sanitize_runtime_value(event.content),
+                    "metadata": sanitize_runtime_value(event.metadata),
+                    "evidence_refs": sanitize_runtime_value(event.evidence_refs),
+                },
+                deep=True,
+            )
+            for event in response.teaching_trace
+        ]
+
+    def _kt_engine_name(self) -> str:
+        return str(
+            getattr(
+                self.learning_loop.kt_engine,
+                "engine_name",
+                self.learning_loop.kt_engine.__class__.__name__,
+            )
+        )
