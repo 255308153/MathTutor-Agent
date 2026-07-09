@@ -6,6 +6,8 @@ import sys
 from typing import Any
 
 from .engine import KTStateEngine
+from .offline_evidence import DGEKTOfflineEvidenceAdapter
+from ..mapping.assist2017_mapping import DEFAULT_MAPPING_PATH
 from ..schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
 
 
@@ -87,6 +89,9 @@ class DGEKTStateEngine(KTStateEngine):
         checkpoint_path: str,
         dataset_dir: str,
         q_matrix_path: str,
+        checkpoint_id: str = "",
+        offline_evidence_dir: str = "",
+        canonical_mapping_path: str = "",
         device: str = "cpu",
     ) -> None:
         self.dataset = dataset
@@ -99,8 +104,18 @@ class DGEKTStateEngine(KTStateEngine):
         self.runtime = self._load_runtime(device=device)
         self.engine_name = "dgekt"
         self.metadata = self.runtime.metadata
+        if checkpoint_id:
+            self.metadata["checkpoint_id"] = checkpoint_id
         self.question_concept_map = self._load_question_concept_map()
         self.last_inference_input: DGEKTInferenceInput | None = None
+        self.offline_evidence_adapter = (
+            DGEKTOfflineEvidenceAdapter(
+                offline_evidence_dir,
+                canonical_mapping_path=canonical_mapping_path or DEFAULT_MAPPING_PATH,
+            )
+            if offline_evidence_dir
+            else None
+        )
 
     @classmethod
     def validate_configuration(
@@ -641,6 +656,7 @@ class DGEKTStateEngine(KTStateEngine):
                 target_question_id=target_question_id,
                 prediction_probability=None,
                 evidence_status="partial",
+                evidence_source="online_proxy",
                 partial_evidence=True,
                 partial_evidence_reason="No graded ASSIST2017 answer history is available.",
                 raw_model_target={
@@ -707,13 +723,14 @@ class DGEKTStateEngine(KTStateEngine):
             target_concept_id=target_concept_id,
             weak_concepts=weak_concepts,
         )
-        return AttributionEvidence(
+        fallback_evidence = AttributionEvidence(
             target_question_id=target_question_id,
             target_concept_id=mapped_teaching_content.get("concept_id"),
             target_assist2017_question_id=target_assist2017_id,
             target_assist2017_concept_id=target_concept_id,
             prediction_probability=prediction_probability,
             evidence_status="partial",
+            evidence_source="online_proxy",
             partial_evidence=True,
             partial_evidence_reason=DGEKT_PARTIAL_ATTRIBUTION_REASON,
             raw_model_target={
@@ -743,6 +760,27 @@ class DGEKTStateEngine(KTStateEngine):
             key_history=key_history,
             weak_concepts=weak_concepts,
         )
+        if self.offline_evidence_adapter is None:
+            return fallback_evidence
+
+        offline_evidence = self.offline_evidence_adapter.explain_prediction(
+            dataset=self.dataset,
+            student_id=progress.student_id,
+            target_question_id=target_question_id,
+            target_assist2017_question_id=target_assist2017_id,
+            target_assist2017_concept_id=target_concept_id,
+            prediction_probability=prediction_probability,
+            authoritative_weak_concepts=weak_concepts,
+            checkpoint_provenance=self._checkpoint_provenance(),
+            fallback_mapped_teaching_content=mapped_teaching_content,
+            fallback_canonical_mapping=fallback_evidence.canonical_mapping,
+        )
+        if offline_evidence.evidence_status == "complete":
+            return offline_evidence
+        return self._offline_gap_with_partial_fallback(
+            offline_evidence=offline_evidence,
+            fallback_evidence=fallback_evidence,
+        )
 
     def _scorer_metadata(
         self,
@@ -769,16 +807,79 @@ class DGEKTStateEngine(KTStateEngine):
             ],
         }
 
+    def _offline_gap_with_partial_fallback(
+        self,
+        *,
+        offline_evidence: AttributionEvidence,
+        fallback_evidence: AttributionEvidence,
+    ) -> AttributionEvidence:
+        status = offline_evidence.evidence_status or "unavailable"
+        offline_reason = (
+            offline_evidence.partial_evidence_reason
+            or "Offline DGEKT evidence is not available for this prediction."
+        )
+        fallback_reason = (
+            f"{offline_reason} Online partial proxy fallback remains available, but it is not "
+            "complete offline attribution evidence."
+        )
+        fallback_paths = [
+            path
+            | {
+                "offline_evidence_status": status,
+                "offline_evidence_gap_categories": [
+                    gap.get("category") or gap.get("gap_type")
+                    for gap in offline_evidence.evidence_gaps
+                ],
+            }
+            for path in fallback_evidence.top_paths
+        ]
+        scorer = dict(offline_evidence.scorer)
+        scorer.update(
+            {
+                "partial_evidence": True,
+                "partial_evidence_reason": fallback_reason,
+                "fallback_scorer": fallback_evidence.scorer,
+                "fallback_evidence_source": "online_proxy",
+            }
+        )
+        provenance = dict(fallback_evidence.provenance)
+        provenance["offline_evidence"] = offline_evidence.provenance
+        return fallback_evidence.model_copy(
+            update={
+                "evidence_status": status,
+                "evidence_source": offline_evidence.evidence_source or "offline",
+                "partial_evidence": True,
+                "partial_evidence_reason": fallback_reason,
+                "scorer": scorer,
+                "provenance": provenance,
+                "top_paths": fallback_paths,
+                "path_ablation": offline_evidence.path_ablation,
+                "evidence_gaps": offline_evidence.evidence_gaps,
+            }
+        )
+
     def _attribution_provenance(self) -> dict[str, Any]:
         return {
             "checkpoint_path": str(self.paths.checkpoint_path),
+            "checkpoint_id": self.metadata.get("checkpoint_id"),
             "dataset_dir": str(self.paths.dataset_dir),
             "q_matrix_path": str(self.paths.q_matrix_path),
             "model_epoch": self.metadata.get("epoch"),
             "model_auc": self.metadata.get("auc"),
             "model_acc": self.metadata.get("acc"),
             "source": "online_dgekt_adapter",
-            "offline_path_scorer_available": False,
+            "offline_path_scorer_available": self.offline_evidence_adapter is not None,
+        }
+
+    def _checkpoint_provenance(self) -> dict[str, Any]:
+        return {
+            "dataset": self.dataset,
+            "checkpoint_path": str(self.paths.checkpoint_path),
+            "checkpoint_id": self.metadata.get("checkpoint_id"),
+            "epoch": self.metadata.get("epoch"),
+            "auc": self.metadata.get("auc"),
+            "acc": self.metadata.get("acc"),
+            "device": self.metadata.get("device"),
         }
 
     def _mapped_target_content(

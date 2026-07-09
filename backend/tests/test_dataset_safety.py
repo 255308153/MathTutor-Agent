@@ -26,6 +26,9 @@ def test_default_settings_keep_demo_mock_and_no_full_paths() -> None:
     assert settings.assist2017_full_q_matrix_path == ""
     assert settings.assist2017_full_artifact_dir == ""
     assert settings.dgekt_checkpoint_path == ""
+    assert settings.dgekt_checkpoint_id == ""
+    assert settings.dgekt_offline_evidence_dir == ""
+    assert settings.dgekt_canonical_mapping_path == ""
 
 
 def test_artifact_cli_fixture_mode_uses_committed_small_fixture(
@@ -85,6 +88,11 @@ def test_repository_safety_allows_only_committed_fixture_assets() -> None:
         "data/mapping/assist2017_q_matrix.fixture.csv",
         "data/mapping/assist2017_canonical_mapping.fixture.json",
         "data/imported/assist2017_fixture/coverage_report.json",
+        "data/dgekt/offline_evidence_fixture/diagnosis_cases.json",
+        "data/dgekt/offline_evidence_fixture/attribution_paths.csv",
+        "data/dgekt/offline_evidence_fixture/key_history.csv",
+        "data/dgekt/offline_evidence_fixture/path_ablation.csv",
+        "data/dgekt/offline_evidence_fixture/weak_concepts.csv",
     ]
 
     assert find_banned_tracked_paths(fixture_paths) == []
@@ -98,6 +106,12 @@ def test_repository_safety_flags_raw_models_cache_and_full_generated_outputs() -
             "data/import/full/content_import.json",
             "data/import/assist2017/assist2017_pid_test.csv",
             "data/imported/assist2017_full/content_import.json",
+            "data/dgekt/full_outputs/diagnosis_cases.json",
+            "data/dgekt/full_outputs/attribution_paths.csv",
+            "data/dgekt/full_outputs/key_history.csv",
+            "data/dgekt/full_outputs/path_ablation.csv",
+            "data/dgekt/full_outputs/weak_concepts.csv",
+            "research/explainability/weak_concept_hit.csv",
             "checkpoints/save2017model.pkl",
             "frontend/dist/index.html",
             "backend/.pytest_cache/v/cache/nodeids",
@@ -110,6 +124,12 @@ def test_repository_safety_flags_raw_models_cache_and_full_generated_outputs() -
         "data/import/full/content_import.json",
         "data/import/assist2017/assist2017_pid_test.csv",
         "data/imported/assist2017_full/content_import.json",
+        "data/dgekt/full_outputs/diagnosis_cases.json",
+        "data/dgekt/full_outputs/attribution_paths.csv",
+        "data/dgekt/full_outputs/key_history.csv",
+        "data/dgekt/full_outputs/path_ablation.csv",
+        "data/dgekt/full_outputs/weak_concepts.csv",
+        "research/explainability/weak_concept_hit.csv",
         "checkpoints/save2017model.pkl",
         "frontend/dist/index.html",
         "backend/.pytest_cache/v/cache/nodeids",

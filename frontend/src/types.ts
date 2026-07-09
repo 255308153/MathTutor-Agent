@@ -91,6 +91,11 @@ export interface EvidenceGap {
   code?: string;
   message?: string;
   actionable_hint?: string;
+  source_ref?: string | null;
+  sample_id?: string | null;
+  details?: Record<string, unknown>;
+  evidence_status?: string | null;
+  evidence_source?: string | null;
 }
 
 export interface AssembledContextEvidence {
@@ -125,13 +130,7 @@ export interface TeachingTraceSummary {
       prediction_probability?: number | null;
       evidence: string[];
     } | null;
-    attribution_evidence?: {
-      target_question_id: string;
-      prediction_probability?: number | null;
-      top_paths: Array<Record<string, unknown>>;
-      key_history: Array<Record<string, unknown>>;
-      weak_concepts: Array<Record<string, unknown>>;
-    } | null;
+    attribution_evidence?: AttributionEvidence | null;
     rag_sources?: Array<{
       doc_id?: string;
       doc_type?: string;
@@ -159,6 +158,28 @@ export interface TeachingTraceSummary {
   };
   invariants: string[];
   errors: string[];
+}
+
+export interface AttributionEvidence {
+  target_question_id: string;
+  target_concept_id?: string | null;
+  target_assist2017_question_id?: number | string | null;
+  target_assist2017_concept_id?: number | string | null;
+  prediction_probability?: number | null;
+  evidence_status?: string | null;
+  evidence_source?: string | null;
+  partial_evidence?: boolean;
+  partial_evidence_reason?: string | null;
+  raw_model_target?: Record<string, unknown>;
+  mapped_teaching_content?: Record<string, unknown>;
+  canonical_mapping?: Record<string, unknown>;
+  scorer?: Record<string, unknown>;
+  provenance?: Record<string, unknown>;
+  top_paths: Array<Record<string, unknown>>;
+  key_history: Array<Record<string, unknown>>;
+  weak_concepts: Array<Record<string, unknown>>;
+  path_ablation?: Array<Record<string, unknown>>;
+  evidence_gaps?: EvidenceGap[];
 }
 
 export interface MathTutorEventResponse {

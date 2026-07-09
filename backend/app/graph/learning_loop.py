@@ -460,6 +460,32 @@ class MathTutorLearningLoop:
                 }
             )
             existing.add(key)
+        if state.attribution_evidence is None:
+            return
+        for gap in state.attribution_evidence.evidence_gaps:
+            key = (
+                gap.get("gap_type") or gap.get("category"),
+                gap.get("reason") or gap.get("message"),
+            )
+            if key in existing:
+                continue
+            evidence_gaps.append(
+                {
+                    "gap_type": gap.get("gap_type") or gap.get("category"),
+                    "reason": gap.get("reason") or gap.get("message"),
+                    "impact": gap.get("impact") or gap.get("actionable_hint"),
+                    "severity": gap.get("severity", "warning"),
+                    "recoverable": gap.get("recoverable", True),
+                    "stage": gap.get("stage", "diagnose"),
+                    "code": gap.get("code") or gap.get("reason_code"),
+                    "source_ref": gap.get("source_ref"),
+                    "sample_id": gap.get("sample_id"),
+                    "details": gap.get("details", {}),
+                    "evidence_status": state.attribution_evidence.evidence_status,
+                    "evidence_source": state.attribution_evidence.evidence_source,
+                }
+            )
+            existing.add(key)
 
     def _context_concept_id(self, state: MathTutorState) -> str | None:
         if state.learning_event.payload.get("concept_id"):
