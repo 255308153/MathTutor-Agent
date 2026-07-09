@@ -28,6 +28,10 @@ class RAGArtifactConfigurationError(RuntimeError):
     pass
 
 
+class RAGProviderConfigurationError(RuntimeError):
+    pass
+
+
 class LocalKnowledgeRAG:
     def __init__(
         self,
@@ -253,6 +257,16 @@ class LocalKnowledgeRAG:
 
 def create_knowledge_rag(settings: MathTutorSettings | None = None) -> KnowledgeRAG:
     active_settings = settings or get_settings()
+    if active_settings.rag_provider_mode == "fake_provider":
+        from .fake_provider import FakeKnowledgeRAGProvider
+
+        return FakeKnowledgeRAGProvider()
+    if active_settings.rag_provider_mode == "live_provider":
+        raise RAGProviderConfigurationError(
+            "MATHTUTOR_RAG_PROVIDER_MODE=live_provider 已显式选择 VikingDB/OpenViking "
+            "live provider，但 V1.7 #71 只固定 contract，不加载向量库 SDK。"
+            "请保持 local_fallback，或在后续 RAG adapter issue 中接入真实 provider。"
+        )
     if active_settings.rag_source == "demo":
         return LocalKnowledgeRAG()
     if active_settings.rag_source == "imported":

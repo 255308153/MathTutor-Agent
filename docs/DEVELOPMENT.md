@@ -180,6 +180,21 @@ V1.6 #68 最终验收记录（2026-07-09）：
 | `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
 | `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 raw train/test、checkpoint、模型文件、cache/build 输出、full generated artifact 或 full explainability outputs。 |
 
+V1.7 provider contract 与 worktree 并发规则：
+
+- 所有 V1.7 子任务必须从最新 `origin/master` 创建独立 git worktree 和独立 `codex/...` 分支；不要在主工作区直接实现，也不要复用其他 issue 的未提交改动。
+- Provider mode 固定为 `local_fallback`、`fake_provider`、`live_provider` 三种语义。
+- 默认 `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`、`MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`，继续使用进程内 memory store 和本地 JSON RAG，不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint 或完整 ASSISTments2017 数据。
+- `fake_provider` 是无网络、无密钥的 contract fixture，用于后续 Mem0 / VikingDB / OpenViking adapter 并发开发。fixture 内部可以模拟 SDK 响应，但向 planner、recommender、API、dashboard 只暴露 `StudentMemory` 和 `RAGSearchResult` 领域模型。
+- `live_provider` 只作为后续真实 Mem0、VikingDB / OpenViking adapter 的 opt-in 入口；#71 不加载真实 SDK，不提交真实 provider credentials。
+- Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
+
+相关单测：
+
+```bash
+python3 -m pytest backend/tests/test_provider_contracts.py -q
+```
+
 开发节奏：
 
 - 小改动先运行相关单测。
@@ -926,6 +941,11 @@ cp .env.example .env
 | `MATHTUTOR_LLM_PROVIDER` | `mock` | V1 优先用 mock / 规则化响应跑通闭环。 |
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
+| `MATHTUTOR_MEMORY_PROVIDER_MODE` | `local_fallback` | 学生长期记忆 provider mode。`fake_provider` 使用离线 contract fixture；`live_provider` 是后续 Mem0 adapter 的显式入口。 |
+| `MATHTUTOR_RAG_PROVIDER_MODE` | `local_fallback` | 知识检索 provider mode。`fake_provider` 使用离线 VikingDB/OpenViking contract fixture；`live_provider` 是后续生产 RAG adapter 的显式入口。 |
+| `MATHTUTOR_MEM0_API_KEY` | 空 | 后续 Mem0 live provider 凭据占位；默认留空，不提交真实 key。 |
+| `MATHTUTOR_VIKINGDB_API_KEY` | 空 | 后续 VikingDB live provider 凭据占位；默认留空，不提交真实 key。 |
+| `MATHTUTOR_OPENVIKING_API_KEY` | 空 | 后续 OpenViking live provider 凭据占位；默认留空，不提交真实 key。 |
 | `MATHTUTOR_KT_ENGINE` | `mock` | KT 引擎选择。默认 `mock`，显式设为 `dgekt` 才会验证并加载真实 DGEKT 配置。 |
 | `MATHTUTOR_DGEKT_DATASET` | `assist2017` | DGEKT 数据集名；当前只支持 `assist2017`。 |
 | `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 ASSIST2017 DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
