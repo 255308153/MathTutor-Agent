@@ -1,6 +1,6 @@
 # V1.8 Provider Health 与可观测性
 
-本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99 与 #100：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG provider readiness 诊断。
+本文档记录 V1.8 Provider Health 模块的最小可运行基线。当前切片覆盖 #99、#100 与 #101：保留简单 liveness，新增只读 provider readiness 合约与学习驾驶舱状态面板，并补齐 Memory / RAG、KT/DGEKT、Content/RAG artifact 与 LearningContextLayer readiness 诊断。
 
 ## API
 
@@ -63,6 +63,35 @@ RAG readiness 覆盖三种模式：
 显式启用 live provider 但配置缺失时，`/api/provider-health` 不会崩溃，也不会把缺失伪装成健康。组件会返回结构化 `evidence_gaps`，其中只包含缺失字段名、provider、operation、中文 reason / message / actionable_hint，不包含凭据值、SDK 原始响应或 provider debug payload。
 
 默认测试和本地 demo 不访问真实 Mem0、VikingDB 或 OpenViking，也不要求 credentials。Provider Health 的缺配置状态只用于诊断与运营可见性；学习事件主流程仍使用可用的本地 fallback 继续运行，不能把 provider 缺失写成 mastery、prediction facts 或学习进度事实。
+
+## #101 KT/DGEKT 与 Artifact Readiness
+
+KT readiness 覆盖两种模式：
+
+| mode | provider | 状态 | 说明 |
+| --- | --- | --- | --- |
+| `mock` | `mock` | `healthy` | 默认 mock KT 可运行，KT facts 仍是权威学习事实。 |
+| `dgekt` | `dgekt` | `healthy` / `degraded` / `unavailable` / `not_configured` | 只有显式启用时检查 checkpoint、dataset、Q-matrix、canonical mapping 与 offline evidence readiness。 |
+
+DGEKT readiness 只做只读配置与 artifact 存在性检查，不加载 checkpoint、不初始化 PyTorch runtime、不访问模型文件内容。输出不会包含本地 checkpoint 路径、dataset 路径、Q-matrix 路径或 offline evidence 目录，只报告缺少的 env 名或 artifact 类别。
+
+关键状态：
+
+- 缺少 `MATHTUTOR_DGEKT_CHECKPOINT_PATH`、`MATHTUTOR_DGEKT_DATASET_DIR` 或 `MATHTUTOR_DGEKT_Q_MATRIX_PATH` 时，组件返回 `not_configured`。
+- 已配置路径但本地 artifact 不存在或不完整时，组件返回 `unavailable`。
+- DGEKT 核心配置完整但 `MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR` 未配置时，组件返回 `degraded`，并明确标记 offline evidence 为 `partial` readiness，不能伪装成 complete offline evidence。
+- 配置了完整 offline evidence fixture / artifact 时，组件可返回 `healthy`；这仍然只是 readiness 诊断，不会覆盖 prediction facts。
+
+Content/RAG artifact readiness 使用同一个 `content_rag_artifact` 组件报告：
+
+| source | provider | 状态 | 说明 |
+| --- | --- | --- | --- |
+| `content:demo/rag:demo` | `demo_artifacts` | `healthy` | 默认 demo content 与 demo RAG artifact 可运行。 |
+| `content:imported/rag:imported` 且路径指向小型 fixture | `fixture_artifacts` | `healthy` | 用于无 full dataset 的 imported/fixture 验证。 |
+| `imported` 但缺少导入路径 | `imported_artifacts` | `not_configured` | 返回缺少 `MATHTUTOR_CONTENT_IMPORT_PATH` 或 `MATHTUTOR_RAG_ARTIFACT_PATH`。 |
+| 已配置导入路径但 artifact 不存在 | `imported_artifacts` | `unavailable` | 只报告 artifact 类别，不泄漏敏感本地路径。 |
+
+LearningContextLayer readiness 会显示当前是否仍是默认 `local_fallback`，或是否正在组装 provider/imported 证据。它只表达上下文证据组装能力；上游 provider 或 artifact 降级时只保留 evidence gap，不改写 mastery、weak concepts、forgetting risk、prediction probability 或任何 KT facts。
 
 ## 只读边界
 

@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import MathTutorSettings
 from backend.app.main import create_app
 from backend.app.provider_health import build_provider_health
+
+
+ROOT = Path(__file__).resolve().parents[2]
+IMPORTED_CONTENT = ROOT / "data" / "imported" / "assist2017_fixture" / "content_import.json"
+IMPORTED_RAG = ROOT / "data" / "imported" / "assist2017_fixture" / "rag_documents.json"
+DGEKT_OFFLINE_EVIDENCE_FIXTURE = ROOT / "data" / "dgekt" / "offline_evidence_fixture"
 
 
 def test_health_check_returns_ok() -> None:
@@ -238,6 +245,226 @@ def test_provider_health_degraded_snapshot_does_not_block_default_learning_flow(
     assert body["state_summary"]["errors"] == []
 
 
+def test_provider_health_reports_dgekt_missing_checkpoint_dataset_and_q_matrix() -> None:
+    health = build_provider_health(MathTutorSettings(kt_engine="dgekt"))
+
+    body = health.model_dump()
+    kt = {item["component"]: item for item in body["components"]}["kt"]
+
+    assert body["status"] == "degraded"
+    assert kt["provider"] == "dgekt"
+    assert kt["mode"] == "dgekt"
+    assert kt["configured"] is False
+    assert kt["status"] == "not_configured"
+    assert kt["severity"] == "warning"
+    missing_fields = kt["evidence_gaps"][0]["details"]["missing_fields"]
+    assert set(missing_fields) == {
+        "MATHTUTOR_DGEKT_CHECKPOINT_PATH",
+        "MATHTUTOR_DGEKT_DATASET_DIR",
+        "MATHTUTOR_DGEKT_Q_MATRIX_PATH",
+    }
+    assert "补齐 env 或切回默认 mock KT" in kt["actionable_hint"]
+
+
+def test_provider_health_reports_dgekt_missing_dataset_and_q_matrix_after_checkpoint(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint.fixture"
+    checkpoint.write_text("not a real checkpoint", encoding="utf-8")
+
+    health = build_provider_health(
+        MathTutorSettings(
+            kt_engine="dgekt",
+            dgekt_checkpoint_path=str(checkpoint),
+        )
+    )
+    kt = {item.component: item.model_dump() for item in health.components}["kt"]
+
+    assert kt["status"] == "not_configured"
+    missing_fields = kt["evidence_gaps"][0]["details"]["missing_fields"]
+    assert missing_fields == [
+        "MATHTUTOR_DGEKT_DATASET_DIR",
+        "MATHTUTOR_DGEKT_Q_MATRIX_PATH",
+    ]
+
+
+def test_provider_health_reports_dgekt_unavailable_paths_without_leaking_paths(
+    tmp_path: Path,
+) -> None:
+    health = build_provider_health(
+        MathTutorSettings(
+            kt_engine="dgekt",
+            dgekt_checkpoint_path=str(tmp_path / "private-checkpoint.fixture"),
+            dgekt_dataset_dir=str(tmp_path / "private-dataset"),
+            dgekt_q_matrix_path=str(tmp_path / "private-q-matrix.csv"),
+            dgekt_canonical_mapping_path=str(tmp_path / "private-mapping.json"),
+            dgekt_offline_evidence_dir=str(tmp_path / "private-offline-evidence"),
+        )
+    )
+
+    body = health.model_dump()
+    kt = {item["component"]: item for item in body["components"]}["kt"]
+
+    assert kt["status"] == "unavailable"
+    assert kt["severity"] == "error"
+    artifact_gaps = [
+        gap for gap in kt["evidence_gaps"] if gap["gap_type"] == "missing_artifact"
+    ]
+    assert artifact_gaps
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert "private-checkpoint" not in serialized
+    assert "private-dataset" not in serialized
+    assert "private-q-matrix" not in serialized
+    assert "private-mapping" not in serialized
+    assert "private-offline-evidence" not in serialized
+
+
+def test_provider_health_reports_dgekt_partial_offline_evidence_when_not_configured(
+    tmp_path: Path,
+) -> None:
+    checkpoint, dataset_dir, q_matrix = _write_dgekt_readiness_files(tmp_path)
+
+    health = build_provider_health(
+        MathTutorSettings(
+            kt_engine="dgekt",
+            dgekt_checkpoint_path=str(checkpoint),
+            dgekt_dataset_dir=str(dataset_dir),
+            dgekt_q_matrix_path=str(q_matrix),
+        )
+    )
+    kt = {item.component: item.model_dump() for item in health.components}["kt"]
+
+    assert health.status == "degraded"
+    assert kt["configured"] is True
+    assert kt["status"] == "degraded"
+    assert "partial readiness" in kt["actionable_hint"]
+    offline_gap = next(
+        gap for gap in kt["evidence_gaps"] if gap["code"] == "offline_evidence_not_configured"
+    )
+    assert offline_gap["details"]["offline_evidence_status"] == "partial"
+    assert "complete offline evidence" in offline_gap["actionable_hint"]
+
+
+def test_provider_health_reports_dgekt_complete_fixture_readiness(tmp_path: Path) -> None:
+    checkpoint, dataset_dir, q_matrix = _write_dgekt_readiness_files(tmp_path)
+
+    health = build_provider_health(
+        MathTutorSettings(
+            kt_engine="dgekt",
+            dgekt_checkpoint_path=str(checkpoint),
+            dgekt_dataset_dir=str(dataset_dir),
+            dgekt_q_matrix_path=str(q_matrix),
+            dgekt_offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
+        )
+    )
+    kt = {item.component: item.model_dump() for item in health.components}["kt"]
+
+    assert kt["status"] == "healthy"
+    assert kt["severity"] == "info"
+    assert kt["evidence_gaps"] == []
+    assert "offline evidence 基础 artifact 均可诊断" in kt["actionable_hint"]
+
+
+def test_provider_health_reports_imported_content_and_rag_fixture_readiness() -> None:
+    health = build_provider_health(
+        MathTutorSettings(
+            content_source="imported",
+            content_import_path=str(IMPORTED_CONTENT),
+            rag_source="imported",
+            rag_artifact_path=str(IMPORTED_RAG),
+        )
+    )
+    components = {item.component: item.model_dump() for item in health.components}
+    artifacts = components["content_rag_artifact"]
+    context = components["learning_context"]
+
+    assert artifacts["status"] == "healthy"
+    assert artifacts["provider"] == "fixture_artifacts"
+    assert artifacts["mode"] == "content:imported/rag:imported"
+    assert "不覆盖 KT facts" in artifacts["actionable_hint"]
+    assert context["mode"] == "context_evidence_assembly"
+    assert "只保留 evidence gap，不改写学习事实" in context["actionable_hint"]
+
+
+def test_provider_health_reports_missing_imported_content_and_rag_configuration() -> None:
+    health = build_provider_health(
+        MathTutorSettings(
+            content_source="imported",
+            rag_source="imported",
+        )
+    )
+    artifacts = {item.component: item.model_dump() for item in health.components}[
+        "content_rag_artifact"
+    ]
+
+    assert health.status == "degraded"
+    assert artifacts["status"] == "not_configured"
+    assert artifacts["severity"] == "warning"
+    assert set(artifacts["evidence_gaps"][0]["details"]["missing_fields"]) == {
+        "MATHTUTOR_CONTENT_IMPORT_PATH",
+        "MATHTUTOR_RAG_ARTIFACT_PATH",
+    }
+
+
+def test_provider_health_reports_unavailable_imported_artifact_paths_without_leaking_paths(
+    tmp_path: Path,
+) -> None:
+    health = build_provider_health(
+        MathTutorSettings(
+            content_source="imported",
+            content_import_path=str(tmp_path / "private-content.json"),
+            rag_source="imported",
+            rag_artifact_path=str(tmp_path / "private-rag.json"),
+        )
+    )
+    body = health.model_dump()
+    artifacts = {item["component"]: item for item in body["components"]}[
+        "content_rag_artifact"
+    ]
+
+    assert body["status"] == "unavailable"
+    assert artifacts["status"] == "unavailable"
+    assert artifacts["severity"] == "error"
+    assert artifacts["evidence_gaps"][0]["details"]["missing_artifacts"] == [
+        "imported content_import.json",
+        "imported rag_documents.json",
+    ]
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert "private-content" not in serialized
+    assert "private-rag" not in serialized
+
+
+def test_provider_health_does_not_change_kt_facts() -> None:
+    client = TestClient(create_app())
+    event_payload = {
+        "session_id": "session-provider-health-kt-readonly",
+        "student_id": "student-provider-health-kt-readonly",
+        "type": "chat_message",
+        "message": "我下一步应该练什么？",
+        "payload": {},
+    }
+    before = client.post("/api/events", json=event_payload).json()["state_summary"]
+
+    health = client.get("/api/provider-health")
+
+    after = client.post("/api/events", json=event_payload).json()["state_summary"]
+    assert health.status_code == 200
+    for field in ("concept_states", "weak_concepts", "forgetting_risks"):
+        assert after[field] == before[field]
+
+
 def _assert_iso_timestamp(value: str) -> None:
     parsed = datetime.fromisoformat(value)
     assert parsed.tzinfo is not None
+
+
+def _write_dgekt_readiness_files(tmp_path: Path) -> tuple[Path, Path, Path]:
+    checkpoint = tmp_path / "checkpoint.fixture"
+    checkpoint.write_text("not a real checkpoint", encoding="utf-8")
+    dataset_dir = tmp_path / "assist2017"
+    dataset_dir.mkdir()
+    for filename in ("assist2017_pid_train.csv", "assist2017_pid_test.csv"):
+        (dataset_dir / filename).write_text("fixture\n", encoding="utf-8")
+    q_matrix = tmp_path / "q_matrix.csv"
+    q_matrix.write_text("1,0\n0,1\n", encoding="utf-8")
+    return checkpoint, dataset_dir, q_matrix
