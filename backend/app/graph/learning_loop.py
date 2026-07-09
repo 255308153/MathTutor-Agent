@@ -10,6 +10,7 @@ from ..kt.factory import create_kt_engine
 from ..memory.store import StudentMemory, StudentMemoryStore, memory_store
 from ..planning.recommender import RiskPrioritizedRecommender, recommender
 from ..planning.teaching_planner import TeachingPlanner, teaching_planner
+from ..provider_gaps import PROVIDER_EVIDENCE_GAP_TYPES
 from ..rag.knowledge_rag import KnowledgeRAG, knowledge_rag
 from ..schemas.learning import (
     AttributionEvidence,
@@ -82,6 +83,11 @@ class MathTutorLearningLoop:
                 limit=5,
             )
         ]
+        self._attach_provider_evidence_gaps(
+            state,
+            self.memories,
+            stage="load_context",
+        )
         rag_query, rag_filters = self._build_rag_request(state)
         rag_results = self.rag.search(query=rag_query, filters=rag_filters, limit=3)
         rag_fallback_used = False
@@ -94,6 +100,11 @@ class MathTutorLearningLoop:
             fallback_filters.pop("question_id", None)
             rag_results = self.rag.search(query=rag_query, filters=fallback_filters, limit=3)
             rag_fallback_used = True
+        self._attach_provider_evidence_gaps(
+            state,
+            self.rag,
+            stage="load_context",
+        )
         state.rag_context = [result.model_dump() for result in rag_results]
         if not state.rag_context:
             self._record_issue(
@@ -293,6 +304,64 @@ class MathTutorLearningLoop:
             state.errors.append(message)
         return record
 
+    def _attach_provider_evidence_gaps(
+        self,
+        state: MathTutorState,
+        provider: Any,
+        *,
+        stage: str,
+    ) -> list[dict[str, Any]]:
+        gaps = self._provider_evidence_gaps(provider)
+        existing = {
+            (
+                record.get("category"),
+                record.get("message"),
+                record.get("details", {}).get("provider"),
+                record.get("details", {}).get("operation"),
+            )
+            for record in state.error_records
+        }
+        attached: list[dict[str, Any]] = []
+        for gap in gaps:
+            gap_type = str(gap.get("gap_type") or gap.get("category") or "provider_failure")
+            if gap_type not in PROVIDER_EVIDENCE_GAP_TYPES:
+                gap_type = "provider_failure"
+            message = str(gap.get("reason") or gap.get("message") or "provider evidence unavailable")
+            key = (
+                gap_type,
+                message,
+                gap.get("provider"),
+                gap.get("operation"),
+            )
+            if key in existing:
+                continue
+            attached.append(
+                self._record_issue(
+                    state,
+                    code=str(gap.get("code") or gap_type),
+                    category=gap_type,
+                    stage=str(gap.get("stage") or stage),
+                    message=message,
+                    actionable_hint=str(
+                        gap.get("impact")
+                        or gap.get("actionable_hint")
+                        or "provider evidence is unavailable; local fallback continues"
+                    ),
+                    severity=str(gap.get("severity") or "warning"),
+                    recoverable=bool(gap.get("recoverable", True)),
+                    append_to_errors=False,
+                    details=dict(gap),
+                )
+            )
+            existing.add(key)
+        return attached
+
+    def _provider_evidence_gaps(self, provider: Any) -> list[dict[str, Any]]:
+        gaps = getattr(provider, "last_evidence_gaps", [])
+        if not isinstance(gaps, list):
+            return []
+        return [dict(gap) for gap in gaps if isinstance(gap, dict)]
+
     def _failed_kt_diagnosis(self, state: MathTutorState, exc: Exception) -> KTDiagnosis:
         weak_concepts = list(state.kt_progress.weak_concepts)
         forgetting_risks = list(state.kt_progress.forgetting_risks)
@@ -448,6 +517,7 @@ class MathTutorLearningLoop:
             key = (record["category"], record["message"])
             if key in existing:
                 continue
+            details = record.get("details", {})
             evidence_gaps.append(
                 {
                     "gap_type": record["category"],
@@ -457,7 +527,9 @@ class MathTutorLearningLoop:
                     "recoverable": record["recoverable"],
                     "stage": record["stage"],
                     "code": record["code"],
-                    "details": record.get("details", {}),
+                    "provider": details.get("provider") if isinstance(details, dict) else None,
+                    "operation": details.get("operation") if isinstance(details, dict) else None,
+                    "details": details,
                 }
             )
             existing.add(key)
@@ -798,7 +870,18 @@ class MathTutorLearningLoop:
                     )
                 )
 
-        written = [self.memories.write(memory).model_dump() for memory in updates]
+        written: list[dict[str, Any]] = []
+        provider_evidence_gaps: list[dict[str, Any]] = []
+        for memory in updates:
+            written_memory = self.memories.write(memory).model_dump()
+            written.append(written_memory)
+            provider_evidence_gaps.extend(
+                self._attach_provider_evidence_gaps(
+                    state,
+                    self.memories,
+                    stage="memory_update",
+                )
+            )
         state.teaching_trace.append(
             self._trace(
                 stage="memory_update",
@@ -813,6 +896,7 @@ class MathTutorLearningLoop:
                         }
                         for item in written
                     ],
+                    "provider_evidence_gaps": provider_evidence_gaps,
                     "boundary": "Memory influences strategy, not mastery.",
                 },
             )

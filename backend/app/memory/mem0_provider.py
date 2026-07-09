@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from ..provider_gaps import provider_evidence_gap, provider_exception_gap
 from .store import (
     MemoryProviderConfigurationError,
     MemoryType,
@@ -21,6 +22,10 @@ RAW_PROVIDER_KEYS = {
     "vector",
     "embedding",
 }
+
+
+class MemoryProviderSchemaError(RuntimeError):
+    pass
 
 
 class Mem0StudentMemoryStore:
@@ -48,6 +53,7 @@ class Mem0StudentMemoryStore:
         self.client = client or self._build_client(api_key=api_key)
         self.fallback_on_error = fallback_on_error
         self.last_error: dict[str, Any] | None = None
+        self.last_evidence_gaps: list[dict[str, Any]] = []
 
     def search(
         self,
@@ -56,6 +62,7 @@ class Mem0StudentMemoryStore:
         memory_types: list[MemoryType] | None = None,
         limit: int = 5,
     ) -> list[StudentMemory]:
+        self._clear_provider_gaps()
         try:
             records = self._provider_search(
                 student_id=student_id,
@@ -69,13 +76,45 @@ class Mem0StudentMemoryStore:
             self._record_error("search", exc)
             return []
 
-        memories = [
-            self._to_domain_memory(record, student_id=student_id)
-            for record in self._extract_records(records)
-        ]
+        extracted_records = self._extract_records(records)
+        if not extracted_records:
+            self._record_gap(
+                provider_evidence_gap(
+                    gap_type="provider_empty_result",
+                    provider="mem0",
+                    operation="search",
+                    reason="Mem0 search returned no memory records.",
+                )
+            )
+            return []
+
+        memories: list[StudentMemory] = []
+        for index, record in enumerate(extracted_records):
+            try:
+                memories.append(self._to_domain_memory(record, student_id=student_id))
+            except MemoryProviderSchemaError as exc:
+                self._record_gap(
+                    provider_evidence_gap(
+                        gap_type="provider_schema_mismatch",
+                        provider="mem0",
+                        operation="search",
+                        reason=str(exc),
+                        details={"record_index": index},
+                    )
+                )
         if memory_types:
             allowed = set(memory_types)
             memories = [memory for memory in memories if memory.memory_type in allowed]
+        if not memories and not self._has_gap("provider_schema_mismatch"):
+            self._record_gap(
+                provider_evidence_gap(
+                    gap_type="provider_empty_result",
+                    provider="mem0",
+                    operation="search",
+                    reason="Mem0 search returned no matching normalized memories.",
+                    details={"memory_types": list(memory_types or [])},
+                )
+            )
         memories.sort(
             key=lambda memory: (
                 -(memory.relevance_score or 0.0),
@@ -86,6 +125,7 @@ class Mem0StudentMemoryStore:
         return memories[:limit]
 
     def write(self, memory: StudentMemory) -> StudentMemory:
+        self._clear_provider_gaps()
         prepared = self._prepare_memory(memory)
         try:
             existing = self._find_existing(prepared)
@@ -101,7 +141,7 @@ class Mem0StudentMemoryStore:
         except Exception as exc:
             if not self.fallback_on_error:
                 raise
-            self._record_error("write", exc)
+            gap = self._record_error("write", exc)
             return prepared.model_copy(
                 update={
                     "source": "mem0_unavailable",
@@ -110,13 +150,15 @@ class Mem0StudentMemoryStore:
                         "provider_failure": {
                             "operation": "write",
                             "provider": "mem0",
-                            "error": str(exc),
+                            "gap_type": gap["gap_type"],
+                            "reason": gap["reason"],
                         }
                     },
                 }
             )
 
     def list_recent(self, student_id: str, limit: int = 10) -> list[StudentMemory]:
+        self._clear_provider_gaps()
         try:
             records = self._provider_get_all(student_id=student_id, limit=max(limit * 4, 20))
         except Exception as exc:
@@ -125,10 +167,20 @@ class Mem0StudentMemoryStore:
             self._record_error("list_recent", exc)
             return []
 
-        memories = [
-            self._to_domain_memory(record, student_id=student_id)
-            for record in self._extract_records(records)
-        ]
+        memories: list[StudentMemory] = []
+        for index, record in enumerate(self._extract_records(records)):
+            try:
+                memories.append(self._to_domain_memory(record, student_id=student_id))
+            except MemoryProviderSchemaError as exc:
+                self._record_gap(
+                    provider_evidence_gap(
+                        gap_type="provider_schema_mismatch",
+                        provider="mem0",
+                        operation="list_recent",
+                        reason=str(exc),
+                        details={"record_index": index},
+                    )
+                )
         memories = [memory for memory in memories if memory.student_id == student_id]
         memories.sort(
             key=lambda memory: (_newest_first_sort_value(memory.updated_at), memory.memory_id)
@@ -368,6 +420,8 @@ class Mem0StudentMemoryStore:
             or record.get("content")
             or fallback.content
         )
+        if not content:
+            raise MemoryProviderSchemaError("Mem0 provider result missing memory content.")
         return StudentMemory(
             memory_id=memory_id,
             student_id=str(record.get("user_id") or metadata.get("student_id") or student_id),
@@ -395,13 +449,27 @@ class Mem0StudentMemoryStore:
             return [response]
         return [response]
 
-    def _record_error(self, operation: str, exc: Exception) -> None:
-        self.last_error = {
-            "provider": "mem0",
-            "operation": operation,
-            "error": str(exc),
-            "recorded_at": datetime.now(UTC).isoformat(),
+    def _record_error(self, operation: str, exc: Exception) -> dict[str, Any]:
+        gap = provider_exception_gap(provider="mem0", operation=operation, exc=exc)
+        self.last_error = gap
+        self._record_gap(gap)
+        return gap
+
+    def _record_gap(self, gap: dict[str, Any]) -> None:
+        key = (gap.get("gap_type"), gap.get("operation"), gap.get("reason"))
+        existing = {
+            (item.get("gap_type"), item.get("operation"), item.get("reason"))
+            for item in self.last_evidence_gaps
         }
+        if key not in existing:
+            self.last_evidence_gaps.append(gap)
+
+    def _clear_provider_gaps(self) -> None:
+        self.last_error = None
+        self.last_evidence_gaps = []
+
+    def _has_gap(self, gap_type: str) -> bool:
+        return any(gap.get("gap_type") == gap_type for gap in self.last_evidence_gaps)
 
 
 def _first_success(attempts: list[Any]) -> Any:

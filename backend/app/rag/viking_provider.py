@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ..core.config import MathTutorSettings
+from ..provider_gaps import provider_evidence_gap, provider_exception_gap
 from .schema import RAGSearchResult
 
 
@@ -84,6 +85,7 @@ class VikingKnowledgeRAGAdapter:
         self.provider_supports_metadata_filter = provider_supports_metadata_filter
         self._client = client or HTTPJSONRAGSearchClient(self.config)
         self._fallback = fallback
+        self.last_evidence_gaps: list[dict[str, Any]] = []
 
     def search(
         self,
@@ -91,6 +93,7 @@ class VikingKnowledgeRAGAdapter:
         filters: dict[str, Any] | None = None,
         limit: int = 3,
     ) -> list[RAGSearchResult]:
+        self._clear_provider_gaps()
         normalized_filters = normalize_rag_metadata_filters(filters or {})
         provider_filters = (
             normalized_filters if self.provider_supports_metadata_filter else None
@@ -111,6 +114,13 @@ class VikingKnowledgeRAGAdapter:
                 namespace=self.namespace,
             )
         except Exception as exc:
+            self._record_gap(
+                provider_exception_gap(
+                    provider=self.provider_name,
+                    operation="search",
+                    exc=exc,
+                )
+            )
             if self._fallback is not None:
                 return self._fallback.search(query=query, filters=filters, limit=limit)
             raise RAGProviderSearchError(
@@ -118,16 +128,63 @@ class VikingKnowledgeRAGAdapter:
             ) from exc
 
         results: list[RAGSearchResult] = []
-        for raw_record in extract_provider_records(raw_response):
+        raw_records = extract_provider_records(raw_response)
+        if not raw_records:
+            self._record_gap(
+                provider_evidence_gap(
+                    gap_type="provider_empty_result",
+                    provider=self.provider_name,
+                    operation="search",
+                    reason=f"{self.provider_name} RAG search returned no records.",
+                    details={"filters": normalized_filters},
+                )
+            )
+            return []
+
+        for index, raw_record in enumerate(raw_records):
             try:
                 result = self._to_domain_result(raw_record)
-            except RAGProviderSchemaError:
+            except RAGProviderSchemaError as exc:
+                self._record_gap(
+                    provider_evidence_gap(
+                        gap_type="provider_schema_mismatch",
+                        provider=self.provider_name,
+                        operation="search",
+                        reason=str(exc),
+                        details={"record_index": index, "filters": normalized_filters},
+                    )
+                )
                 continue
             if matches_rag_metadata_filter(result, normalized_filters):
                 results.append(result)
 
+        if not results and not self._has_gap("provider_schema_mismatch"):
+            self._record_gap(
+                provider_evidence_gap(
+                    gap_type="provider_empty_result",
+                    provider=self.provider_name,
+                    operation="search",
+                    reason=f"{self.provider_name} RAG search returned no matching normalized results.",
+                    details={"filters": normalized_filters},
+                )
+            )
         results.sort(key=lambda result: (-result.score, result.doc_id))
         return results[:limit]
+
+    def _record_gap(self, gap: dict[str, Any]) -> None:
+        key = (gap.get("gap_type"), gap.get("operation"), gap.get("reason"))
+        existing = {
+            (item.get("gap_type"), item.get("operation"), item.get("reason"))
+            for item in self.last_evidence_gaps
+        }
+        if key not in existing:
+            self.last_evidence_gaps.append(gap)
+
+    def _clear_provider_gaps(self) -> None:
+        self.last_evidence_gaps = []
+
+    def _has_gap(self, gap_type: str) -> bool:
+        return any(gap.get("gap_type") == gap_type for gap in self.last_evidence_gaps)
 
     def _to_domain_result(self, raw_record: Any) -> RAGSearchResult:
         raw = _as_mapping(raw_record)
