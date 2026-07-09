@@ -6,6 +6,9 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+ProviderMode = Literal["local_fallback", "fake_provider", "live_provider"]
+
+
 class MathTutorSettings(BaseSettings):
     """Runtime settings for MathTutor.
 
@@ -20,6 +23,12 @@ class MathTutorSettings(BaseSettings):
     llm_provider: str = "mock"
     llm_model: str = ""
     openai_api_key: str = ""
+
+    memory_provider_mode: ProviderMode = "local_fallback"
+    rag_provider_mode: ProviderMode = "local_fallback"
+    mem0_api_key: str = ""
+    vikingdb_api_key: str = ""
+    openviking_api_key: str = ""
 
     assist2017_dataset_mode: Literal["demo", "fixture", "full"] = "demo"
     assist2017_full_source_rows_path: str = ""

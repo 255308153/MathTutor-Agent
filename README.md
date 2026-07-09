@@ -417,6 +417,38 @@ Offline gap category 包括：`missing_artifact`、`missing_column`、`malformed
 
 核心边界保持不变：KT facts are authoritative；Offline attribution explains prediction, not overwrite prediction facts；RAG 只支持解释，不覆盖预测事实；Context 只组装证据，不决定学习事实。
 
+## V1.7 provider mode contract
+
+V1.7 开始把长期记忆和知识检索统一为 provider 化 contract，但默认运行仍是本地 fallback，不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint 或完整 ASSISTments2017 数据。
+
+Provider mode 语义固定为：
+
+| mode | 含义 | 默认性 |
+| --- | --- | --- |
+| `local_fallback` | 使用当前进程内 `InMemoryStudentMemoryStore` 和本地 JSON `LocalKnowledgeRAG`。 | 默认模式。 |
+| `fake_provider` | 使用无网络、无密钥的 fake provider fixture，模拟 Mem0 / VikingDB SDK 响应，但只向下游返回稳定领域模型。 | 仅测试 / adapter 开发显式启用。 |
+| `live_provider` | 后续真实 Mem0、VikingDB 或 OpenViking adapter 的 opt-in 入口。 | 非默认；#71 中不会加载真实 SDK。 |
+
+环境变量：
+
+```bash
+MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback
+MATHTUTOR_RAG_PROVIDER_MODE=local_fallback
+MATHTUTOR_MEM0_API_KEY=
+MATHTUTOR_VIKINGDB_API_KEY=
+MATHTUTOR_OPENVIKING_API_KEY=
+```
+
+当前 fake provider fixture 覆盖：
+
+- 记忆写入、记忆检索、recent memory。
+- RAG 检索、question / concept 对齐字段、provider 空结果。
+- raw provider payload 清洗，防止 `sdk_response`、内部向量距离、embedding vector 等 provider SDK 字段泄漏到 planner、recommender、TeachingTrace API 或 dashboard。
+
+V1.7 所有子任务必须使用独立 git worktree 并发开发：每个 issue 从最新 `origin/master` 创建自己的 `codex/...` 分支和 worktree，不在主工作区直接实现，不共用未提交改动。真实 Mem0 adapter、VikingDB/OpenViking adapter、失败降级、context E2E、dashboard 和配置安全任务都应按这个规则拆开推进。
+
+Provider 化不能改变核心边界：Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts；KT facts 仍是权威学习事实。
+
 ## V1.6 已知限制与下一阶段优先级
 
 当前仍是技术内测版本：
@@ -494,6 +526,11 @@ cp .env.example .env
 - `MATHTUTOR_LLM_PROVIDER=mock`：V1 先用 mock / 规则化响应跑通闭环。
 - `MATHTUTOR_LLM_MODEL`：真实 LLM 模型名，mock 模式可留空。
 - `MATHTUTOR_OPENAI_API_KEY`：真实 LLM key，本地 mock 模式可留空。
+- `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`：默认学生长期记忆实现；可显式设为 `fake_provider` 跑离线 provider contract fixture。`live_provider` 是后续 Mem0 adapter 的 opt-in 入口，当前 #71 不加载真实 SDK。
+- `MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`：默认知识检索实现；可显式设为 `fake_provider` 跑离线 VikingDB/OpenViking contract fixture。`live_provider` 是后续生产 RAG adapter 的 opt-in 入口，当前 #71 不加载真实 SDK。
+- `MATHTUTOR_MEM0_API_KEY`：后续 Mem0 live provider 凭据占位；默认留空，不能提交真实 key。
+- `MATHTUTOR_VIKINGDB_API_KEY`：后续 VikingDB live provider 凭据占位；默认留空，不能提交真实 key。
+- `MATHTUTOR_OPENVIKING_API_KEY`：后续 OpenViking live provider 凭据占位；默认留空，不能提交真实 key。
 - `MATHTUTOR_ASSIST2017_DATASET_MODE=demo`：默认数据模式；`fixture` 用于构建提交的小型 fixture，`full` 仅用于显式本地全量构建。
 - `MATHTUTOR_ASSIST2017_FULL_SOURCE_ROWS_PATH`：本地 full source rows CSV 路径，默认留空。
 - `MATHTUTOR_ASSIST2017_FULL_Q_MATRIX_PATH`：本地 full Q-matrix 路径，默认留空。

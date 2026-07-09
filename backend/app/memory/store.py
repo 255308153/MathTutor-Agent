@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from ..core.config import MathTutorSettings, get_settings
+
 
 MemoryType = Literal["preference", "repeated_mistake", "effective_strategy", "reflection"]
 
@@ -35,6 +37,10 @@ class StudentMemoryStore(Protocol):
 
     def list_recent(self, student_id: str, limit: int = 10) -> list[StudentMemory]:
         """Return recent memories for inspection and planning."""
+
+
+class MemoryProviderConfigurationError(RuntimeError):
+    pass
 
 
 class InMemoryStudentMemoryStore:
@@ -94,4 +100,25 @@ class InMemoryStudentMemoryStore:
         return terms
 
 
-memory_store = InMemoryStudentMemoryStore()
+def create_student_memory_store(
+    settings: MathTutorSettings | None = None,
+) -> StudentMemoryStore:
+    active_settings = settings or get_settings()
+    if active_settings.memory_provider_mode == "local_fallback":
+        return InMemoryStudentMemoryStore()
+    if active_settings.memory_provider_mode == "fake_provider":
+        from .fake_provider import FakeStudentMemoryProvider
+
+        return FakeStudentMemoryProvider()
+    if active_settings.memory_provider_mode == "live_provider":
+        raise MemoryProviderConfigurationError(
+            "MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider 已显式选择 Mem0 live provider，"
+            "但 V1.7 #71 只固定 contract，不加载 Mem0 SDK。请保持 local_fallback，"
+            "或在后续 Mem0 adapter issue 中接入真实 provider。"
+        )
+    raise MemoryProviderConfigurationError(
+        f"Unsupported memory provider mode: {active_settings.memory_provider_mode}"
+    )
+
+
+memory_store = create_student_memory_store()
