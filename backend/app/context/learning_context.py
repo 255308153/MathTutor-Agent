@@ -47,6 +47,9 @@ class AssembledContext(BaseModel):
     authoritative_kt_facts: dict[str, Any] = Field(default_factory=dict)
     normalized_context: dict[str, Any] = Field(default_factory=dict)
     asset_summaries: list[dict[str, Any]] = Field(default_factory=list)
+    asset_selection: dict[str, list[dict[str, Any]]] = Field(
+        default_factory=lambda: {"selected": [], "omitted": []}
+    )
     evidence_gaps: list[dict[str, Any]] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     budget_used: int = 0
@@ -222,10 +225,11 @@ class LearningContextLayer:
         for memory in student_memories:
             memory_type = str(memory.get("memory_type") or "reflection")
             memory_freshness = memory.get("freshness")
+            provider_metadata = _memory_provider_metadata(memory)
             assets.append(
                 ContextAsset(
                     asset_type="student_memory",
-                    source_type="student_memory_store",
+                    source_type=_memory_source_type(provider_metadata),
                     source_ref=f"memory:{memory.get('memory_id', 'unknown')}",
                     summary=str(memory.get("content", ""))[:160] or "学生长期记忆摘要",
                     content_preview=str(memory.get("content", ""))[:240],
@@ -236,6 +240,10 @@ class LearningContextLayer:
                         "provenance": memory.get("provenance", {}),
                         "source": memory.get("source"),
                         "relevance_score": memory.get("relevance_score"),
+                        "provider": provider_metadata,
+                        "provider_backed": provider_metadata["provider_backed"],
+                        "provider_name": provider_metadata.get("provider_name"),
+                        "provider_mode": provider_metadata.get("provider_mode"),
                     },
                     evidence_refs=[f"memory:{memory.get('memory_id', 'unknown')}"],
                     confidence=_confidence_from_memory(memory),
@@ -254,10 +262,11 @@ class LearningContextLayer:
 
         for item in rag_context:
             doc_type = str(item.get("doc_type") or "knowledge_resource")
+            provider_metadata = _rag_provider_metadata(item)
             assets.append(
                 ContextAsset(
                     asset_type="knowledge_resource",
-                    source_type="local_rag",
+                    source_type=_rag_source_type(provider_metadata),
                     source_ref=f"rag:{item.get('doc_id', 'unknown')}",
                     summary=str(item.get("title") or item.get("content") or "RAG evidence")[:160],
                     content_preview=str(item.get("content", ""))[:240],
@@ -271,6 +280,10 @@ class LearningContextLayer:
                         "canonical_mapping": item.get("canonical_mapping", {}),
                         "provenance": item.get("provenance", {}),
                         "coverage": item.get("coverage", {}),
+                        "provider": provider_metadata,
+                        "provider_backed": provider_metadata["provider_backed"],
+                        "provider_name": provider_metadata.get("provider_name"),
+                        "provider_mode": provider_metadata.get("provider_mode"),
                     },
                     evidence_refs=[str(item.get("source") or item.get("doc_id", ""))],
                     confidence=min(float(item.get("score") or 0.6), 1.0),
@@ -680,6 +693,7 @@ class LearningContextLayer:
             )
             for asset in selected_assets
         ] + excluded_summaries
+        asset_selection = _asset_selection_from_summaries(asset_summaries)
         normalized_context = self._normalize_assets(selected_assets)
         evidence_gaps = self._evidence_gaps(
             normalized_context,
@@ -715,6 +729,7 @@ class LearningContextLayer:
             authoritative_kt_facts=dict(kt_facts),
             normalized_context=normalized_context,
             asset_summaries=asset_summaries,
+            asset_selection=asset_selection,
             evidence_gaps=evidence_gaps,
             evidence_refs=list(
                 dict.fromkeys(
@@ -1096,6 +1111,69 @@ def _knowledge_included_reason(doc_type: str) -> str:
         "learning_strategy": "参考学习策略资源",
     }
     return reasons.get(doc_type, "参考相关知识资源")
+
+
+def _memory_provider_metadata(memory: dict[str, Any]) -> dict[str, Any]:
+    source = str(memory.get("source") or "")
+    provenance = memory.get("provenance") if isinstance(memory.get("provenance"), dict) else {}
+    provider = provenance.get("provider") if isinstance(provenance, dict) else None
+    provider_name = provider.get("name") if isinstance(provider, dict) else None
+    provider_record_id = provider.get("record_id") if isinstance(provider, dict) else None
+    provider_mode = None
+    if source == "fake_provider":
+        provider_mode = "fake_provider"
+    elif source in {"mem0", "mem0_unavailable"}:
+        provider_mode = "live_provider"
+    elif source == "local_fallback":
+        provider_mode = "local_fallback"
+    provider_backed = bool(provider_name or provider_mode in {"fake_provider", "live_provider"})
+    return {
+        "provider_backed": provider_backed,
+        "provider_name": provider_name,
+        "provider_mode": provider_mode,
+        "provider_record_id": provider_record_id,
+        "source": source,
+    }
+
+
+def _rag_provider_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    provenance = item.get("provenance") if isinstance(item.get("provenance"), dict) else {}
+    provider_name = provenance.get("provider_name") if isinstance(provenance, dict) else None
+    provider_mode = provenance.get("provider_mode") if isinstance(provenance, dict) else None
+    provider_record_id = provenance.get("provider_record_id") if isinstance(provenance, dict) else None
+    provider_backed = bool(provider_name or provider_mode in {"fake_provider", "live_provider"})
+    return {
+        "provider_backed": provider_backed,
+        "provider_name": provider_name,
+        "provider_mode": provider_mode,
+        "provider_record_id": provider_record_id,
+        "source": item.get("source"),
+    }
+
+
+def _memory_source_type(provider_metadata: dict[str, Any]) -> str:
+    if provider_metadata.get("provider_backed"):
+        return "provider_memory"
+    return "student_memory_store"
+
+
+def _rag_source_type(provider_metadata: dict[str, Any]) -> str:
+    if provider_metadata.get("provider_backed"):
+        return "provider_rag"
+    return "local_rag"
+
+
+def _asset_selection_from_summaries(
+    summaries: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    selected: list[dict[str, Any]] = []
+    omitted: list[dict[str, Any]] = []
+    for summary in summaries:
+        if summary.get("selection_status") == "excluded":
+            omitted.append(summary)
+        else:
+            selected.append(summary)
+    return {"selected": selected, "omitted": omitted}
 
 
 context_layer = LearningContextLayer()

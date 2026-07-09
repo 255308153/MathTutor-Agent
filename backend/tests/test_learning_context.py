@@ -352,9 +352,85 @@ def test_context_assembler_trims_budget_and_reports_included_excluded_reasons() 
         "超出上下文预算，已裁剪低优先级资产"
     )
     assert assembled.budget_used <= assembled.budget_limit == 6
+    assert {summary["asset_id"] for summary in assembled.asset_selection["selected"]} == selected_ids
+    assert {
+        summary["asset_id"] for summary in assembled.asset_selection["omitted"]
+    } == {"ctx-knowledge-budget"}
     assert assembled.compression_summary["excluded_asset_count"] == 1
     assert assembled.normalized_context["student_memory"][0]["summary"] == "学生偏好步骤化讲解。"
     assert any(gap["gap_type"] == "context_budget" for gap in assembled.evidence_gaps)
+
+
+def test_provider_backed_assets_are_budgeted_without_flooding_context() -> None:
+    layer = LearningContextLayer(store=InMemoryContextAssetStore())
+    assets = [
+        ContextAsset(
+            asset_id="ctx-provider-memory",
+            asset_type="student_memory",
+            source_type="provider_memory",
+            source_ref="memory:fake-provider",
+            summary="学生偏好步骤化讲解。",
+            metadata={
+                "memory_type": "preference",
+                "normalized_kind": "preference",
+                "provider_backed": True,
+                "provider_name": "fake_mem0_fixture",
+                "provider_mode": "fake_provider",
+            },
+            included_reason="参考学生偏好",
+            confidence=0.95,
+            freshness="fresh",
+        ),
+        ContextAsset(
+            asset_id="ctx-provider-rag-short",
+            asset_type="knowledge_resource",
+            source_type="provider_rag",
+            source_ref="rag:fake-short",
+            summary="provider RAG 题解",
+            metadata={
+                "doc_type": "question_explanation",
+                "normalized_kind": "question_explanation",
+                "provider_backed": True,
+                "provider_name": "fake_vikingdb",
+                "provider_mode": "fake_provider",
+            },
+            included_reason="参考题目解析资源",
+            confidence=0.9,
+            freshness="fresh",
+        ),
+        ContextAsset(
+            asset_id="ctx-provider-rag-large",
+            asset_type="knowledge_resource",
+            source_type="provider_rag",
+            source_ref="rag:fake-large",
+            summary="provider RAG 长文档",
+            content_preview="provider-backed knowledge " * 80,
+            metadata={
+                "doc_type": "learning_strategy",
+                "normalized_kind": "learning_strategy",
+                "provider_backed": True,
+                "provider_name": "fake_vikingdb",
+                "provider_mode": "fake_provider",
+            },
+            included_reason="参考学习策略资源",
+            confidence=0.82,
+            freshness="fresh",
+        ),
+    ]
+
+    assembled = layer.assemble_context(
+        intent="next_step_advice",
+        assets=assets,
+        kt_facts={"prediction_probability": 0.58},
+        token_budget=8,
+    )
+
+    selected_ids = {summary["asset_id"] for summary in assembled.asset_selection["selected"]}
+    omitted_ids = {summary["asset_id"] for summary in assembled.asset_selection["omitted"]}
+    assert {"ctx-provider-memory", "ctx-provider-rag-short"} <= selected_ids
+    assert "ctx-provider-rag-large" in omitted_ids
+    assert any(gap["gap_type"] == "context_budget" for gap in assembled.evidence_gaps)
+    assert assembled.budget_used <= assembled.budget_limit == 8
 
 
 def test_context_assembler_reports_stale_low_confidence_and_provider_gaps() -> None:
