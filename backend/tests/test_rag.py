@@ -106,7 +106,7 @@ def test_knowledge_question_returns_rag_citation_without_changing_kt_facts() -> 
     assert "参考：" in body["response"]
     assert "demo-rag/" in body["response"]
     assert body["state_summary"]["weak_concepts"] == []
-    load_trace = body["teaching_trace"][0]
+    load_trace = next(event for event in body["teaching_trace"] if event["stage"] == "load_context")
     assert load_trace["stage"] == "load_context"
     assert load_trace["metadata"]["rag_query"] == "分数加法为什么要先通分？"
     assert load_trace["metadata"]["rag_sources"]

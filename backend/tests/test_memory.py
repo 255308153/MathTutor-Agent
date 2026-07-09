@@ -32,7 +32,7 @@ def test_memory_preference_influences_recommendation_without_overwriting_kt() ->
     assert "参考你之前的学习偏好" in body["response"]
     assert body["recommended_questions"][0]["concept_id"] == "c_ratio"
     assert body["state_summary"]["weak_concepts"] == []
-    load_trace = body["teaching_trace"][0]
+    load_trace = next(event for event in body["teaching_trace"] if event["stage"] == "load_context")
     assert load_trace["metadata"]["memory_count"] >= 1
     assert load_trace["metadata"]["memory_summaries"][0]["memory_type"] == "preference"
 
@@ -57,7 +57,9 @@ def test_wrong_answer_writes_repeated_mistake_memory() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    memory_update_trace = body["teaching_trace"][-1]
+    memory_update_trace = next(
+        event for event in body["teaching_trace"] if event["stage"] == "memory_update"
+    )
     assert memory_update_trace["stage"] == "memory_update"
     assert memory_update_trace["metadata"]["memory_update_count"] == 1
     recent = memory_store.list_recent(student_id)

@@ -71,10 +71,12 @@ def test_v11_dashboard_demo_flow_has_recommendation_grading_trace_and_evidence()
     assert correct_turn["state_summary"]["progress_version"] == 3
     assert len(correct_turn["recommended_questions"]) == 3
     assert [event["stage"] for event in correct_turn["teaching_trace"]] == [
+        "runtime_start",
         "load_context",
         "diagnose",
         "context_assemble",
         "plan",
         "generate_response",
         "memory_update",
+        "runtime_end",
     ]

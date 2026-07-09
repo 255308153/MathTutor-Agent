@@ -330,7 +330,7 @@ def test_fake_provider_sdk_payloads_are_normalized_before_downstream(
 
     assert response.status_code == 200
     body = response.json()
-    load_trace = body["teaching_trace"][0]
+    load_trace = next(event for event in body["teaching_trace"] if event["stage"] == "load_context")
     assert load_trace["metadata"]["memory_summaries"][0]["memory_type"] == "preference"
     assert load_trace["metadata"]["rag_sources"][0]["doc_id"].startswith("fake-rag-")
     assert body["recommended_questions"][0]["concept_id"] == "c_fraction_addition"
