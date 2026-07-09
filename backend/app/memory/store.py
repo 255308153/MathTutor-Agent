@@ -94,6 +94,12 @@ class MemoryProviderConfigurationError(RuntimeError):
     pass
 
 
+class MemoryProviderOperationError(RuntimeError):
+    def __init__(self, gap: dict[str, Any]) -> None:
+        self.gap = gap
+        super().__init__(str(gap.get("reason") or "memory provider operation failed"))
+
+
 class InMemoryStudentMemoryStore:
     def __init__(self) -> None:
         self._memories_by_student: dict[str, list[StudentMemory]] = {}

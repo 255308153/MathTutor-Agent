@@ -310,7 +310,7 @@ def test_mem0_memory_cannot_overwrite_authoritative_kt_facts() -> None:
     assert memory_context["metadata"]["evidence"]["mastery_by_concept"][concept_id] == 1.0
 
 
-def test_mem0_live_provider_smoke_is_opt_in() -> None:
+def test_mem0_live_provider_memory_control_smoke_is_opt_in() -> None:
     smoke_settings = MathTutorSettings()
     if not (smoke_settings.run_mem0_live_smoke and smoke_settings.mem0_api_key):
         pytest.skip("Mem0 live smoke 需要显式 MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1 和 API key。")
@@ -326,9 +326,39 @@ def test_mem0_live_provider_smoke_is_opt_in() -> None:
         pytest.skip(f"Mem0 SDK 不可用或配置不完整：{exc}")
 
     student_id = f"student-live-mem0-smoke-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
-    store.write(_memory(student_id, "reflection", "live smoke 反思记忆。"))
+    written = store.write(_memory(student_id, "reflection", "live smoke 反思记忆。"))
     results = store.search(student_id=student_id, query="live smoke 反思", limit=3)
     assert any(memory.memory_type == "reflection" for memory in results)
+
+    disabled = store.disable(
+        student_id=student_id,
+        memory_id=written.memory_id,
+        reason="live smoke disable",
+    )
+    assert disabled is not None
+    assert disabled.status == "disabled"
+    assert store.search(student_id=student_id, query="live smoke 反思", limit=3) == []
+
+    enabled = store.enable(
+        student_id=student_id,
+        memory_id=written.memory_id,
+        reason="live smoke enable",
+    )
+    assert enabled is not None
+    assert enabled.status == "enabled"
+    assert any(
+        memory.memory_id == written.memory_id
+        for memory in store.search(student_id=student_id, query="live smoke 反思", limit=3)
+    )
+
+    deleted = store.delete(
+        student_id=student_id,
+        memory_id=written.memory_id,
+        reason="live smoke delete",
+    )
+    assert deleted is not None
+    assert deleted.status == "deleted"
+    assert store.get(student_id=student_id, memory_id=written.memory_id) is None
 
 
 def _memory(

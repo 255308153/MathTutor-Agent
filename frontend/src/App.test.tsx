@@ -433,10 +433,20 @@ describe("学习驾驶舱", () => {
 
   it("删除长期记忆失败时保留列表并展示失败状态", async () => {
     mockMathTutorApi({
-      memoryDeleteError: new Response(JSON.stringify({ detail: "delete unavailable" }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" }
-      })
+      memoryDeleteError: new Response(
+        JSON.stringify({
+          detail: {
+            code: "provider_timeout",
+            message: "mem0 memory_delete failed: provider timed out",
+            actionable_hint: "请稍后重试；默认学习流程会继续使用可用的本地证据。",
+            recoverable: true
+          }
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" }
+        }
+      )
     });
 
     render(<App />);
@@ -446,7 +456,10 @@ describe("学习驾驶舱", () => {
     await userEvent.click(screen.getByRole("button", { name: "删除记忆" }));
     await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
-    expect(await screen.findByText(/学生记忆删除失败：503 delete unavailable/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/学生记忆删除失败：503 mem0 memory_delete failed/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/默认学习流程会继续使用可用的本地证据/)).toBeInTheDocument();
     expect(screen.getAllByText("偏好步骤化分数讲解").length).toBeGreaterThan(0);
   });
 
