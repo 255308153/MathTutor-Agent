@@ -192,7 +192,38 @@ V1.7 provider contract 与 worktree 并发规则：
 - VikingDB / OpenViking metadata filter 支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`，并兼容 `assistments2017_*` 别名。若 provider 不支持或只弱支持 metadata filter，adapter 会在规范化为 `RAGSearchResult` 后做确定性 post-filter。
 - Mem0 adapter 返回稳定 `StudentMemory`，覆盖 `preference`、`repeated_mistake`、`effective_strategy`、`reflection`，并保留 event source、question / concept、trace、event time、relevance、freshness、source 和 provider provenance。下游不能解析 Mem0 raw response。
 - Mem0 写入使用稳定 dedupe key；重复学习事件会更新同一条记忆的 provenance，而不是无界生成重复记忆。
-- Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
+- Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Offline attribution explains prediction, not overwrite prediction facts；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
+
+V1.7 core invariants：
+
+```text
+KT facts are authoritative.
+Offline attribution explains prediction, not overwrite prediction facts.
+Memory can influence strategy, not mastery.
+RAG can support explanation, not overwrite prediction facts.
+Context can assemble evidence, not decide learning facts.
+```
+
+V1.7 issue / worktree / PR 收口表：
+
+| 阶段 | issue | 推荐 worktree | branch | PR | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | [#71](https://github.com/255308153/MathTutor-Agent/issues/71) provider contract 骨架与 fake provider | `../MathTutor-Agent-v17-provider-contracts` | `codex/v17-provider-contracts` | [#79](https://github.com/255308153/MathTutor-Agent/pull/79) | 已合并 |
+| 2 | [#72](https://github.com/255308153/MathTutor-Agent/issues/72) Mem0 adapter 与跨会话记忆 smoke | `../MathTutor-Agent-v17-mem0-adapter` | `codex/v17-mem0-adapter` | [#81](https://github.com/255308153/MathTutor-Agent/pull/81) | 已合并 |
+| 2 | [#73](https://github.com/255308153/MathTutor-Agent/issues/73) VikingDB/OpenViking RAG adapter 与 metadata filter smoke | `../MathTutor-Agent-v17-viking-rag-adapter` | `codex/v17-viking-rag-adapter` | [#80](https://github.com/255308153/MathTutor-Agent/pull/80) | 已合并 |
+| 3 | [#74](https://github.com/255308153/MathTutor-Agent/issues/74) provider failure、timeout 与 evidence gap 降级 | `../MathTutor-Agent-v17-provider-gaps` | `codex/v17-provider-gaps` | [#82](https://github.com/255308153/MathTutor-Agent/pull/82) | 已合并 |
+| 4 | [#75](https://github.com/255308153/MathTutor-Agent/issues/75) provider-aware context assembly E2E | `../MathTutor-Agent-v17-context-e2e` | `codex/v17-context-e2e` | [#83](https://github.com/255308153/MathTutor-Agent/pull/83) | 已合并 |
+| 5 | [#76](https://github.com/255308153/MathTutor-Agent/issues/76) dashboard provider-backed context evidence | `../MathTutor-Agent-v17-dashboard-provider-evidence` | `codex/v17-dashboard-provider-evidence` | [#84](https://github.com/255308153/MathTutor-Agent/pull/84) | 已合并 |
+| 5 | [#77](https://github.com/255308153/MathTutor-Agent/issues/77) opt-in 配置、live smoke 与安全护栏 | `../MathTutor-Agent-v17-provider-config-safety` | `codex/v17-provider-config-safety` | [#85](https://github.com/255308153/MathTutor-Agent/pull/85) | 已合并 |
+| 6 | [#78](https://github.com/255308153/MathTutor-Agent/issues/78) 中文文档与端到端验收收口 | `../MathTutor-Agent-v17-docs-acceptance` | `codex/v17-docs-acceptance` | 本收口 PR | 随本 PR 合并完成 |
+
+推荐流程：
+
+1. 每个 issue 从最新 `origin/master` 新建独立 worktree 和 `codex/...` 分支。
+2. 子 issue 先读 GitHub issue，再实现 acceptance criteria、补测试、运行相关验收。
+3. PR 描述必须写明完成内容、测试结果、风险、是否影响默认 local fallback。
+4. 只有依赖阶段 PR 合并并确认 `master` 与 `origin/master` 同步后，才创建下一阶段 worktree。
+5. #70 作为父 PRD 保持 open；#78 合并后只在 #70 评论覆盖情况、测试结果和剩余风险，不关闭 #70。
 
 Provider 配置和故障诊断：
 
@@ -209,6 +240,26 @@ Provider 配置和故障诊断：
 python3 -m pytest backend/tests/test_provider_contracts.py -q
 python3 -m pytest backend/tests/test_mem0_memory_store.py -q
 ```
+
+V1.7 验收模式：
+
+| 模式 | 命令 / 配置 | 结果或 skip 条件 |
+| --- | --- | --- |
+| default local | `python3 -m pytest backend/tests`、`cd frontend && npm test -- --run`、`cd frontend && npm run build` | 默认 `local_fallback`，不访问外部 provider，不读取 full data 或 checkpoint。 |
+| fake provider | `python3 -m pytest backend/tests/test_provider_contracts.py backend/tests/test_mem0_memory_store.py backend/tests/test_provider_evidence_gaps.py backend/tests/test_learning_context_e2e.py -q` | 无网络、无密钥；验证 fake Mem0、fake VikingDB/OpenViking、provider gap 和 context assembly。 |
+| optional live provider smoke | Mem0: `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1` + `MATHTUTOR_MEM0_API_KEY`；RAG: `MATHTUTOR_RUN_VIKING_RAG_SMOKE=1` + `MATHTUTOR_RAG_PROVIDER_ENDPOINT` + `MATHTUTOR_RAG_PROVIDER_COLLECTION` + provider API key。 | 配置完整才运行；缺任一条件自动 skip，默认验收不能依赖 live provider。 |
+| repository safety | `python3 scripts/check_repository_safety.py` | `violation_count=0`；不得提交 credentials、secrets、provider caches、generated vector indexes、raw datasets、checkpoints、`.pkl`、`.pt`、`.pth`、`dist`、`node_modules`。 |
+
+V1.7 #78 最终验收记录（2026-07-09）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `python3 -m pytest backend/tests` | 通过，149 passed，4 skipped。skipped 项为显式 opt-in 的真实 checkpoint / full offline evidence / Mem0 live smoke / VikingDB 或 OpenViking live smoke。 |
+| `cd frontend && npm test -- --run` | 通过，1 个 test file / 9 tests passed。 |
+| `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
+| `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 credentials、secrets、provider caches、generated vector indexes、raw datasets、checkpoints、模型文件、`dist` 或 `node_modules`。 |
+
+V1.7 结论：满足 small expert trial only。内部正式试用仍不得早于 **V1.8**；V1.8 前仍需补齐学生记忆运营控制、live provider health / observability、持久化学习状态、连续学习反馈闭环和更完整的真实数据验收。
 
 开发节奏：
 
