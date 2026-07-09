@@ -23,6 +23,8 @@ class MathTutorSettings(BaseSettings):
 
     content_source: Literal["demo", "imported"] = "demo"
     content_import_path: str = ""
+    rag_source: Literal["demo", "imported"] = "demo"
+    rag_artifact_path: str = ""
 
     kt_engine: Literal["mock", "dgekt"] = "mock"
     dgekt_dataset: str = "assist2017"
