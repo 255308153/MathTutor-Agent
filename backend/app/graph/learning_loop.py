@@ -84,7 +84,11 @@ class MathTutorLearningLoop:
         rag_query, rag_filters = self._build_rag_request(state)
         rag_results = self.rag.search(query=rag_query, filters=rag_filters, limit=3)
         rag_fallback_used = False
-        if not rag_results and rag_filters.get("question_id"):
+        if (
+            not rag_results
+            and rag_filters.get("question_id")
+            and self._allows_question_to_concept_rag_fallback()
+        ):
             fallback_filters = dict(rag_filters)
             fallback_filters.pop("question_id", None)
             rag_results = self.rag.search(query=rag_query, filters=fallback_filters, limit=3)
@@ -253,6 +257,10 @@ class MathTutorLearningLoop:
         if isinstance(diagnostics, dict):
             return diagnostics
         return {"engine_name": self._kt_engine_name()}
+
+    def _allows_question_to_concept_rag_fallback(self) -> bool:
+        """Keep legacy demo behavior while imported artifacts stay question-strict."""
+        return bool(getattr(self.rag, "allows_question_to_concept_fallback", False))
 
     def _record_issue(
         self,
