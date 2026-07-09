@@ -52,6 +52,8 @@ MathTutorAgentRuntime
 
 RAG observation 只支持数学概念、定理、例题、解法和教材片段的讲解证据，空结果必须以 `missing_rag_citation`、`knowledge_resource` 或标准 provider gap 表达，不能伪造 citation。学生记忆 observation 只影响教学策略、表达方式和复习提醒；被禁用的记忆只能以 omitted evidence 和排除原因进入专家可见 trace，被删除的记忆不得进入本轮 assembled context 或学生可见证据。registry 与 trace 输出会清洗 checkpoint 路径、私有本地路径、密钥和 provider raw payload，默认 mock / local RAG / local memory 仍是 local fallback，DGEKT checkpoint、Mem0、VikingDB / OpenViking 仍必须显式 opt-in。
 
+V1.9 的 dashboard 不直接解析 provider 原始响应。后端在 `teaching_trace_summary.expert_evidence.trace_overview` 中提供标准化只读视图，统一表达 runtime stage、激活 capability、tool call、tool observation、evidence refs、学生 / 专家 / 调试可见性和 provider gap。前端只消费这个规范化视图展示“Runtime 概览”；`trace_overview` 只能用于审计和运营可见性，不能写 memory、progress、context、RAG、TeachingTrace 或 KT state，也不能覆盖 KT / DGEKT prediction facts。
+
 ## 2. 参考项目与吸收点
 
 ### DeepTutor
@@ -1149,6 +1151,8 @@ error
 done
 ```
 
+V1.9 起，TeachingTrace 还会生成 `trace_overview` 作为前端消费的安全摘要：`stage_events` 保留每个阶段的 actor、visibility、evidence refs 和 gap 计数；`tool_calls` 描述已注册工具 manifest 与本轮是否观察到结果；`tool_observations` 只暴露白名单 metrics、provider mode、fallback 状态和 evidence boundary。学生可见内容与专家 / 调试证据必须明确区分，trace 输出不得包含 credentials、raw provider payload、私有本地路径、checkpoint 路径、embedding、SDK response 或 provider debug 字段。
+
 ## 21. 前端学习驾驶舱
 
 不要做纯 ChatGPT 式窗口。
@@ -1161,7 +1165,7 @@ done
 中间：推荐题目与答题区
 右侧：Agent 解释 / 推荐理由 / 最近记录
 底部或侧边：简短对话输入
-可折叠：TeachingTrace / 模型证据 / RAG 引用
+可折叠：TeachingTrace / Runtime 概览 / 模型证据 / RAG 引用
 ```
 
 V1 必须体现三个视觉信号：

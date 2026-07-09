@@ -344,6 +344,25 @@ def test_runtime_rag_and_memory_provider_gaps_do_not_override_kt_facts() -> None
         gap["gap_type"] == "provider_timeout"
         for gap in memory_observation["result_summary"]["provider_gaps"]
     )
+    overview = expert["trace_overview"]
+    assert overview["provider_gap_count"] >= 2
+    overview_gap_counts = {
+        observation["tool_id"]: observation["provider_gap_count"]
+        for observation in overview["tool_observations"]
+    }
+    assert overview_gap_counts[RAG_RETRIEVAL_TOOL_ID] >= 1
+    assert overview_gap_counts[STUDENT_MEMORY_TOOL_ID] >= 1
+    assert any(
+        gap["gap_type"] == "provider_schema_mismatch"
+        and gap["provider"] == "openviking"
+        for gap in overview["provider_gaps"]
+    )
+    assert any(
+        event["stage"] == "rag_tool_observation"
+        and event["provider_gap_count"] >= 1
+        and event["provider_mode"] == "live_provider"
+        for event in overview["stage_events"]
+    )
     assert (
         expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"]
         == expert["kt_diagnosis"]["prediction_probability"]
