@@ -71,6 +71,34 @@ export async function updateStudentMemoryControl({
   return response.json() as Promise<StudentMemoryDetailResponse>;
 }
 
+export async function deleteStudentMemory({
+  studentId,
+  memoryId
+}: {
+  studentId: string;
+  memoryId: string;
+}): Promise<StudentMemoryDetailResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/students/${encodeURIComponent(studentId)}` +
+      `/memories/${encodeURIComponent(memoryId)}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        actor: "student",
+        reason: "学生在记忆控制面板中删除该记忆。"
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`学生记忆删除失败：${response.status} ${errorDetail(body)}`);
+  }
+
+  return response.json() as Promise<StudentMemoryDetailResponse>;
+}
+
 function errorDetail(body: string) {
   try {
     const parsed = JSON.parse(body) as { detail?: unknown };

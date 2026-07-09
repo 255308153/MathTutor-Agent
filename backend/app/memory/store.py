@@ -12,7 +12,7 @@ from ..core.config import MathTutorSettings, get_settings
 
 MemoryType = Literal["preference", "repeated_mistake", "effective_strategy", "reflection"]
 MemoryFreshness = Literal["fresh", "recent", "stale"]
-MemoryStatus = Literal["enabled", "disabled"]
+MemoryStatus = Literal["enabled", "disabled", "deleted"]
 
 
 class StudentMemory(BaseModel):
@@ -33,7 +33,7 @@ class StudentMemory(BaseModel):
 
     @model_validator(mode="after")
     def align_enabled_status(self) -> StudentMemory:
-        if self.status == "disabled" and self.enabled:
+        if self.status in {"disabled", "deleted"} and self.enabled:
             self.enabled = False
         elif not self.enabled and self.status == "enabled":
             self.status = "disabled"
@@ -79,6 +79,16 @@ class StudentMemoryStore(Protocol):
     ) -> StudentMemory | None:
         """Re-enable one memory so default learning flows can use it again."""
 
+    def delete(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        """Delete or tombstone one memory so learning flows cannot use it."""
+
 
 class MemoryProviderConfigurationError(RuntimeError):
     pass
@@ -98,7 +108,7 @@ class InMemoryStudentMemoryStore:
         memories = [
             memory
             for memory in self._memories_by_student.get(student_id, [])
-            if memory.enabled and memory.status == "enabled"
+            if _memory_searchable(memory)
         ]
         if memory_types:
             allowed = set(memory_types)
@@ -141,7 +151,11 @@ class InMemoryStudentMemoryStore:
         return stored
 
     def list_recent(self, student_id: str, limit: int = 10) -> list[StudentMemory]:
-        memories = self._memories_by_student.get(student_id, [])
+        memories = [
+            memory
+            for memory in self._memories_by_student.get(student_id, [])
+            if not _memory_deleted(memory)
+        ]
         recent = sorted(
             memories,
             key=lambda memory: (_newest_first_sort_value(memory.updated_at), memory.memory_id),
@@ -153,6 +167,8 @@ class InMemoryStudentMemoryStore:
 
     def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
         for memory in self._memories_by_student.get(student_id, []):
+            if _memory_deleted(memory):
+                continue
             if memory.memory_id == memory_id:
                 return _with_retrieval_metadata(
                     memory,
@@ -193,6 +209,27 @@ class InMemoryStudentMemoryStore:
             reason=reason,
         )
 
+    def delete(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        memories = self._memories_by_student.get(student_id, [])
+        for index, memory in enumerate(memories):
+            if memory.memory_id != memory_id:
+                continue
+            deleted = apply_memory_delete(memory, actor=actor, reason=reason)
+            memories[index] = deleted
+            return _with_retrieval_metadata(
+                deleted,
+                relevance_score=None,
+                source="local_fallback",
+            )
+        return None
+
     def _set_enabled(
         self,
         *,
@@ -206,6 +243,8 @@ class InMemoryStudentMemoryStore:
         for index, memory in enumerate(memories):
             if memory.memory_id != memory_id:
                 continue
+            if _memory_deleted(memory):
+                return None
             controlled = apply_memory_control(
                 memory,
                 enabled=enabled,
@@ -333,6 +372,38 @@ def apply_memory_control(
     )
 
 
+def apply_memory_delete(
+    memory: StudentMemory,
+    *,
+    actor: str = "student",
+    reason: str | None = None,
+) -> StudentMemory:
+    now = datetime.now(UTC).isoformat()
+    control_event = {
+        "operation": "delete",
+        "status": "deleted",
+        "actor": actor or "student",
+        "reason": reason or "学生删除该记忆，默认列表、检索和学习上下文均排除。",
+        "occurred_at": now,
+        "tombstone": True,
+    }
+    provenance = dict(memory.provenance)
+    raw_history = provenance.get("control_history", [])
+    history = list(raw_history) if isinstance(raw_history, list) else []
+    history.append(control_event)
+    provenance["control"] = control_event
+    provenance["control_history"] = history[-20:]
+    return memory.model_copy(
+        update={
+            "enabled": False,
+            "status": "deleted",
+            "freshness": "fresh",
+            "provenance": provenance,
+            "updated_at": now,
+        }
+    )
+
+
 def _with_retrieval_metadata(
     memory: StudentMemory,
     *,
@@ -359,6 +430,14 @@ def _newest_first_sort_value(value: str) -> float:
         return -datetime.fromisoformat(value).timestamp()
     except ValueError:
         return 0.0
+
+
+def _memory_deleted(memory: StudentMemory) -> bool:
+    return memory.status == "deleted"
+
+
+def _memory_searchable(memory: StudentMemory) -> bool:
+    return memory.enabled and memory.status == "enabled"
 
 
 def _merge_provenance(existing: StudentMemory, incoming: StudentMemory) -> dict[str, Any]:

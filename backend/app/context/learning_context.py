@@ -223,6 +223,8 @@ class LearningContextLayer:
     ) -> list[ContextAsset]:
         assets: list[ContextAsset] = []
         for memory in student_memories:
+            if _memory_is_deleted(memory):
+                continue
             memory_type = str(memory.get("memory_type") or "reflection")
             memory_freshness = memory.get("freshness")
             provider_metadata = _memory_provider_metadata(memory)
@@ -1111,7 +1113,13 @@ def _memory_included_reason(memory_type: str) -> str:
 
 
 def _memory_is_disabled(memory: dict[str, Any]) -> bool:
-    return memory.get("enabled") is False or memory.get("status") == "disabled"
+    return not _memory_is_deleted(memory) and (
+        memory.get("enabled") is False or memory.get("status") == "disabled"
+    )
+
+
+def _memory_is_deleted(memory: dict[str, Any]) -> bool:
+    return memory.get("status") == "deleted"
 
 
 def _disabled_memory_excluded_reason() -> str:

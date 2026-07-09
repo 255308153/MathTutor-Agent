@@ -4,7 +4,14 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from .store import MemoryStatus, MemoryType, StudentMemory, apply_memory_control, memory_freshness
+from .store import (
+    MemoryStatus,
+    MemoryType,
+    StudentMemory,
+    apply_memory_control,
+    apply_memory_delete,
+    memory_freshness,
+)
 
 
 class FakeStudentMemoryProvider:
@@ -83,7 +90,11 @@ class FakeStudentMemoryProvider:
         return self._to_domain_memory(record)
 
     def list_recent(self, student_id: str, limit: int = 10) -> list[StudentMemory]:
-        records = self._records_by_student.get(student_id, [])
+        records = [
+            record
+            for record in self._records_by_student.get(student_id, [])
+            if not _record_deleted(record)
+        ]
         sorted_records = sorted(
             records,
             key=lambda record: (
@@ -96,6 +107,8 @@ class FakeStudentMemoryProvider:
 
     def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
         for record in self._records_by_student.get(student_id, []):
+            if _record_deleted(record):
+                continue
             if str(record["provider_id"]) == memory_id:
                 return self._to_domain_memory(record)
         return None
@@ -132,6 +145,27 @@ class FakeStudentMemoryProvider:
             reason=reason,
         )
 
+    def delete(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        records = self._records_by_student.get(student_id, [])
+        for index, record in enumerate(records):
+            if str(record["provider_id"]) != memory_id:
+                continue
+            deleted = apply_memory_delete(
+                self._to_domain_memory(record),
+                actor=actor,
+                reason=reason,
+            )
+            records[index] = self._to_provider_record(deleted)
+            return self._to_domain_memory(records[index])
+        return None
+
     def _set_enabled(
         self,
         *,
@@ -145,6 +179,8 @@ class FakeStudentMemoryProvider:
         for index, record in enumerate(records):
             if str(record["provider_id"]) != memory_id:
                 continue
+            if _record_deleted(record):
+                return None
             controlled = apply_memory_control(
                 self._to_domain_memory(record),
                 enabled=enabled,
@@ -254,9 +290,13 @@ def _normalized_score(value: Any) -> float | None:
 
 
 def _memory_status(value: Any) -> MemoryStatus:
-    return value if value in {"enabled", "disabled"} else "enabled"
+    return value if value in {"enabled", "disabled", "deleted"} else "enabled"
 
 
 def _record_enabled(record: dict[str, Any]) -> bool:
     metadata = record.get("metadata", {})
     return bool(metadata.get("enabled", True)) and metadata.get("status", "enabled") == "enabled"
+
+
+def _record_deleted(record: dict[str, Any]) -> bool:
+    return record.get("metadata", {}).get("status") == "deleted"

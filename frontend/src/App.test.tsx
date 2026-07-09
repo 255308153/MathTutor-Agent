@@ -404,6 +404,52 @@ describe("学习驾驶舱", () => {
     expect(memoryControlCalls[1][1]?.body).toContain("学生在记忆控制面板中重新启用该记忆。");
   });
 
+  it("删除长期记忆前需要确认，成功后从列表移除并展示成功状态", async () => {
+    const fetchMock = mockMathTutorApi();
+
+    render(<App />);
+
+    expect((await screen.findAllByText("偏好步骤化分数讲解")).length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "删除记忆" }));
+
+    expect(screen.getByRole("button", { name: "确认删除" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    expect(await screen.findByText("已删除该条长期记忆。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("偏好步骤化分数讲解")).not.toBeInTheDocument();
+    });
+
+    const deleteCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input) === "/api/students/student-demo/memories/mem-preference-1" &&
+        init?.method === "DELETE"
+    );
+    expect(deleteCall?.[1]?.body).toContain("学生在记忆控制面板中删除该记忆。");
+  });
+
+  it("删除长期记忆失败时保留列表并展示失败状态", async () => {
+    mockMathTutorApi({
+      memoryDeleteError: new Response(JSON.stringify({ detail: "delete unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" }
+      })
+    });
+
+    render(<App />);
+
+    expect((await screen.findAllByText("偏好步骤化分数讲解")).length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "删除记忆" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    expect(await screen.findByText(/学生记忆删除失败：503 delete unavailable/)).toBeInTheDocument();
+    expect(screen.getAllByText("偏好步骤化分数讲解").length).toBeGreaterThan(0);
+  });
+
   it("展示 provider-backed selected/omitted context evidence 并隐藏 SDK 噪声", async () => {
     mockMathTutorApi({
       eventResponses: [{
@@ -792,12 +838,14 @@ function mockMathTutorApi({
   memoryResponse = baseMemoryResponse,
   eventError,
   memoryError,
+  memoryDeleteError,
   memoryPending = false
 }: {
   eventResponses?: MathTutorEventResponse[];
   memoryResponse?: StudentMemoryListResponse;
   eventError?: Error | Response;
   memoryError?: Error | Response;
+  memoryDeleteError?: Error | Response;
   memoryPending?: boolean;
 } = {}) {
   const eventQueue = [...eventResponses];
@@ -808,20 +856,34 @@ function mockMathTutorApi({
       if (memoryPending) return new Promise<Response>(() => {});
       if (memoryError instanceof Error) throw memoryError;
       if (memoryError instanceof Response) return memoryError.clone();
-      const controlAction = memoryControlAction(url);
+      const controlAction = memoryControlAction(url, init);
       if (controlAction) {
+        if (controlAction === "delete" && memoryDeleteError instanceof Error) {
+          throw memoryDeleteError;
+        }
+        if (controlAction === "delete" && memoryDeleteError instanceof Response) {
+          return memoryDeleteError.clone();
+        }
         const memoryId = decodeURIComponent(url.split("/memories/")[1].split("/")[0]);
         const updated = updateMemoryControlFixture(
           currentMemoryResponse,
           memoryId,
           controlAction
         );
-        currentMemoryResponse = {
-          ...currentMemoryResponse,
-          memories: currentMemoryResponse.memories.map((memory) =>
-            memory.memory_id === memoryId ? updated : memory
-          )
-        };
+        currentMemoryResponse =
+          controlAction === "delete"
+            ? {
+                ...currentMemoryResponse,
+                memories: currentMemoryResponse.memories.filter(
+                  (memory) => memory.memory_id !== memoryId
+                )
+              }
+            : {
+                ...currentMemoryResponse,
+                memories: currentMemoryResponse.memories.map((memory) =>
+                  memory.memory_id === memoryId ? updated : memory
+                )
+              };
         return jsonResponse({
           student_id: currentMemoryResponse.student_id,
           memory: updated
@@ -840,7 +902,11 @@ function mockMathTutorApi({
   });
 }
 
-function memoryControlAction(url: string): "enable" | "disable" | null {
+function memoryControlAction(
+  url: string,
+  init?: RequestInit
+): "enable" | "disable" | "delete" | null {
+  if (init?.method === "DELETE") return "delete";
   if (url.endsWith("/disable")) return "disable";
   if (url.endsWith("/enable")) return "enable";
   return null;
@@ -849,17 +915,16 @@ function memoryControlAction(url: string): "enable" | "disable" | null {
 function updateMemoryControlFixture(
   memoryResponse: StudentMemoryListResponse,
   memoryId: string,
-  action: "enable" | "disable"
+  action: "enable" | "disable" | "delete"
 ) {
   const memory = memoryResponse.memories.find((item) => item.memory_id === memoryId);
   if (!memory) throw new Error(`Missing memory fixture: ${memoryId}`);
   const enabled = action === "enable";
-  const status: StudentMemoryListResponse["memories"][number]["status"] = enabled
-    ? "enabled"
-    : "disabled";
+  const status: StudentMemoryListResponse["memories"][number]["status"] =
+    action === "delete" ? "deleted" : enabled ? "enabled" : "disabled";
   return {
     ...memory,
-    enabled,
+    enabled: action === "delete" ? false : enabled,
     status,
     provenance: {
       ...memory.provenance,
@@ -867,9 +932,12 @@ function updateMemoryControlFixture(
         operation: action,
         status,
         actor: "student",
-        reason: enabled
-          ? "学生在记忆控制面板中重新启用该记忆。"
-          : "学生在记忆控制面板中禁用该记忆。",
+        reason:
+          action === "delete"
+            ? "学生在记忆控制面板中删除该记忆。"
+            : enabled
+              ? "学生在记忆控制面板中重新启用该记忆。"
+              : "学生在记忆控制面板中禁用该记忆。",
         occurred_at: "2026-07-09T09:00:00+00:00"
       }
     }

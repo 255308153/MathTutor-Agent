@@ -144,6 +144,48 @@ def test_student_memory_control_api_disables_and_reenables_memory(
     )
 
 
+@pytest.mark.parametrize(
+    ("provider_name", "store_factory"),
+    [
+        ("local_fallback", InMemoryStudentMemoryStore),
+        ("fake_provider", FakeStudentMemoryProvider),
+    ],
+)
+def test_student_memory_delete_api_removes_memory_from_ordinary_results(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_name: str,
+    store_factory: Callable[[], StudentMemoryStore],
+) -> None:
+    store = store_factory()
+    student_id = f"student-memory-delete-{provider_name}"
+    memory = store.write(
+        StudentMemory(
+            student_id=student_id,
+            memory_type="preference",
+            content="学生偏好先看比例题的步骤化讲解。",
+            evidence={"preferred_concept_id": "c_ratio"},
+        )
+    )
+    monkeypatch.setattr(events_api, "learning_loop", SimpleNamespace(memories=store))
+    client = TestClient(create_app())
+
+    deleted_response = client.request(
+        "DELETE",
+        f"/api/students/{student_id}/memories/{memory.memory_id}",
+        json={"actor": "student", "reason": "这条记忆已经不想保留。"},
+    )
+
+    assert deleted_response.status_code == 200
+    deleted = deleted_response.json()["memory"]
+    assert deleted["enabled"] is False
+    assert deleted["status"] == "deleted"
+    assert deleted["provenance"]["control"]["operation"] == "delete"
+    assert deleted["provenance"]["control"]["reason"] == "这条记忆已经不想保留。"
+    assert client.get(f"/api/students/{student_id}/memories/{memory.memory_id}").status_code == 404
+    assert client.get(f"/api/students/{student_id}/memories").json()["memories"] == []
+    assert store.search(student_id=student_id, query="比例 步骤", limit=5) == []
+
+
 def test_student_memory_detail_api_returns_404_for_missing_memory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

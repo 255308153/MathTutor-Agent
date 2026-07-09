@@ -342,6 +342,58 @@ def test_learning_context_layer_omits_disabled_memory_with_reason() -> None:
     assert assembled.normalized_context["strategy_hints"]["preferred_concept_id"] is None
 
 
+def test_learning_context_layer_drops_deleted_memory_from_active_assets() -> None:
+    layer = LearningContextLayer(store=InMemoryContextAssetStore())
+    deleted_memory = StudentMemory(
+        student_id="student-deleted-context",
+        memory_type="preference",
+        content="学生偏好先练比例题。",
+        evidence={"preferred_concept_id": "c_ratio"},
+        enabled=False,
+        status="deleted",
+        provenance={
+            "control": {
+                "operation": "delete",
+                "reason": "学生删除该记忆，默认列表、检索和学习上下文均排除。",
+            }
+        },
+    )
+    assets = layer.collect_assets(
+        student_id="student-deleted-context",
+        session_id="session-deleted-context",
+        intent="next_step_advice",
+        learning_event=LearningEvent(
+            session_id="session-deleted-context",
+            student_id="student-deleted-context",
+            type="chat_message",
+            message="推荐下一题",
+            payload={},
+        ),
+        kt_progress=KTLearningProgress(student_id="student-deleted-context"),
+        student_memories=[deleted_memory.model_dump()],
+        rag_context=[],
+        kt_facts={"weak_concepts": [], "forgetting_risks": []},
+        trace_id="trace-deleted-context",
+    )
+
+    assembled = layer.assemble_context(
+        intent="next_step_advice",
+        assets=assets,
+        kt_facts={"weak_concepts": [], "forgetting_risks": []},
+    )
+
+    assert not any(asset.asset_type == "student_memory" for asset in assets)
+    assert assembled.normalized_context["student_memory"] == []
+    assert not any(
+        item["asset_type"] == "student_memory"
+        for item in assembled.asset_selection["selected"]
+    )
+    assert not any(
+        item["asset_type"] == "student_memory"
+        for item in assembled.asset_selection["omitted"]
+    )
+
+
 def test_context_assembler_trims_budget_and_reports_included_excluded_reasons() -> None:
     layer = LearningContextLayer(store=InMemoryContextAssetStore())
     assets = [
@@ -733,6 +785,83 @@ def test_next_step_api_excludes_disabled_memory_from_search_and_old_context_asse
         and asset["excluded_reason"] == "学生已禁用该记忆，默认学习上下文已排除。"
         for asset in omitted
     )
+    assert "参考学生偏好" not in body["recommended_questions"][0]["reason"]
+    assert "参考你之前的学习偏好" not in body["response"]
+    assert "参考学生偏好" not in expert["planner_decision"]["evidence"][
+        "context_included_reasons"
+    ]
+
+
+def test_next_step_api_drops_deleted_memory_from_search_and_old_context_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.api import events as events_api
+    from backend.app.graph.learning_loop import MathTutorLearningLoop
+    from backend.app.storage.progress_store import InMemoryProgressStore
+
+    student_id = "student-context-deleted-memory"
+    memories = InMemoryStudentMemoryStore()
+    memory = memories.write(
+        StudentMemory(
+            student_id=student_id,
+            memory_type="preference",
+            content="学生偏好步骤化讲解，并希望先练比例题。",
+            evidence={
+                "preferred_teaching_type": "procedure",
+                "preferred_concept_id": "c_ratio",
+            },
+        )
+    )
+    loop = MathTutorLearningLoop(
+        store=InMemoryProgressStore(),
+        memories=memories,
+        context_layer=LearningContextLayer(store=InMemoryContextAssetStore()),
+    )
+    monkeypatch.setattr(events_api, "learning_loop", loop)
+    client = TestClient(create_app())
+
+    first_response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-context-deleted-memory",
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "推荐下一题",
+            "payload": {},
+        },
+    )
+    assert first_response.status_code == 200
+    assert "参考学生偏好" in first_response.json()["recommended_questions"][0]["reason"]
+
+    deleted = memories.delete(
+        student_id=student_id,
+        memory_id=memory.memory_id,
+        reason="学生删除该偏好。",
+    )
+    assert deleted is not None
+
+    second_response = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-context-deleted-memory",
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "推荐下一题",
+            "payload": {},
+        },
+    )
+
+    assert second_response.status_code == 200
+    body = second_response.json()
+    expert = body["teaching_trace_summary"]["expert_evidence"]
+    assembled = expert["assembled_context"]
+    selected = assembled["asset_selection"]["selected"]
+    omitted = assembled["asset_selection"]["omitted"]
+
+    assert expert["student_memories"] == []
+    assert assembled["normalized_context"]["student_memory"] == []
+    assert not any(asset["asset_type"] == "student_memory" for asset in selected)
+    assert not any(asset["asset_type"] == "student_memory" for asset in omitted)
     assert "参考学生偏好" not in body["recommended_questions"][0]["reason"]
     assert "参考你之前的学习偏好" not in body["response"]
     assert "参考学生偏好" not in expert["planner_decision"]["evidence"][

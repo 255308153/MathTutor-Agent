@@ -14,9 +14,16 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
-  Target
+  Target,
+  Trash2,
+  X
 } from "lucide-react";
-import { fetchStudentMemories, sendLearningEvent, updateStudentMemoryControl } from "./api";
+import {
+  deleteStudentMemory,
+  fetchStudentMemories,
+  sendLearningEvent,
+  updateStudentMemoryControl
+} from "./api";
 import type {
   AttributionEvidence,
   ContextAssetEvidence,
@@ -50,8 +57,10 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
   const [pendingMemoryControlId, setPendingMemoryControlId] = useState("");
+  const [confirmingMemoryDeleteId, setConfirmingMemoryDeleteId] = useState("");
   const [error, setError] = useState("");
   const [memoryError, setMemoryError] = useState("");
+  const [memoryNotice, setMemoryNotice] = useState("");
   const activeStudentId = studentId || DEFAULT_STUDENT_ID;
 
   useEffect(() => {
@@ -136,6 +145,7 @@ export default function App() {
   async function loadStudentMemories(targetStudentId = activeStudentId) {
     setIsMemoryLoading(true);
     setMemoryError("");
+    setMemoryNotice("");
     try {
       const response = await fetchStudentMemories(targetStudentId);
       setMemories(response.memories);
@@ -154,7 +164,9 @@ export default function App() {
 
   async function setMemoryEnabled(memory: StudentMemory, enabled: boolean) {
     setPendingMemoryControlId(memory.memory_id);
+    setConfirmingMemoryDeleteId("");
     setMemoryError("");
+    setMemoryNotice("");
     try {
       const response = await updateStudentMemoryControl({
         studentId: activeStudentId,
@@ -169,6 +181,30 @@ export default function App() {
       setSelectedMemoryId(response.memory.memory_id);
     } catch (err) {
       setMemoryError(err instanceof Error ? err.message : "学生记忆控制失败");
+    } finally {
+      setPendingMemoryControlId("");
+    }
+  }
+
+  async function deleteMemory(memory: StudentMemory) {
+    setPendingMemoryControlId(memory.memory_id);
+    setMemoryError("");
+    setMemoryNotice("");
+    try {
+      await deleteStudentMemory({
+        studentId: activeStudentId,
+        memoryId: memory.memory_id
+      });
+      const nextMemories = memories.filter((item) => item.memory_id !== memory.memory_id);
+      setMemories(nextMemories);
+      setSelectedMemoryId((currentId) => {
+        if (currentId !== memory.memory_id) return currentId;
+        return nextMemories[0]?.memory_id ?? "";
+      });
+      setConfirmingMemoryDeleteId("");
+      setMemoryNotice("已删除该条长期记忆。");
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : "学生记忆删除失败");
     } finally {
       setPendingMemoryControlId("");
     }
@@ -336,10 +372,19 @@ export default function App() {
             selectedMemoryId={selectedMemoryId}
             isLoading={isMemoryLoading}
             error={memoryError}
+            notice={memoryNotice}
             pendingMemoryControlId={pendingMemoryControlId}
+            confirmingMemoryDeleteId={confirmingMemoryDeleteId}
             onSelect={setSelectedMemoryId}
             onRefresh={() => void loadStudentMemories()}
             onSetEnabled={(memory, enabled) => void setMemoryEnabled(memory, enabled)}
+            onRequestDelete={(memory) => {
+              setMemoryError("");
+              setMemoryNotice("");
+              setConfirmingMemoryDeleteId(memory.memory_id);
+            }}
+            onCancelDelete={() => setConfirmingMemoryDeleteId("")}
+            onDelete={(memory) => void deleteMemory(memory)}
           />
 
           <TracePanel response={current} />
@@ -393,24 +438,36 @@ function MemoryPanel({
   selectedMemoryId,
   isLoading,
   error,
+  notice,
   pendingMemoryControlId,
+  confirmingMemoryDeleteId,
   onSelect,
   onRefresh,
-  onSetEnabled
+  onSetEnabled,
+  onRequestDelete,
+  onCancelDelete,
+  onDelete
 }: {
   memories: StudentMemory[];
   selectedMemoryId: string;
   isLoading: boolean;
   error: string;
+  notice: string;
   pendingMemoryControlId: string;
+  confirmingMemoryDeleteId: string;
   onSelect: (memoryId: string) => void;
   onRefresh: () => void;
   onSetEnabled: (memory: StudentMemory, enabled: boolean) => void;
+  onRequestDelete: (memory: StudentMemory) => void;
+  onCancelDelete: () => void;
+  onDelete: (memory: StudentMemory) => void;
 }) {
   const selectedMemory =
     memories.find((memory) => memory.memory_id === selectedMemoryId) ?? memories[0] ?? null;
   const evidenceFacts = selectedMemory ? memoryEvidenceFacts(selectedMemory) : [];
   const provenanceFacts = selectedMemory ? memoryProvenanceFacts(selectedMemory) : [];
+  const isDeleteConfirming = selectedMemory?.memory_id === confirmingMemoryDeleteId;
+  const isSelectedMemoryPending = selectedMemory?.memory_id === pendingMemoryControlId;
 
   return (
     <article className="panel memory-panel">
@@ -443,6 +500,11 @@ function MemoryPanel({
             <RefreshCw size={15} />
             重试
           </button>
+        </div>
+      )}
+      {notice && !error && (
+        <div className="memory-notice" role="status">
+          {notice}
         </div>
       )}
       {!isLoading && !error && memories.length === 0 && (
@@ -488,7 +550,7 @@ function MemoryPanel({
                   type="button"
                   className="secondary-button"
                   onClick={() => onSetEnabled(selectedMemory, selectedMemory.status === "disabled")}
-                  disabled={pendingMemoryControlId === selectedMemory.memory_id}
+                  disabled={isSelectedMemoryPending}
                 >
                   {selectedMemory.status === "disabled" ? (
                     <RotateCcw size={16} />
@@ -497,6 +559,38 @@ function MemoryPanel({
                   )}
                   {selectedMemory.status === "disabled" ? "重新启用记忆" : "禁用记忆"}
                 </button>
+                {!isDeleteConfirming ? (
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => onRequestDelete(selectedMemory)}
+                    disabled={isSelectedMemoryPending}
+                  >
+                    <Trash2 size={16} />
+                    删除记忆
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="danger-button"
+                      onClick={() => onDelete(selectedMemory)}
+                      disabled={isSelectedMemoryPending}
+                    >
+                      <Trash2 size={16} />
+                      确认删除
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={onCancelDelete}
+                      disabled={isSelectedMemoryPending}
+                    >
+                      <X size={16} />
+                      取消
+                    </button>
+                  </>
+                )}
               </div>
               <div className="memory-facts">
                 <p>
@@ -840,6 +934,7 @@ function memoryTypeName(type: StudentMemory["memory_type"]) {
 }
 
 function memoryStatusName(status: StudentMemory["status"]) {
+  if (status === "deleted") return "已删除";
   return status === "disabled" ? "已禁用" : "已启用";
 }
 
