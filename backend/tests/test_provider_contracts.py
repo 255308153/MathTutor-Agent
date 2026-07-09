@@ -452,6 +452,45 @@ def _assert_student_memory_store_contract(store: StudentMemoryStore) -> None:
         limit=3,
     )[0].memory_id == preference.memory_id
 
+    deleted = store.delete(
+        student_id=student_id,
+        memory_id=preference.memory_id,
+        reason="学生删除错误记忆。",
+    )
+    assert deleted is not None
+    assert deleted.enabled is False
+    assert deleted.status == "deleted"
+    assert deleted.provenance["control"]["operation"] == "delete"
+    assert deleted.provenance["control"]["reason"] == "学生删除错误记忆。"
+    assert {
+        memory.memory_id for memory in store.list_recent(student_id=student_id, limit=5)
+    } == {mistake.memory_id}
+    assert store.get(student_id=student_id, memory_id=preference.memory_id) is None
+    assert store.search(
+        student_id=student_id,
+        query="通分 步骤",
+        memory_types=["preference"],
+        limit=3,
+    ) == []
+    assert store.enable(student_id=student_id, memory_id=preference.memory_id) is None
+    rewritten_after_delete = store.write(
+        StudentMemory(
+            student_id=student_id,
+            memory_type="preference",
+            content=preference.content,
+            evidence=preference.evidence,
+        )
+    )
+    assert rewritten_after_delete.enabled is False
+    assert rewritten_after_delete.status == "deleted"
+    assert store.get(student_id=student_id, memory_id=preference.memory_id) is None
+    assert store.search(
+        student_id=student_id,
+        query="通分 步骤",
+        memory_types=["preference"],
+        limit=3,
+    ) == []
+
     assert store.get(student_id=student_id, memory_id="missing-memory") is None
     assert store.search(student_id="missing-student", query="通分", limit=3) == []
 

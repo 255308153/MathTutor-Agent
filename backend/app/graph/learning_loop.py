@@ -528,7 +528,9 @@ class MathTutorLearningLoop:
             except Exception:
                 controlled_assets.append(asset)
                 continue
-            if memory is None or (memory.enabled and memory.status == "enabled"):
+            if memory is None or memory.status == "deleted":
+                continue
+            if memory.enabled and memory.status == "enabled":
                 controlled_assets.append(asset)
                 continue
             metadata = dict(asset.metadata)

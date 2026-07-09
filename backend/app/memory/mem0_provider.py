@@ -10,6 +10,7 @@ from .store import (
     MemoryType,
     StudentMemory,
     apply_memory_control,
+    apply_memory_delete,
     memory_dedupe_key,
     memory_freshness,
 )
@@ -56,6 +57,7 @@ class Mem0StudentMemoryStore:
         self.fallback_on_error = fallback_on_error
         self.last_error: dict[str, Any] | None = None
         self.last_evidence_gaps: list[dict[str, Any]] = []
+        self._tombstones_by_student: dict[str, set[str]] = {}
 
     def search(
         self,
@@ -108,7 +110,11 @@ class Mem0StudentMemoryStore:
             allowed = set(memory_types)
             memories = [memory for memory in memories if memory.memory_type in allowed]
         memories = [
-            memory for memory in memories if memory.enabled and memory.status == "enabled"
+            memory
+            for memory in memories
+            if memory.enabled
+            and memory.status == "enabled"
+            and not self._is_tombstoned(memory.student_id, memory.memory_id)
         ]
         if not memories and not self._has_gap("provider_schema_mismatch"):
             self._record_gap(
@@ -187,6 +193,12 @@ class Mem0StudentMemoryStore:
                     )
                 )
         memories = [memory for memory in memories if memory.student_id == student_id]
+        memories = [
+            memory
+            for memory in memories
+            if memory.status != "deleted"
+            and not self._is_tombstoned(memory.student_id, memory.memory_id)
+        ]
         memories.sort(
             key=lambda memory: (_newest_first_sort_value(memory.updated_at), memory.memory_id)
         )
@@ -216,7 +228,12 @@ class Mem0StudentMemoryStore:
                     )
                 )
                 continue
-            if memory.student_id == student_id and memory.memory_id == memory_id:
+            if (
+                memory.student_id == student_id
+                and memory.memory_id == memory_id
+                and memory.status != "deleted"
+                and not self._is_tombstoned(student_id, memory_id)
+            ):
                 return memory
         return None
 
@@ -251,6 +268,46 @@ class Mem0StudentMemoryStore:
             actor=actor,
             reason=reason,
         )
+
+    def delete(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        memory = self.get(student_id=student_id, memory_id=memory_id)
+        if memory is None:
+            return None
+        deleted = apply_memory_delete(memory, actor=actor, reason=reason)
+        self._mark_tombstoned(student_id, memory_id)
+        self._clear_provider_gaps()
+        try:
+            if self._provider_delete(memory_id):
+                return deleted
+            updated = self._provider_update(deleted)
+            if updated is None:
+                return deleted
+            return self._to_domain_memory(updated, fallback=deleted, student_id=student_id)
+        except Exception as exc:
+            if not self.fallback_on_error:
+                raise
+            gap = self._record_error("memory_delete", exc)
+            return deleted.model_copy(
+                update={
+                    "source": "mem0_unavailable",
+                    "provenance": deleted.provenance
+                    | {
+                        "provider_failure": {
+                            "operation": "memory_delete",
+                            "provider": "mem0",
+                            "gap_type": gap["gap_type"],
+                            "reason": gap["reason"],
+                        }
+                    },
+                }
+            )
 
     def _set_enabled(
         self,
@@ -361,6 +418,17 @@ class Mem0StudentMemoryStore:
             return _first_success(attempts)
         except (AttributeError, TypeError, RuntimeError):
             return None
+
+    def _provider_delete(self, memory_id: str) -> bool:
+        attempts = [
+            lambda: self.client.delete(memory_id=memory_id),
+            lambda: self.client.delete(memory_id),
+        ]
+        try:
+            _first_success(attempts)
+            return True
+        except (AttributeError, TypeError, RuntimeError):
+            return False
 
     def _provider_filters(self, memory_types: list[MemoryType] | None) -> dict[str, Any]:
         if not memory_types:
@@ -587,6 +655,12 @@ class Mem0StudentMemoryStore:
     def _has_gap(self, gap_type: str) -> bool:
         return any(gap.get("gap_type") == gap_type for gap in self.last_evidence_gaps)
 
+    def _mark_tombstoned(self, student_id: str, memory_id: str) -> None:
+        self._tombstones_by_student.setdefault(student_id, set()).add(memory_id)
+
+    def _is_tombstoned(self, student_id: str, memory_id: str) -> bool:
+        return memory_id in self._tombstones_by_student.get(student_id, set())
+
 
 def _first_success(attempts: list[Any]) -> Any:
     last_error: Exception | None = None
@@ -640,7 +714,7 @@ def _enabled(value: Any, *, fallback: bool) -> bool:
 
 
 def _memory_status(value: Any, *, enabled: bool) -> MemoryStatus:
-    if value in {"enabled", "disabled"}:
+    if value in {"enabled", "disabled", "deleted"}:
         return value
     return "enabled" if enabled else "disabled"
 

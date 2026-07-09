@@ -92,6 +92,30 @@ def enable_student_memory(
     )
 
 
+@router.delete(
+    "/students/{student_id}/memories/{memory_id}",
+    response_model=StudentMemoryDetailResponse,
+)
+def delete_student_memory(
+    student_id: str,
+    memory_id: str,
+    request: StudentMemoryControlRequest | None = Body(default=None),
+) -> StudentMemoryDetailResponse:
+    payload = request or StudentMemoryControlRequest()
+    memory = _active_memory_store().delete(
+        student_id=student_id,
+        memory_id=memory_id,
+        actor=payload.actor,
+        reason=payload.reason,
+    )
+    if memory is None:
+        raise HTTPException(status_code=404, detail="学生记忆不存在")
+    return StudentMemoryDetailResponse(
+        student_id=student_id,
+        memory=public_memory_view(memory),
+    )
+
+
 def _active_memory_store() -> StudentMemoryStore:
     loop_memory_store = getattr(getattr(events_api, "learning_loop", None), "memories", None)
     return loop_memory_store or memory_store

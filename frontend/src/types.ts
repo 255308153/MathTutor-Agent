@@ -33,7 +33,7 @@ export type StudentMemoryType =
   | "reflection";
 
 export type StudentMemoryFreshness = "fresh" | "recent" | "stale";
-export type StudentMemoryStatus = "enabled" | "disabled";
+export type StudentMemoryStatus = "enabled" | "disabled" | "deleted";
 
 export interface StudentMemory {
   memory_id: string;

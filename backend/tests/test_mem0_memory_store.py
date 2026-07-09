@@ -185,6 +185,34 @@ def test_mem0_adapter_deduplicates_repeated_learning_events() -> None:
     ]
 
 
+def test_mem0_adapter_tombstones_memory_when_hard_delete_is_unavailable() -> None:
+    client = FakeMem0Client()
+    store = Mem0StudentMemoryStore(client=client, api_key="test-key")
+    student_id = "student-mem0-delete"
+    memory = store.write(
+        _memory(
+            student_id,
+            "preference",
+            "学生偏好分数通分的步骤化讲解。",
+        )
+    )
+
+    deleted = store.delete(
+        student_id=student_id,
+        memory_id=memory.memory_id,
+        reason="学生删除该记忆。",
+    )
+
+    assert deleted is not None
+    assert deleted.enabled is False
+    assert deleted.status == "deleted"
+    assert client.records[0]["metadata"]["status"] == "deleted"
+    assert client.records[0]["metadata"]["enabled"] is False
+    assert store.get(student_id=student_id, memory_id=memory.memory_id) is None
+    assert store.list_recent(student_id, limit=10) == []
+    assert store.search(student_id=student_id, query="通分 步骤", limit=5) == []
+
+
 def test_mem0_cross_session_smoke_recalls_memory_and_changes_strategy_language() -> None:
     store = Mem0StudentMemoryStore(client=FakeMem0Client(), api_key="test-key")
     loop = MathTutorLearningLoop(

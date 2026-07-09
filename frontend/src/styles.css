@@ -178,6 +178,7 @@ h2 {
 
 .primary-button,
 .secondary-button,
+.danger-button,
 .answer-row button,
 .chat-form button {
   display: inline-flex;
@@ -197,6 +198,12 @@ h2 {
   border: 1px solid #cfd9d3;
   background: #fbfcfb;
   color: #1f4e43;
+}
+
+.danger-button {
+  border: 1px solid #d16d43;
+  background: #fff5ef;
+  color: #8f3d12;
 }
 
 .answer-row button,
@@ -448,6 +455,8 @@ button:disabled {
 
 .memory-control-row {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-start;
   margin: 10px 0 4px;
 }
@@ -484,6 +493,11 @@ button:disabled {
 .memory-status-disabled {
   background: #f1f2f0;
   color: #617069;
+}
+
+.memory-status-deleted {
+  background: #fff5ef;
+  color: #8f3d12;
 }
 
 .memory-facts {
@@ -542,6 +556,15 @@ button:disabled {
   border-radius: 8px;
   background: #fff5ef;
   color: #8f3d12;
+  padding: 10px;
+  font-weight: 800;
+}
+
+.memory-notice {
+  border: 1px solid #8ab7a5;
+  border-radius: 8px;
+  background: #f0f8f5;
+  color: #1f4e43;
   padding: 10px;
   font-weight: 800;
 }
