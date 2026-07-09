@@ -18,7 +18,7 @@ from ..schemas.learning import (
     MathTutorState,
 )
 from ..schemas.trace import TeachingTraceEvent, TeachingTraceEventType
-from ..storage.content_repository import DemoTeachingContentRepository, content_repository
+from ..storage.content_repository import ContentRepository, content_repository
 from ..storage.progress_store import InMemoryProgressStore, progress_store
 
 
@@ -27,7 +27,7 @@ class MathTutorLearningLoop:
         self,
         kt_engine: KTStateEngine | None = None,
         store: InMemoryProgressStore | None = None,
-        content: DemoTeachingContentRepository | None = None,
+        content: ContentRepository | None = None,
         question_recommender: RiskPrioritizedRecommender | None = None,
         rag: KnowledgeRAG | None = None,
         memories: StudentMemoryStore | None = None,
@@ -942,7 +942,7 @@ class MathTutorLearningLoop:
                 "teaching_type": grade.question["teaching_type"],
                 "mistake_patterns": grade.question["mistake_patterns"],
                 "rag_doc_ids": grade.question["rag_doc_ids"],
-                "grading_source": "demo_teaching_content",
+                "grading_source": self.content.grading_source,
             }
         )
         explicit_assist_question_id = state.learning_event.payload.get(

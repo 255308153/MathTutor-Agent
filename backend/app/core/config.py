@@ -21,6 +21,9 @@ class MathTutorSettings(BaseSettings):
     llm_model: str = ""
     openai_api_key: str = ""
 
+    content_source: Literal["demo", "imported"] = "demo"
+    content_import_path: str = ""
+
     kt_engine: Literal["mock", "dgekt"] = "mock"
     dgekt_dataset: str = "assist2017"
     dgekt_checkpoint_path: str = ""
