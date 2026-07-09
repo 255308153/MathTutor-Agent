@@ -103,6 +103,7 @@ Provider Health 会复用现有 provider evidence gap 词汇，并把最近一�
 
 | gap_type | health status | severity | 说明 |
 | --- | --- | --- | --- |
+| `provider_configuration_missing` | `not_configured` | `warning` | provider 已显式选择但缺少必要配置；不信任其 evidence，默认本地学习流程继续可用。 |
 | `provider_failure` | `unavailable` | `error` | provider evidence 当前不可用，本地或 fixture evidence 继续可用。 |
 | `provider_timeout` | `unavailable` | `warning` | provider 未在 timeout 内返回 evidence。 |
 | `provider_auth_error` | `unavailable` | `error` | provider 凭据或权限不可用，不信任失败 provider evidence。 |

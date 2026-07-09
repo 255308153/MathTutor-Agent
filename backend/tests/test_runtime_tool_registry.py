@@ -17,6 +17,7 @@ from backend.app.runtime import (
     MathToolRegistry,
     MathTutorAgentRuntime,
     ToolInvocation,
+    default_tool_registry,
     kt_authoritative_facts_tool,
 )
 from backend.app.schemas.learning import LearningEvent
@@ -26,6 +27,15 @@ from backend.tests.test_kt_engine_config import (
     patch_fake_dgekt_runtime,
     write_dgekt_fraction_fixture_files,
 )
+
+
+RUNTIME_PROVIDER_MODES = {"local_fallback", "fake_provider", "live_provider"}
+RUNTIME_READINESS_STATUSES = {
+    "healthy",
+    "degraded",
+    "unavailable",
+    "not_configured",
+}
 
 
 class EmptyRAG:
@@ -158,7 +168,7 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
     assert observation["provider"] == "mock"
     assert observation["provider_mode"] == "local_fallback"
     assert observation["fallback_used"] is True
-    assert observation["status"] == "completed"
+    assert observation["status"] == "healthy"
     assert observation["result_summary"]["prediction_probability"] == 0.58
     assert (
         observation["result_summary"]["prediction_probability"]
@@ -185,7 +195,7 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
         expert["runtime"]["tool_observation_refs"]
     )
     assert rag_observation["provider_mode"] == "local_fallback"
-    assert rag_observation["status"] == "completed"
+    assert rag_observation["status"] == "healthy"
     assert rag_observation["result_summary"]["result_count"] == len(expert["rag_sources"])
     assert rag_observation["result_summary"]["citation_refs"]
     assert (
@@ -206,6 +216,19 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
         "and personalization, but cannot directly modify mastery, weak concepts, "
         "prediction probability, or forgetting risks."
     )
+    for item in observations.values():
+        assert item["provider_mode"] in RUNTIME_PROVIDER_MODES
+        assert item["status"] in RUNTIME_READINESS_STATUSES
+    overview = expert["trace_overview"]
+    for item in overview["tool_observations"]:
+        assert item["provider_mode"] in RUNTIME_PROVIDER_MODES
+        assert item["status"] in RUNTIME_READINESS_STATUSES
+    for item in overview["tool_calls"]:
+        assert set(item["provider_modes"]) <= RUNTIME_PROVIDER_MODES
+        if item["provider_mode"] is not None:
+            assert item["provider_mode"] in RUNTIME_PROVIDER_MODES
+        if item["status"] is not None:
+            assert item["status"] in RUNTIME_READINESS_STATUSES
 
 
 def test_runtime_records_empty_rag_observation_without_fabricated_citation(
@@ -259,6 +282,52 @@ def test_runtime_records_empty_rag_observation_without_fabricated_citation(
         == expert["kt_diagnosis"]["prediction_probability"]
         == observations[KT_AUTHORITY_TOOL_ID]["result_summary"]["prediction_probability"]
     )
+
+
+def test_runtime_observation_aligns_configuration_gap_with_health_readiness() -> None:
+    registry = default_tool_registry()
+    observation = registry.call(
+        RAG_RETRIEVAL_TOOL_ID,
+        ToolInvocation(
+            tool_id=RAG_RETRIEVAL_TOOL_ID,
+            turn_id="turn-runtime-config-gap",
+            trace_id="tt-runtime-config-gap",
+            input_summary={
+                "rag_sources": [],
+                "evidence_gaps": [
+                    {
+                        "gap_type": "provider_configuration_missing",
+                        "provider": "openviking",
+                        "operation": "search",
+                        "reason": "Authorization: Bearer runtime-secret api_key=also-secret",
+                        "details": {
+                            "safe_summary": "OpenViking live provider 缺配置。",
+                            "raw_provider_payload": {"token": "raw-secret"},
+                            "local_path": "/Users/lqc/private/vector-cache",
+                        },
+                    }
+                ],
+            },
+        ),
+    )
+
+    summary = observation.public_summary()
+
+    assert summary["provider"] == "openviking"
+    assert summary["provider_mode"] == "live_provider"
+    assert summary["status"] == "not_configured"
+    assert summary["degraded"] is True
+    assert summary["result_summary"]["provider_gap_count"] == 1
+    assert summary["result_summary"]["provider_gaps"][0]["gap_type"] == (
+        "provider_configuration_missing"
+    )
+    assert summary["result_summary"]["citation_refs"] == []
+    serialized = json.dumps(summary, ensure_ascii=False)
+    assert "runtime-secret" not in serialized
+    assert "also-secret" not in serialized
+    assert "raw-secret" not in serialized
+    assert "raw_provider_payload" not in serialized
+    assert "/Users/" not in serialized
 
 
 def test_runtime_memory_observation_respects_disabled_and_deleted_controls() -> None:
@@ -339,7 +408,7 @@ def test_runtime_rag_and_memory_provider_gaps_do_not_override_kt_facts() -> None
     )
     assert memory_observation["provider"] == "mem0"
     assert memory_observation["provider_mode"] == "live_provider"
-    assert memory_observation["status"] == "degraded"
+    assert memory_observation["status"] == "unavailable"
     assert any(
         gap["gap_type"] == "provider_timeout"
         for gap in memory_observation["result_summary"]["provider_gaps"]
@@ -361,8 +430,19 @@ def test_runtime_rag_and_memory_provider_gaps_do_not_override_kt_facts() -> None
         event["stage"] == "rag_tool_observation"
         and event["provider_gap_count"] >= 1
         and event["provider_mode"] == "live_provider"
+        and event["status"] == "degraded"
         for event in overview["stage_events"]
     )
+    assert any(
+        event["stage"] == "memory_tool_observation"
+        and event["provider_gap_count"] >= 1
+        and event["provider_mode"] == "live_provider"
+        and event["status"] == "unavailable"
+        for event in overview["stage_events"]
+    )
+    assert rag_observation["result_summary"]["citation_refs"] == []
+    assert expert["rag_sources"] == []
+    assert body["recommended_questions"]
     assert (
         expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"]
         == expert["kt_diagnosis"]["prediction_probability"]

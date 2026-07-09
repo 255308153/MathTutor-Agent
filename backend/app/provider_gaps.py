@@ -5,7 +5,15 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 
+ProviderReadinessStatus = Literal[
+    "healthy",
+    "degraded",
+    "unavailable",
+    "not_configured",
+]
+
 ProviderEvidenceGapType = Literal[
+    "provider_configuration_missing",
     "provider_failure",
     "provider_timeout",
     "provider_auth_error",
@@ -15,12 +23,23 @@ ProviderEvidenceGapType = Literal[
 ]
 
 PROVIDER_EVIDENCE_GAP_TYPES: set[str] = {
+    "provider_configuration_missing",
     "provider_failure",
     "provider_timeout",
     "provider_auth_error",
     "provider_empty_result",
     "provider_schema_mismatch",
     "provider_budget_exceeded",
+}
+
+PROVIDER_EVIDENCE_GAP_STATUS: dict[str, ProviderReadinessStatus] = {
+    "provider_configuration_missing": "not_configured",
+    "provider_failure": "unavailable",
+    "provider_timeout": "unavailable",
+    "provider_auth_error": "unavailable",
+    "provider_empty_result": "degraded",
+    "provider_schema_mismatch": "degraded",
+    "provider_budget_exceeded": "degraded",
 }
 
 RAW_PROVIDER_KEYS = {
@@ -102,6 +121,7 @@ def classify_provider_exception(exc: BaseException) -> ProviderEvidenceGapType:
 
 def _default_impact(gap_type: str) -> str:
     impacts = {
+        "provider_configuration_missing": "provider is explicitly selected but required configuration is missing; no provider evidence is trusted",
         "provider_failure": "provider evidence is unavailable; local flow continues without fabricated evidence",
         "provider_timeout": "provider timed out; local flow continues without waiting for provider evidence",
         "provider_auth_error": "provider credentials were rejected or missing; no provider evidence is trusted",

@@ -28,6 +28,13 @@ DGEKT_OFFLINE_EVIDENCE_FILES = (
     "weak_concepts.csv",
 )
 PROVIDER_GAP_HEALTH = {
+    "provider_configuration_missing": {
+        "status": "not_configured",
+        "severity": "warning",
+        "message": "provider readiness 缺少必要配置。",
+        "impact": "该 provider 已被显式选择但配置不完整；系统不会信任其 evidence，也不会阻塞默认本地学习流程。",
+        "actionable_hint": "补齐对应 env / provider 配置，或切回 local_fallback / fake_provider 验证主流程。",
+    },
     "provider_failure": {
         "status": "unavailable",
         "severity": "error",
