@@ -55,6 +55,7 @@ def main() -> None:
     except Assist2017BuildError as exc:
         payload = {
             "status": "failed",
+            "coverage_summary": exc.coverage_summary,
             "validation_errors": [issue.model_dump() for issue in exc.issues],
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2), file=sys.stderr)
@@ -83,4 +84,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

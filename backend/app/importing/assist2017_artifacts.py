@@ -39,8 +39,15 @@ ValidationCategory = Literal[
 
 
 class Assist2017BuildError(RuntimeError):
-    def __init__(self, issues: list["ValidationIssue"]) -> None:
+    def __init__(
+        self,
+        issues: list["ValidationIssue"],
+        coverage_summary: dict[str, Any] | None = None,
+    ) -> None:
         self.issues = issues
+        self.coverage_summary = coverage_summary or {
+            "validation": _validation_summary(issues)
+        }
         messages = "; ".join(issue.message for issue in issues)
         super().__init__(messages)
 
@@ -263,6 +270,10 @@ def build_assist2017_import_artifacts(
                     ),
                     source_ref=f"{source_paths['source_rows']}:row:{row.row_number}",
                     row=row,
+                    provenance={
+                        "q_matrix_path": source_paths["q_matrix"],
+                        "q_matrix_question_count": len(q_rows),
+                    },
                 )
             )
             continue
@@ -279,6 +290,12 @@ def build_assist2017_import_artifacts(
                     ),
                     source_ref=f"{source_paths['source_rows']}:row:{row.row_number}",
                     row=row,
+                    provenance={
+                        "declared_assist2017_concept_id": row.assist2017_concept_id,
+                        "q_matrix_concept_ids": q_matrix_concepts,
+                        "q_matrix_path": source_paths["q_matrix"],
+                        "q_matrix_row": row.assist2017_question_id,
+                    },
                 )
             )
             continue
@@ -301,6 +318,10 @@ def build_assist2017_import_artifacts(
                 source_ref=f"{source_paths['q_matrix']}:row:{question_id}",
                 assist2017_question_id=question_id,
                 canonical_question_id=canonical_question_id(question_id),
+                provenance={
+                    "q_matrix_path": source_paths["q_matrix"],
+                    "q_matrix_row": question_id,
+                },
             )
         )
     for concept_id in sorted(q_matrix_concept_ids - mapped_concept_ids):
@@ -313,6 +334,10 @@ def build_assist2017_import_artifacts(
                 source_ref=f"{source_paths['q_matrix']}:column:{concept_id}",
                 assist2017_concept_id=concept_id,
                 canonical_concept_id=canonical_concept_id(concept_id),
+                provenance={
+                    "q_matrix_path": source_paths["q_matrix"],
+                    "q_matrix_concept_column": concept_id,
+                },
             )
         )
 
@@ -360,13 +385,13 @@ def build_assist2017_import_artifacts(
             "content_questions": len(content.questions),
             "rag_documents": len(rag_documents),
         },
-        coverage_summary=summary,
+        coverage_summary=_compact_coverage_summary(summary),
         validation_errors=issues,
     )
     content = content.model_copy(update={"metadata": metadata})
     rag = RAGDocumentArtifact(metadata=metadata, documents=rag_documents)
     coverage = CoverageReportArtifact(
-        metadata=metadata,
+        metadata=metadata.model_copy(update={"coverage_summary": summary}),
         summary=summary,
         gaps=[
             CoverageGap.model_validate(issue.model_dump())
@@ -496,7 +521,11 @@ def _build_mapping_and_content(
                     or f"{row.question_id} has incomplete teaching content.",
                     source_ref=f"{source_paths['source_rows']}:row:{row.row_number}",
                     row=row,
-                    provenance={"missing_fields": availability.missing_fields},
+                    provenance={
+                        "missing_fields": availability.missing_fields,
+                        "missing_reason_codes": availability.missing_reason_codes,
+                        "content_availability": availability.model_dump(),
+                    },
                 )
             )
         imported_questions.append(
@@ -755,41 +784,143 @@ def _coverage_summary(
         for row in rows
         if row.stem is not None and row.standard_answer is not None and row.explanation is not None
     ]
-    gap_counts: dict[str, int] = {}
-    for issue in issues:
-        gap_counts[issue.category] = gap_counts.get(issue.category, 0) + 1
+    validation_summary = _validation_summary(issues)
+    gap_counts = validation_summary["gap_counts"]
     doc_type_counts: dict[str, int] = {}
     for document in rag_documents:
         doc_type_counts[document.doc_type] = doc_type_counts.get(document.doc_type, 0) + 1
+    content_gaps = [
+        _gap_summary(issue)
+        for issue in issues
+        if issue.category == "missing_teaching_content"
+    ]
+    rag_gaps = [
+        _gap_summary(issue)
+        for issue in issues
+        if issue.category == "missing_rag_doc"
+    ]
+    q_matrix_gaps = [
+        _gap_summary(issue)
+        for issue in issues
+        if issue.category == "q_matrix_mismatch"
+    ]
     return {
         "mapping": {
             "mapped_question_count": len(mapped_question_ids),
             "unmapped_question_count": len(q_matrix_question_ids - mapped_question_ids),
             "mapped_concept_count": len(mapped_concept_ids),
             "unmapped_concept_count": len(q_matrix_concept_ids - mapped_concept_ids),
+            "mapped_question_ids": [
+                canonical_question_id(question_id)
+                for question_id in sorted(mapped_question_ids)
+            ],
+            "unmapped_question_ids": [
+                canonical_question_id(question_id)
+                for question_id in sorted(q_matrix_question_ids - mapped_question_ids)
+            ],
+            "mapped_concept_ids": [
+                canonical_concept_id(concept_id)
+                for concept_id in sorted(mapped_concept_ids)
+            ],
+            "unmapped_concept_ids": [
+                canonical_concept_id(concept_id)
+                for concept_id in sorted(q_matrix_concept_ids - mapped_concept_ids)
+            ],
+            "missing_question_mappings": [
+                _gap_summary(issue)
+                for issue in issues
+                if issue.category == "missing_question_mapping"
+            ],
+            "missing_concept_mappings": [
+                _gap_summary(issue)
+                for issue in issues
+                if issue.category == "missing_concept_mapping"
+            ],
         },
         "content": {
             "question_count": len(rows),
             "complete_question_count": len(complete_content),
             "partial_question_count": len(rows) - len(complete_content),
             "missing_teaching_content_count": gap_counts.get("missing_teaching_content", 0),
+            "missing_teaching_content": content_gaps,
         },
         "rag": {
             "document_count": len(rag_documents),
             "missing_rag_doc_count": gap_counts.get("missing_rag_doc", 0),
             "doc_type_counts": doc_type_counts,
+            "missing_rag_docs": rag_gaps,
         },
         "q_matrix": {
             "question_count": len(q_rows),
             "concept_count": len(q_matrix_concept_ids),
             "mismatch_count": gap_counts.get("q_matrix_mismatch", 0),
+            "mismatches": q_matrix_gaps,
         },
-        "validation": {
-            "error_count": sum(1 for issue in issues if issue.severity == "error"),
-            "warning_count": sum(1 for issue in issues if issue.severity == "warning"),
-            "gap_counts": gap_counts,
-        },
+        "validation": validation_summary,
     }
+
+
+def _validation_summary(issues: list[ValidationIssue]) -> dict[str, Any]:
+    gap_counts: dict[str, int] = {}
+    for issue in issues:
+        gap_counts[issue.category] = gap_counts.get(issue.category, 0) + 1
+    return {
+        "error_count": sum(1 for issue in issues if issue.severity == "error"),
+        "warning_count": sum(1 for issue in issues if issue.severity == "warning"),
+        "gap_counts": gap_counts,
+    }
+
+
+def _compact_coverage_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "mapping": {
+            "mapped_question_count": summary["mapping"]["mapped_question_count"],
+            "unmapped_question_count": summary["mapping"]["unmapped_question_count"],
+            "mapped_concept_count": summary["mapping"]["mapped_concept_count"],
+            "unmapped_concept_count": summary["mapping"]["unmapped_concept_count"],
+        },
+        "content": {
+            "question_count": summary["content"]["question_count"],
+            "complete_question_count": summary["content"]["complete_question_count"],
+            "partial_question_count": summary["content"]["partial_question_count"],
+            "missing_teaching_content_count": summary["content"][
+                "missing_teaching_content_count"
+            ],
+        },
+        "rag": {
+            "document_count": summary["rag"]["document_count"],
+            "missing_rag_doc_count": summary["rag"]["missing_rag_doc_count"],
+            "doc_type_counts": summary["rag"]["doc_type_counts"],
+        },
+        "q_matrix": {
+            "question_count": summary["q_matrix"]["question_count"],
+            "concept_count": summary["q_matrix"]["concept_count"],
+            "mismatch_count": summary["q_matrix"]["mismatch_count"],
+        },
+        "validation": summary["validation"],
+    }
+
+
+def _gap_summary(issue: ValidationIssue) -> dict[str, Any]:
+    payload = {
+        "category": issue.category,
+        "reason_code": issue.reason_code,
+        "severity": issue.severity,
+        "source_ref": issue.source_ref,
+        "canonical_question_id": issue.canonical_question_id,
+        "canonical_concept_id": issue.canonical_concept_id,
+        "assist2017_question_id": issue.assist2017_question_id,
+        "assist2017_concept_id": issue.assist2017_concept_id,
+        "message": issue.message,
+        "provenance": issue.provenance,
+    }
+    if issue.provenance.get("doc_id"):
+        payload["doc_id"] = issue.provenance["doc_id"]
+    if issue.provenance.get("missing_fields"):
+        payload["missing_fields"] = issue.provenance["missing_fields"]
+    if issue.provenance.get("missing_reason_codes"):
+        payload["missing_reason_codes"] = issue.provenance["missing_reason_codes"]
+    return payload
 
 
 def _read_source_rows(path: str | Path, issues: list[ValidationIssue]) -> list[SourceRow]:
@@ -981,6 +1112,8 @@ def _issue(
     row: SourceRow | None = None,
     provenance: dict[str, Any] | None = None,
 ) -> ValidationIssue:
+    issue_provenance = {"source_row_id": row.source_row_id} if row else {}
+    issue_provenance.update(provenance or {})
     return ValidationIssue(
         category=category,
         reason_code=reason_code,
@@ -991,7 +1124,7 @@ def _issue(
         assist2017_concept_id=row.assist2017_concept_id if row else None,
         canonical_question_id=row.question_id if row else None,
         canonical_concept_id=row.concept_id if row else None,
-        provenance=provenance or {},
+        provenance=issue_provenance,
     )
 
 
@@ -1038,4 +1171,3 @@ def _resolve_project_path(path: str | Path) -> Path:
     if resolved.is_absolute() or resolved.exists():
         return resolved
     return PROJECT_ROOT / resolved
-

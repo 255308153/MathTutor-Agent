@@ -104,9 +104,24 @@ def test_coverage_reports_mapping_content_rag_and_q_matrix_gaps() -> None:
 
     assert summary["mapping"]["mapped_question_count"] == 3
     assert summary["mapping"]["unmapped_question_count"] == 3
+    assert summary["mapping"]["unmapped_question_ids"] == [
+        "q_assist2017_000002",
+        "q_assist2017_000004",
+        "q_assist2017_000006",
+    ]
     assert summary["mapping"]["unmapped_concept_count"] == 1
+    assert summary["mapping"]["unmapped_concept_ids"] == ["c_assist2017_0004"]
     assert summary["content"]["missing_teaching_content_count"] == 1
+    assert summary["content"]["missing_teaching_content"][0]["canonical_question_id"] == (
+        "q_assist2017_000005"
+    )
+    assert summary["content"]["missing_teaching_content"][0]["missing_fields"] == [
+        "explanation"
+    ]
     assert summary["rag"]["missing_rag_doc_count"] == 1
+    assert summary["rag"]["missing_rag_docs"][0]["doc_id"] == (
+        "rag_assist2017_q000005_question_explanation"
+    )
     assert summary["q_matrix"]["mismatch_count"] == 0
     assert {
         gap.reason_code
@@ -124,6 +139,51 @@ def test_coverage_reports_mapping_content_rag_and_q_matrix_gaps() -> None:
     )
     assert missing_content.canonical_question_id == "q_assist2017_000005"
     assert missing_content.provenance["missing_fields"] == ["explanation"]
+    assert missing_content.provenance["missing_reason_codes"] == ["missing_explanation"]
+
+
+def test_coverage_summary_keeps_mapping_content_rag_and_q_matrix_gap_details(
+    tmp_path: Path,
+) -> None:
+    mismatched_source = tmp_path / "mismatched.csv"
+    mismatched_source.write_text(
+        SOURCE_ROWS.read_text(encoding="utf-8").replace(
+            "3,2,异分母分数加法", "3,4,异分母分数加法", 1
+        ),
+        encoding="utf-8",
+    )
+
+    diagnostic = build_assist2017_import_artifacts(
+        source_rows_path=mismatched_source,
+        q_matrix_path=Q_MATRIX,
+        generated_at="fixed",
+        fail_on_errors=False,
+    )
+    summary = diagnostic.coverage.summary
+
+    assert summary["mapping"]["mapped_question_ids"] == [
+        "q_assist2017_000001",
+        "q_assist2017_000005",
+    ]
+    assert summary["mapping"]["unmapped_question_ids"] == [
+        "q_assist2017_000002",
+        "q_assist2017_000003",
+        "q_assist2017_000004",
+        "q_assist2017_000006",
+    ]
+    assert summary["q_matrix"]["mismatch_count"] == 1
+    assert summary["q_matrix"]["mismatches"][0]["reason_code"] == (
+        "concept_not_in_q_matrix_row"
+    )
+    assert summary["q_matrix"]["mismatches"][0]["canonical_question_id"] == (
+        "q_assist2017_000003"
+    )
+    assert summary["content"]["missing_teaching_content"][0]["source_ref"].endswith(
+        "mismatched.csv:row:4"
+    )
+    assert summary["rag"]["missing_rag_docs"][0]["canonical_question_id"] == (
+        "q_assist2017_000005"
+    )
 
 
 def test_cli_writes_artifacts_and_prints_summary(tmp_path: Path) -> None:
@@ -155,6 +215,44 @@ def test_cli_writes_artifacts_and_prints_summary(tmp_path: Path) -> None:
     assert json.loads((output_dir / "coverage_report.json").read_text(encoding="utf-8"))[
         "schema_version"
     ] == COVERAGE_SCHEMA_VERSION
+
+
+def test_cli_failure_prints_validation_summary(tmp_path: Path) -> None:
+    output_dir = tmp_path / "cli-output"
+    mismatched_source = tmp_path / "mismatched.csv"
+    mismatched_source.write_text(
+        SOURCE_ROWS.read_text(encoding="utf-8").replace(
+            "3,2,异分母分数加法", "3,4,异分母分数加法", 1
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "backend.app.importing.build_assist2017_artifacts",
+            "--source-rows",
+            str(mismatched_source),
+            "--q-matrix",
+            str(Q_MATRIX),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stderr)
+    assert result.returncode == 2
+    assert payload["status"] == "failed"
+    assert payload["coverage_summary"]["validation"]["error_count"] == 1
+    assert payload["coverage_summary"]["validation"]["gap_counts"] == {
+        "q_matrix_mismatch": 1
+    }
+    assert payload["validation_errors"][0]["source_ref"].endswith("mismatched.csv:row:3")
 
 
 def test_missing_file_and_malformed_row_fail_with_actionable_categories(
@@ -212,4 +310,3 @@ def test_q_matrix_mismatch_fails_by_default_and_can_be_diagnosed(
     )
     assert diagnostic.coverage.summary["q_matrix"]["mismatch_count"] == 1
     assert any(gap.category == "q_matrix_mismatch" for gap in diagnostic.coverage.gaps)
-
