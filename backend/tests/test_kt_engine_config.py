@@ -589,10 +589,10 @@ def test_api_answer_submission_can_use_dgekt_engine(
 
     assert response.status_code == 200
     body = response.json()
+    diagnose_event = next(event for event in body["teaching_trace"] if event["stage"] == "diagnose")
     assert body["state_summary"]["intent"] == "answer_submission"
-    assert body["teaching_trace"][1]["stage"] == "diagnose"
-    assert body["teaching_trace"][1]["metadata"]["kt_engine"] == "dgekt"
-    assert body["teaching_trace"][1]["metadata"]["prediction_probability"] == 0.2
+    assert diagnose_event["metadata"]["kt_engine"] == "dgekt"
+    assert diagnose_event["metadata"]["prediction_probability"] == 0.2
     attribution = body["teaching_trace_summary"]["expert_evidence"]["attribution_evidence"]
     assert attribution["prediction_probability"] == 0.2
     assert attribution["top_paths"][0]["partial_evidence"] is True
@@ -602,7 +602,7 @@ def test_api_answer_submission_can_use_dgekt_engine(
     assert attribution["top_paths"][0]["weak_concept_hit"] is True
     assert attribution["key_history"][0]["assist2017_question_id"] == 1
     assert "ASSIST2017 Q1" in attribution["key_history"][0]["readable_summary"]
-    attribution_chain = body["teaching_trace"][1]["metadata"]["attribution_chain"]
+    attribution_chain = diagnose_event["metadata"]["attribution_chain"]
     assert attribution_chain["raw_model_target"]["assist2017_question_id"] == 1
     assert attribution_chain["mapped_teaching_content"]["question_id"] == "q_frac_001"
     assert (
@@ -612,7 +612,7 @@ def test_api_answer_submission_can_use_dgekt_engine(
     assert attribution_chain["attribution_evidence"]["weak_concept_hit_count"] == 1
     assert "partial_evidence" not in body["response"]
     assert "top_paths" not in body["response"]
-    assert "DGEKT inference input built" in body["teaching_trace"][1]["metadata"]["evidence"][2]
+    assert "DGEKT inference input built" in diagnose_event["metadata"]["evidence"][2]
     assert (
         body["teaching_trace_summary"]["expert_evidence"]["kt_diagnosis"]["metadata"][
             "model_provenance"
@@ -727,7 +727,7 @@ def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
 
     assert submitted.status_code == 200
     body = submitted.json()
-    diagnose_event = body["teaching_trace"][1]
+    diagnose_event = next(event for event in body["teaching_trace"] if event["stage"] == "diagnose")
     expert = body["teaching_trace_summary"]["expert_evidence"]
     assert body["state_summary"]["intent"] == "answer_submission"
     assert body["state_summary"]["progress_version"] == 2
@@ -849,12 +849,14 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
     plan_metadata = stages["plan"]["metadata"]
 
     assert body["teaching_trace_summary"]["stages"] == [
+        "runtime_start",
         "load_context",
         "diagnose",
         "context_assemble",
         "plan",
         "generate_response",
         "memory_update",
+        "runtime_end",
     ]
     assert "判定为不正确" in body["response"]
     assert "错因诊断" in body["response"]
@@ -1280,7 +1282,7 @@ def test_dgekt_mapping_error_returns_readable_api_error(
     assert response.status_code == 200
     body = response.json()
     error_record = body["state_summary"]["error_records"][0]
-    diagnose_event = body["teaching_trace"][1]
+    diagnose_event = next(event for event in body["teaching_trace"] if event["stage"] == "diagnose")
     assert error_record["category"] == "missing_mapping"
     assert error_record["code"] == "missing_mapping"
     assert "DGEKT 映射失败" in error_record["message"]

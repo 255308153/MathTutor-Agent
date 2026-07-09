@@ -147,7 +147,7 @@ def test_imported_content_api_grades_and_traces_canonical_question(
 
     assert response.status_code == 200
     body = response.json()
-    load_trace = body["teaching_trace"][0]
+    load_trace = next(event for event in body["teaching_trace"] if event["stage"] == "load_context")
     expert = body["teaching_trace_summary"]["expert_evidence"]
     first_recommendation = body["recommended_questions"][0]
 
@@ -202,7 +202,7 @@ def test_imported_partial_content_gap_is_visible_in_trace_without_fabrication(
 
     assert response.status_code == 200
     body = response.json()
-    load_trace = body["teaching_trace"][0]
+    load_trace = next(event for event in body["teaching_trace"] if event["stage"] == "load_context")
     expert = body["teaching_trace_summary"]["expert_evidence"]
     content_gap = next(
         record

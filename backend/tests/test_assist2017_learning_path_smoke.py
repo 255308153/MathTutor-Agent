@@ -87,7 +87,7 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
     answer = answer_response.json()
     answer_expert = answer["teaching_trace_summary"]["expert_evidence"]
     answer_context = answer_expert["assembled_context"]
-    load_trace = answer["teaching_trace"][0]
+    load_trace = next(event for event in answer["teaching_trace"] if event["stage"] == "load_context")
     diagnose_trace = next(event for event in answer["teaching_trace"] if event["stage"] == "diagnose")
     plan_trace = next(event for event in answer["teaching_trace"] if event["stage"] == "plan")
     plan = answer_expert["planner_decision"]
@@ -185,7 +185,7 @@ def test_assist2017_smoke_surfaces_partial_and_missing_evidence(
     assert response.status_code == 200
     body = response.json()
     expert = body["teaching_trace_summary"]["expert_evidence"]
-    load_trace = body["teaching_trace"][0]
+    load_trace = next(event for event in body["teaching_trace"] if event["stage"] == "load_context")
     target_content = load_trace["metadata"]["target_content"]
     evidence_gaps = expert["assembled_context"]["evidence_gaps"]
 

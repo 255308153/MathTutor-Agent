@@ -2,12 +2,14 @@
 
 ## 1. 项目定位
 
-MathTutor Agent V1 是一个面向个人学习者的数学个人教师 Agent。
+MathTutor Agent V1 是一个面向个人学习者的数学自学平台。Agent 是智能教学编排层，不是产品本体；产品体验继续围绕数学做题、诊断、错因讲解、推荐练习和复习路径展开。
 
-它不是通用聊天机器人，也不是单纯题目推荐系统，而是围绕个人数学答题历史持续维护学习状态，并基于可解释知识追踪、RAG、长期学习记忆和 Agent 编排，完成以下闭环：
+它不是通用学习系统、通用聊天机器人，也不是单纯题目推荐系统，而是围绕个人数学答题历史持续维护学习状态，并基于可解释知识追踪、RAG、长期学习记忆和 Agent Runtime 编排，完成以下闭环：
 
 ```text
 学习事件 / 学生提问
+-> MathTutorAgentRuntime 接收本轮数学学习 turn
+-> 构造 LearningTurnContext
 -> 读取个人学习状态与记忆
 -> 检索数学知识库
 -> 知识追踪诊断
@@ -22,14 +24,26 @@ MathTutor Agent V1 是一个面向个人学习者的数学个人教师 Agent。
 V1 的一句话定义：
 
 ```text
-一个基于可解释知识追踪、RAG 和长期学习记忆的数学个人教师 Agent。
+一个基于可解释知识追踪、RAG、长期学习记忆和可观测 Agent Runtime 的数学自学平台。
 ```
 
 项目英文名建议：
 
 ```text
-MathTutor Agent: A Personal Mathematics Tutor Based on Explainable Knowledge Tracing and Retrieval-Augmented Generation
+MathTutor Agent: A Mathematics Self-Learning Platform Based on Explainable Knowledge Tracing, Retrieval-Augmented Generation, and Observable Agent Runtime
 ```
+
+V1.9 起新增最高层 runtime seam：
+
+```text
+MathTutorAgentRuntime
+-> LearningTurnContext
+-> 数学 Capability / Tool Registry（逐步拆分）
+-> 现有 MathTutorLearningLoop
+-> TeachingTrace runtime/tool observation
+```
+
+`LearningTurnContext` 是每轮学习 turn 的统一事实载体，记录学生、会话、intent、学习事件、当前 KT progress 快照、context asset 引用、assembled context 引用和 trace 引用。它只做编排与审计引用，不替代 progress store、KT/DGEKT、RAG、memory store 或 LearningContextLayer 的事实所有权。
 
 ## 2. 参考项目与吸收点
 
@@ -37,7 +51,15 @@ MathTutor Agent: A Personal Mathematics Tutor Based on Explainable Knowledge Tra
 
 参考仓库：`HKUDS/DeepTutor`
 
-吸收点：
+V1.9 对 DeepTutor 的吸收边界：
+
+| 优先级 | 可吸收内容 | MathTutor 约束 |
+| --- | --- | --- |
+| P0 | 外层 Agent Runtime、统一上下文对象、Capability 注册、Tool Registry、TeachingTrace / stream event 抽象。 | 只服务数学自学 turn；必须保留 KT / DGEKT 权威事实边界。 |
+| P1 | 上下文预算、证据优先级、工具 observation collector、RAG 抽象的工程模式。 | 只作为 V1.10 / V1.11 的渐进增强，不提前变成通用平台。 |
+| P2 | 更丰富的运行时可视化、调试面板和 capability 扩展方式。 | 只能进入内部试用与教学编排视角，不能改写学生端主体验。 |
+
+已吸收或可继续吸收的具体点：
 
 - `LearningProgress` 的进度对象思想。
 - `LearningService` 将评分、掌握度更新、复习队列更新集中处理。
@@ -45,11 +67,14 @@ MathTutor Agent: A Personal Mathematics Tutor Based on Explainable Knowledge Tra
 - `MasteryLoopCapability` 通过 capability 机制把学习能力挂到通用 agent loop。
 - `StreamEvent` 和 `trace metadata` 用于前端展示可追踪执行过程。
 
-不直接照搬：
+不吸收清单：
 
-- 不使用 DeepTutor 的通用 Mastery Path 作为主状态。
-- 不让 LLM 决定学生是否掌握。
-- 不以教材章节路径为唯一推进方式。
+- 不吸收 DeepTutor 的通用学习工作台定位；MathTutor 仍是数学自学平台。
+- 不使用 DeepTutor 的规则式 mastery 替代 DGEKT / KT；掌握度、薄弱点、预测正确率和推荐风险仍由 KT / DGEKT facts 决定。
+- 不把文件式记忆作为主存储方向；长期记忆继续沿本地 store / Mem0 opt-in provider 演进。
+- 不整套迁移 DeepTutor 前端形态；前端继续围绕做题、诊断、错题、推荐和复习路径设计。
+- 不让 LLM、RAG、记忆或 provider health 覆盖 KT facts。
+- 不以教材章节路径作为唯一推进方式。
 
 ### AGI-saber
 

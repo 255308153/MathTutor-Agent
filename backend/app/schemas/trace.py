@@ -23,7 +23,16 @@ class TeachingTraceEvent(BaseModel):
     id: str = Field(default_factory=lambda: f"trace-{uuid4().hex[:10]}")
     type: TeachingTraceEventType
     stage: str
-    actor: Literal["system", "kt", "rag", "memory", "context", "planner", "response"] = "system"
+    actor: Literal[
+        "system",
+        "runtime",
+        "kt",
+        "rag",
+        "memory",
+        "context",
+        "planner",
+        "response",
+    ] = "system"
     visibility: Literal["student", "expert", "debug"] = "expert"
     content: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)

@@ -1396,11 +1396,14 @@ function ragSourceTarget(source: RagSource) {
 
 function stageName(stage: string) {
   return {
+    runtime_start: "Runtime 开始",
     load_context: "读取上下文",
     diagnose: "KT 诊断",
+    context_assemble: "上下文组装",
     plan: "教学规划",
     generate_response: "生成回复",
-    memory_update: "记忆更新"
+    memory_update: "记忆更新",
+    runtime_end: "Runtime 结束"
   }[stage] ?? stage;
 }
 

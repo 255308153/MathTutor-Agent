@@ -97,12 +97,14 @@ def test_v14_learning_context_layer_end_to_end_smoke(
 
     assert "判定为不正确" in body["response"]
     assert [event["stage"] for event in body["teaching_trace"]] == [
+        "runtime_start",
         "load_context",
         "diagnose",
         "context_assemble",
         "plan",
         "generate_response",
         "memory_update",
+        "runtime_end",
     ]
     assert any(item["concept_id"] == concept_id for item in kt_diagnosis["weak_concepts"])
     assert any(item["concept_id"] == concept_id for item in kt_diagnosis["forgetting_risks"])

@@ -57,6 +57,15 @@ const baseResponse: MathTutorEventResponse = {
   ],
   teaching_trace: [
     {
+      id: "trace-runtime-start",
+      stage: "runtime_start",
+      actor: "runtime",
+      visibility: "expert",
+      content: "MathTutorAgentRuntime 已接收本轮数学学习事件。",
+      metadata: {},
+      evidence_refs: []
+    },
+    {
       id: "trace-1",
       stage: "load_context",
       actor: "system",
@@ -73,12 +82,21 @@ const baseResponse: MathTutorEventResponse = {
       content: "已生成学生可读中文回复。",
       metadata: {},
       evidence_refs: []
+    },
+    {
+      id: "trace-runtime-end",
+      stage: "runtime_end",
+      actor: "runtime",
+      visibility: "expert",
+      content: "MathTutorAgentRuntime 已完成本轮学习编排。",
+      metadata: {},
+      evidence_refs: ["trace:tt-test"]
     }
   ],
   teaching_trace_summary: {
     trace_id: "tt-test",
     intent: "next_step_advice",
-    stages: ["load_context", "generate_response"],
+    stages: ["runtime_start", "load_context", "generate_response", "runtime_end"],
     student_explanation: "下一步先练：1/2 + 1/4。",
     expert_evidence: {
       kt_diagnosis: {
@@ -594,7 +612,9 @@ describe("学习驾驶舱", () => {
     expect(await screen.findByText("学习驾驶舱")).toBeInTheDocument();
     expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
     expect(screen.getByText("TeachingTrace")).toBeInTheDocument();
+    expect(screen.getByText("Runtime 开始")).toBeInTheDocument();
     expect(screen.getByText("读取上下文")).toBeInTheDocument();
+    expect(screen.getByText("Runtime 结束")).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
     expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2")).toBeInTheDocument();
     expect(screen.getByText("模型证据")).toBeInTheDocument();

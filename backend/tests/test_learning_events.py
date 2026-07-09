@@ -13,12 +13,24 @@ from backend.app.storage.content_repository import content_repository
 from backend.app.storage.progress_store import InMemoryProgressStore
 
 
-TRACE_STAGES = ["load_context", "diagnose", "context_assemble", "plan", "generate_response"]
+TRACE_STAGES = [
+    "runtime_start",
+    "load_context",
+    "diagnose",
+    "context_assemble",
+    "plan",
+    "generate_response",
+]
 
 
 def assert_core_trace(stages: list[str]) -> None:
-    assert stages[:5] == TRACE_STAGES
+    assert stages[:6] == TRACE_STAGES
     assert "memory_update" in stages
+    assert stages[-1] == "runtime_end"
+
+
+def trace_by_stage(body: dict[str, Any], stage: str) -> dict[str, Any]:
+    return next(event for event in body["teaching_trace"] if event["stage"] == stage)
 
 
 def test_chat_message_returns_next_step_response_and_trace() -> None:
@@ -80,8 +92,9 @@ def test_answer_submitted_updates_progress_and_returns_trace() -> None:
     assert len(body["recommended_questions"]) == 3
     assert "下一题建议" in body["response"]
     assert_core_trace([event["stage"] for event in body["teaching_trace"]])
-    assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
-    assert body["teaching_trace"][0]["metadata"]["grading_source"] == "demo_teaching_content"
+    load_trace = trace_by_stage(body, "load_context")
+    assert load_trace["metadata"]["is_correct"] is False
+    assert load_trace["metadata"]["grading_source"] == "demo_teaching_content"
 
 
 def test_recommended_question_then_correct_answer_updates_state() -> None:
@@ -121,7 +134,7 @@ def test_recommended_question_then_correct_answer_updates_state() -> None:
     assert body["state_summary"]["next_action"]["type"] == "reinforce_mastery"
     assert len(body["recommended_questions"]) == 3
     assert "下一题建议" in body["response"]
-    assert body["teaching_trace"][0]["metadata"]["is_correct"] is True
+    assert trace_by_stage(body, "load_context")["metadata"]["is_correct"] is True
 
 
 def test_recommended_question_then_wrong_answer_updates_state() -> None:
@@ -161,8 +174,8 @@ def test_recommended_question_then_wrong_answer_updates_state() -> None:
     assert body["state_summary"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
     assert len(body["recommended_questions"]) == 3
     assert body["recommended_questions"][0]["question_id"] != question["question_id"]
-    assert body["teaching_trace"][0]["metadata"]["is_correct"] is False
-    assert body["teaching_trace"][1]["metadata"]["weak_concept_count"] == 1
+    assert trace_by_stage(body, "load_context")["metadata"]["is_correct"] is False
+    assert trace_by_stage(body, "diagnose")["metadata"]["weak_concept_count"] == 1
 
 
 def test_recommendation_kt_diagnosis_and_trace_share_canonical_target() -> None:
@@ -243,11 +256,12 @@ def test_api_returns_visible_fallback_when_standard_answer_is_missing(
     ]
     assert body["state_summary"]["error_records"][0]["category"] == "missing_content"
     assert body["state_summary"]["error_records"][0]["code"] == "missing_standard_answer"
-    assert body["teaching_trace"][0]["metadata"]["grading_source"] == "missing_teaching_content"
-    assert body["teaching_trace"][0]["metadata"]["evidence_gap_records"][0]["category"] == (
+    load_trace = trace_by_stage(body, "load_context")
+    assert load_trace["metadata"]["grading_source"] == "missing_teaching_content"
+    assert load_trace["metadata"]["evidence_gap_records"][0]["category"] == (
         "missing_content"
     )
-    assert body["teaching_trace"][0]["metadata"]["is_correct"] is None
+    assert load_trace["metadata"]["is_correct"] is None
     assert body["recommended_questions"] == []
 
 
@@ -286,7 +300,7 @@ def test_api_reports_scorer_failure_without_overwriting_kt(
 
     assert error_record["category"] == "scorer_failure"
     assert "解释证据 scorer 失败" in error_record["message"]
-    assert body["teaching_trace"][1]["metadata"]["failure_stage"] == "diagnose"
+    assert trace_by_stage(body, "diagnose")["metadata"]["failure_stage"] == "diagnose"
     assert expert["kt_diagnosis"]["prediction_probability"] == 0.41
     assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
     assert attribution["evidence_status"] == "unavailable"
