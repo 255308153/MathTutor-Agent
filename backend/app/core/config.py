@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 ProviderMode = Literal["local_fallback", "fake_provider", "live_provider"]
+RAGLiveProvider = Literal["vikingdb", "openviking"]
 
 
 class MathTutorSettings(BaseSettings):
@@ -29,6 +30,13 @@ class MathTutorSettings(BaseSettings):
     mem0_api_key: str = ""
     vikingdb_api_key: str = ""
     openviking_api_key: str = ""
+    rag_live_provider: RAGLiveProvider = "vikingdb"
+    rag_provider_endpoint: str = ""
+    rag_provider_collection: str = ""
+    rag_provider_namespace: str = ""
+    rag_provider_search_path: str = "/search"
+    rag_provider_supports_metadata_filter: bool = True
+    rag_provider_timeout_seconds: float = 5.0
 
     assist2017_dataset_mode: Literal["demo", "fixture", "full"] = "demo"
     assist2017_full_source_rows_path: str = ""

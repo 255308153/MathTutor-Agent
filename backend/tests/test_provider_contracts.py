@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -26,6 +27,7 @@ from backend.app.rag.knowledge_rag import (
     create_knowledge_rag,
 )
 from backend.app.rag.schema import RAGSearchResult
+from backend.app.rag.viking_provider import VikingKnowledgeRAGAdapter
 from backend.app.storage.progress_store import InMemoryProgressStore
 
 
@@ -102,6 +104,133 @@ def test_fake_provider_mode_runs_without_network_or_provider_credentials(
     _assert_knowledge_rag_contract(rag)
 
 
+def test_fake_viking_provider_contract_covers_filters_empty_and_normalization() -> None:
+    rag = FakeKnowledgeRAGProvider()
+
+    results = rag.search(
+        query="通分 题解",
+        filters={
+            "question_id": "q_frac_001",
+            "assistments2017_question_id": 3,
+            "assistments2017_concept_id": "2",
+        },
+        limit=5,
+    )
+
+    assert {result.doc_id for result in results} == {
+        "fake-rag-q-frac-001-solution",
+        "fake-rag-fraction-mistake",
+    }
+    assert all(result.question_id == "q_frac_001" for result in results)
+    assert all(result.assist2017_question_id == 3 for result in results)
+    assert all(result.assist2017_concept_id == 2 for result in results)
+    assert all(result.provenance["provider_mode"] == "fake_provider" for result in results)
+    assert all(result.provenance["provider_name"] == "fake_vikingdb" for result in results)
+    assert results[0].canonical_mapping["source"] == "fake_provider_fixture"
+    assert results[0].coverage["concept_aligned"] is True
+
+    assert rag.search(
+        query="通分",
+        filters={"concept_id": "c_provider_missing"},
+        limit=3,
+    ) == []
+
+    serialized = json.dumps([result.model_dump() for result in results], ensure_ascii=False)
+    for raw_provider_key in (
+        "raw_provider_payload",
+        "sdk_response",
+        "vikingdb_distance",
+        "embedding_vector",
+        "provider_debug",
+    ):
+        assert raw_provider_key not in serialized
+
+
+def test_fake_viking_provider_post_filters_when_provider_does_not_support_metadata_filter() -> None:
+    rag = FakeKnowledgeRAGProvider(provider_supports_metadata_filter=False)
+
+    results = rag.search(
+        query="通分 策略",
+        filters={
+            "doc_type": "learning_strategy",
+            "concept_id": "c_fraction_addition",
+            "assist2017_concept_id": 2,
+        },
+        limit=5,
+    )
+
+    assert [result.doc_id for result in results] == ["fake-rag-fraction-strategy"]
+    assert results[0].doc_type == "learning_strategy"
+    assert results[0].concept_id == "c_fraction_addition"
+    assert results[0].assist2017_concept_id == 2
+
+
+def test_viking_adapter_normalizes_provider_schema_aliases() -> None:
+    rag = VikingKnowledgeRAGAdapter(
+        provider_name="openviking",
+        provider_mode="live_provider",
+        collection="assist2017-smoke",
+        client=StaticRAGProviderClient(
+            [
+                {
+                    "id": "provider-vector-001",
+                    "score": 0.87,
+                    "metadata": {
+                        "document_id": "provider-rag-q-frac-001",
+                        "document_type": "question_explanation",
+                        "name": "OpenViking q_frac_001 题解",
+                        "text": "先找公分母，再把分数化成同分母后相加。",
+                        "source_ref": "openviking://assist2017/q_frac_001",
+                        "concept_id": "c_fraction_addition",
+                        "question_id": "q_frac_001",
+                        "assistments2017_question_id": "3",
+                        "assistments2017_concept_id": "2",
+                        "canonical_mapping": {
+                            "question_id": "q_frac_001",
+                            "concept_id": "c_fraction_addition",
+                            "assist2017_question_id": 3,
+                            "assist2017_concept_id": 2,
+                            "source": "openviking_fixture",
+                        },
+                        "coverage": {
+                            "coverage_type": "question",
+                            "question_aligned": True,
+                            "concept_aligned": True,
+                        },
+                        "provenance": {"dataset": "assist2017_fixture"},
+                    },
+                    "raw_provider_payload": {"must_not": "leak"},
+                    "embedding_vector": [0.1, 0.2, 0.3],
+                }
+            ]
+        ),
+    )
+
+    results = rag.search(
+        query="通分 题解",
+        filters={"assist2017_question_id": 3, "doc_type": "question_explanation"},
+        limit=1,
+    )
+
+    assert len(results) == 1
+    result = results[0]
+    assert isinstance(result, RAGSearchResult)
+    assert result.doc_id == "provider-rag-q-frac-001"
+    assert result.doc_type == "question_explanation"
+    assert result.title == "OpenViking q_frac_001 题解"
+    assert result.source == "openviking://assist2017/q_frac_001"
+    assert result.assist2017_question_id == 3
+    assert result.assist2017_concept_id == 2
+    assert result.canonical_mapping["source"] == "openviking_fixture"
+    assert result.coverage["question_aligned"] is True
+    assert result.provenance["provider_name"] == "openviking"
+    assert result.provenance["collection"] == "assist2017-smoke"
+
+    serialized = json.dumps(result.model_dump(), ensure_ascii=False)
+    assert "raw_provider_payload" not in serialized
+    assert "embedding_vector" not in serialized
+
+
 def test_live_provider_mode_is_explicit_and_not_default() -> None:
     with pytest.raises(MemoryProviderConfigurationError, match="Mem0"):
         create_student_memory_store(
@@ -110,6 +239,34 @@ def test_live_provider_mode_is_explicit_and_not_default() -> None:
 
     with pytest.raises(RAGProviderConfigurationError, match="VikingDB/OpenViking"):
         create_knowledge_rag(MathTutorSettings(rag_provider_mode="live_provider"))
+
+    with pytest.raises(RAGProviderConfigurationError, match="VikingDB/OpenViking"):
+        create_knowledge_rag(
+            MathTutorSettings(
+                rag_provider_mode="live_provider",
+                rag_source="imported",
+            )
+        )
+
+
+@pytest.mark.skipif(
+    os.getenv("MATHTUTOR_RUN_VIKING_RAG_SMOKE") != "1",
+    reason=(
+        "Set MATHTUTOR_RUN_VIKING_RAG_SMOKE=1 plus VikingDB/OpenViking endpoint, "
+        "collection and API key env vars to run live RAG smoke."
+    ),
+)
+def test_live_viking_rag_provider_smoke_from_environment() -> None:
+    settings = MathTutorSettings(rag_provider_mode="live_provider")
+
+    rag = create_knowledge_rag(settings)
+    results = rag.search(
+        query=os.getenv("MATHTUTOR_VIKING_RAG_SMOKE_QUERY", "通分 题解"),
+        filters={"doc_types": ["concept_note", "question_explanation", "mistake_pattern"]},
+        limit=1,
+    )
+
+    assert all(isinstance(result, RAGSearchResult) for result in results)
 
 
 def test_default_demo_flow_does_not_need_live_providers_or_full_data() -> None:
@@ -274,3 +431,19 @@ def _assert_knowledge_rag_contract(rag: Any) -> None:
         limit=3,
     )
     assert empty_results == []
+
+
+class StaticRAGProviderClient:
+    def __init__(self, records: list[dict[str, Any]]) -> None:
+        self.records = records
+
+    def search(
+        self,
+        *,
+        query: str,
+        filters: dict[str, Any] | None = None,
+        limit: int = 3,
+    ) -> list[dict[str, Any]]:
+        assert query
+        assert limit >= 1
+        return self.records

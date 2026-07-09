@@ -185,8 +185,9 @@ V1.7 provider contract 与 worktree 并发规则：
 - 所有 V1.7 子任务必须从最新 `origin/master` 创建独立 git worktree 和独立 `codex/...` 分支；不要在主工作区直接实现，也不要复用其他 issue 的未提交改动。
 - Provider mode 固定为 `local_fallback`、`fake_provider`、`live_provider` 三种语义。
 - 默认 `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`、`MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`，继续使用进程内 memory store 和本地 JSON RAG，不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint 或完整 ASSISTments2017 数据。
-- `fake_provider` 是无网络、无密钥的 contract fixture，用于后续 Mem0 / VikingDB / OpenViking adapter 并发开发。fixture 内部可以模拟 SDK 响应，但向 planner、recommender、API、dashboard 只暴露 `StudentMemory` 和 `RAGSearchResult` 领域模型。
-- `live_provider` 只作为后续真实 Mem0、VikingDB / OpenViking adapter 的 opt-in 入口；#71 不加载真实 SDK，不提交真实 provider credentials。
+- `fake_provider` 是无网络、无密钥的 contract fixture，用于 Mem0 / VikingDB / OpenViking adapter 并发开发。fixture 内部可以模拟 SDK 响应，但向 planner、recommender、API、dashboard 只暴露 `StudentMemory` 和 `RAGSearchResult` 领域模型。
+- RAG 的 `live_provider` 是 VikingDB / OpenViking adapter 的显式 opt-in 入口。必须同时配置 provider、endpoint、collection 和对应 API key；缺配置时会报错，默认不会读取外部服务。
+- VikingDB / OpenViking metadata filter 支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`，并兼容 `assistments2017_*` 别名。若 provider 不支持或只弱支持 metadata filter，adapter 会在规范化为 `RAGSearchResult` 后做确定性 post-filter。
 - Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
 
 相关单测：
@@ -765,11 +766,11 @@ RAG 缺失时只进入 assembled_context.evidence_gaps，不能伪造 knowledge_
 
 这些记录是诊断与审计信息，不是新的学习事实来源。KT facts 仍只能来自 `KTDiagnosis`；RAG / Memory / Context 不能覆盖 mastery、weak concepts、forgetting risk 或 prediction probability。
 
-后续替换为 Chroma / VikingDB：
+替换为 Chroma / VikingDB / OpenViking 时：
 
 1. 保持 `KnowledgeRAG.search(query, filters, limit)` 接口不变。
-2. 保持文档 metadata 字段语义不变。
-3. adapter 内部负责向量召回和 metadata filter。
+2. 保持文档 metadata 字段语义不变，并支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`。
+3. adapter 内部负责向量召回和 metadata filter；provider 不支持时必须在返回前做确定性 post-filter。
 4. 返回结果仍然映射为 `RAGSearchResult`。
 5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
 
@@ -942,10 +943,17 @@ cp .env.example .env
 | `MATHTUTOR_LLM_MODEL` | 空 | 真实 LLM 模型名，mock 模式可留空。 |
 | `MATHTUTOR_OPENAI_API_KEY` | 空 | 真实 LLM key，mock 模式可留空。 |
 | `MATHTUTOR_MEMORY_PROVIDER_MODE` | `local_fallback` | 学生长期记忆 provider mode。`fake_provider` 使用离线 contract fixture；`live_provider` 是后续 Mem0 adapter 的显式入口。 |
-| `MATHTUTOR_RAG_PROVIDER_MODE` | `local_fallback` | 知识检索 provider mode。`fake_provider` 使用离线 VikingDB/OpenViking contract fixture；`live_provider` 是后续生产 RAG adapter 的显式入口。 |
+| `MATHTUTOR_RAG_PROVIDER_MODE` | `local_fallback` | 知识检索 provider mode。`local_fallback` 使用本地 JSON；`fake_provider` 使用离线 VikingDB/OpenViking contract fixture；`live_provider` 显式启用 VikingDB/OpenViking adapter。 |
 | `MATHTUTOR_MEM0_API_KEY` | 空 | 后续 Mem0 live provider 凭据占位；默认留空，不提交真实 key。 |
-| `MATHTUTOR_VIKINGDB_API_KEY` | 空 | 后续 VikingDB live provider 凭据占位；默认留空，不提交真实 key。 |
-| `MATHTUTOR_OPENVIKING_API_KEY` | 空 | 后续 OpenViking live provider 凭据占位；默认留空，不提交真实 key。 |
+| `MATHTUTOR_VIKINGDB_API_KEY` | 空 | VikingDB live provider 凭据；仅 `MATHTUTOR_RAG_PROVIDER_MODE=live_provider` 且 `MATHTUTOR_RAG_LIVE_PROVIDER=vikingdb` 时需要。 |
+| `MATHTUTOR_OPENVIKING_API_KEY` | 空 | OpenViking live provider 凭据；仅 `MATHTUTOR_RAG_PROVIDER_MODE=live_provider` 且 `MATHTUTOR_RAG_LIVE_PROVIDER=openviking` 时需要。 |
+| `MATHTUTOR_RAG_LIVE_PROVIDER` | `vikingdb` | RAG live provider 类型，可选 `vikingdb` 或 `openviking`。 |
+| `MATHTUTOR_RAG_PROVIDER_ENDPOINT` | 空 | VikingDB/OpenViking 检索 endpoint；默认空，避免无意访问外部 provider。 |
+| `MATHTUTOR_RAG_PROVIDER_COLLECTION` | 空 | VikingDB/OpenViking collection / index 名称；live provider 必填。 |
+| `MATHTUTOR_RAG_PROVIDER_NAMESPACE` | 空 | 可选 namespace / partition，用于隔离知识资源。 |
+| `MATHTUTOR_RAG_PROVIDER_SEARCH_PATH` | `/search` | HTTP live smoke 的检索路径；endpoint 已包含完整路径时可设为空。 |
+| `MATHTUTOR_RAG_PROVIDER_SUPPORTS_METADATA_FILTER` | `true` | provider 是否支持 metadata filter；设为 `false` 时 adapter 会扩大召回并做确定性 post-filter。 |
+| `MATHTUTOR_RAG_PROVIDER_TIMEOUT_SECONDS` | `5.0` | live provider HTTP 检索超时时间。 |
 | `MATHTUTOR_KT_ENGINE` | `mock` | KT 引擎选择。默认 `mock`，显式设为 `dgekt` 才会验证并加载真实 DGEKT 配置。 |
 | `MATHTUTOR_DGEKT_DATASET` | `assist2017` | DGEKT 数据集名；当前只支持 `assist2017`。 |
 | `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 ASSIST2017 DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
@@ -956,6 +964,8 @@ cp .env.example .env
 | `MATHTUTOR_DGEKT_CANONICAL_MAPPING_PATH` | 空 | 可选 canonical mapping artifact 路径；用于校验 offline evidence 的 canonical question/concept。 |
 | `MATHTUTOR_RUN_DGEKT_SMOKE` | `0` | 设为 `1` 时启用本地真实 checkpoint smoke test；默认测试不依赖大模型文件。 |
 | `MATHTUTOR_RUN_DGEKT_OFFLINE_EVIDENCE_SMOKE` | `0` | 设为 `1` 时启用真实 offline explainability outputs smoke；默认只跑小型 fixture。 |
+| `MATHTUTOR_RUN_VIKING_RAG_SMOKE` | `0` | 设为 `1` 时启用 VikingDB/OpenViking live RAG smoke；必须同时配置 endpoint、collection 和 provider API key。 |
+| `MATHTUTOR_VIKING_RAG_SMOKE_QUERY` | 空 | 可选 live RAG smoke 查询；为空时测试使用“通分 题解”。 |
 
 ## 13. 数据目录约定
 
