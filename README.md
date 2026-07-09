@@ -55,6 +55,7 @@ V1 优先服务一个学生、一个数学学习场景、一条可审计学习�
 ```text
 KT facts are authoritative.
 LLM plans are advisory.
+Offline attribution explains prediction, not overwrite prediction facts.
 Memory can influence strategy, not mastery.
 RAG can support explanation, not overwrite prediction facts.
 Context can assemble evidence, not decide learning facts.
@@ -64,6 +65,7 @@ Context can assemble evidence, not decide learning facts.
 
 - KT 输出的掌握度、遗忘风险、预测概率和薄弱知识点是权威事实。
 - LLM 只给教学表达和策略建议，不覆盖 KT 事实。
+- Offline attribution 只解释 DGEKT prediction，不覆盖 prediction facts。
 - Memory 可以影响讲解风格、复习策略和偏好，不直接改写 mastery。
 - RAG 支持解释、证据和题解，不覆盖 prediction facts。
 - Context 负责收集和组装证据，不决定或改写 mastery、weak concepts、forgetting risk、prediction probability。
@@ -466,6 +468,49 @@ V1.7 所有子任务必须使用独立 git worktree 并发开发：每个 issue 
 Provider 化不能改变核心边界：Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts；KT facts 仍是权威学习事实。
 
 V1.7 仍只允许 small expert trial。内部正式试用不得早于 **V1.8**。
+
+### V1.7 最终收口状态
+
+截至 2026-07-09，#71-#77 已按依赖顺序合并；#78 是最终文档与验收收口项。#70 父 PRD 继续保持 open，作为 V1.7 / V1.8 后续验收入口。
+
+| issue | PR | 状态 | 覆盖能力 |
+| --- | --- | --- | --- |
+| [#71](https://github.com/255308153/MathTutor-Agent/issues/71) | [#79](https://github.com/255308153/MathTutor-Agent/pull/79) | 已合并 | provider contract 骨架、fake provider、默认 fallback 边界。 |
+| [#72](https://github.com/255308153/MathTutor-Agent/issues/72) | [#81](https://github.com/255308153/MathTutor-Agent/pull/81) | 已合并 | Mem0 `StudentMemoryStore` adapter、跨会话记忆 smoke、KT facts 边界。 |
+| [#73](https://github.com/255308153/MathTutor-Agent/issues/73) | [#80](https://github.com/255308153/MathTutor-Agent/pull/80) | 已合并 | VikingDB / OpenViking `KnowledgeRAG` adapter、metadata filter 和 deterministic post-filter smoke。 |
+| [#74](https://github.com/255308153/MathTutor-Agent/issues/74) | [#82](https://github.com/255308153/MathTutor-Agent/pull/82) | 已合并 | provider auth、timeout、empty result、schema mismatch、budget exceeded 的 evidence gap 降级。 |
+| [#75](https://github.com/255308153/MathTutor-Agent/issues/75) | [#83](https://github.com/255308153/MathTutor-Agent/pull/83) | 已合并 | provider-aware LearningContextLayer E2E，context 只组装证据。 |
+| [#76](https://github.com/255308153/MathTutor-Agent/issues/76) | [#84](https://github.com/255308153/MathTutor-Agent/pull/84) | 已合并 | dashboard 展示 provider-backed memory / RAG context evidence、selected / omitted assets 和 provider gaps。 |
+| [#77](https://github.com/255308153/MathTutor-Agent/issues/77) | [#85](https://github.com/255308153/MathTutor-Agent/pull/85) | 已合并 | opt-in 配置、optional live smoke、安全禁提交护栏。 |
+| [#78](https://github.com/255308153/MathTutor-Agent/issues/78) | 本收口 PR | 随本 PR 合并完成 | 中文文档、端到端验收记录、#70 汇总评论。 |
+
+三种 V1.7 验收模式：
+
+| 模式 | 如何运行 | 期望结果 |
+| --- | --- | --- |
+| default local | 不设置 provider env；运行 `python3 -m pytest backend/tests`、`cd frontend && npm test -- --run`、`cd frontend && npm run build`。 | 使用 `local_fallback` memory / RAG，demo/mock 路径保持可运行，不需要 Mem0、VikingDB、OpenViking、checkpoint 或 full data。 |
+| fake provider | 运行 provider contract、Mem0、RAG、context E2E 相关测试，例如 `python3 -m pytest backend/tests/test_provider_contracts.py backend/tests/test_mem0_memory_store.py backend/tests/test_learning_context_e2e.py -q`。 | 无网络、无密钥；fake Mem0 / VikingDB fixture 被规范化为 `StudentMemory`、`RAGSearchResult` 和 context evidence，SDK/debug payload 不下传。 |
+| optional live provider smoke | Mem0 需 `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1` + `MATHTUTOR_MEM0_API_KEY`；VikingDB/OpenViking 需 `MATHTUTOR_RUN_VIKING_RAG_SMOKE=1` + endpoint + collection + 对应 API key。 | 配置完整才运行 live smoke；任一条件缺失时测试 skip，默认 CI / 本地验收不访问外部 provider。 |
+
+本收口 PR 的最终验收命令：
+
+```bash
+python3 -m pytest backend/tests
+cd frontend && npm test -- --run
+cd frontend && npm run build
+python3 scripts/check_repository_safety.py
+```
+
+这些命令必须在 #78 合并前全部通过；`scripts/check_repository_safety.py` 需要保持 `violation_count=0`。V1.7 只满足 small expert trial only，不满足内部正式试用；内部正式试用仍不得早于 **V1.8**。
+
+2026-07-09 本地验收结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `python3 -m pytest backend/tests` | 通过，149 passed，4 skipped。skipped 项为显式 opt-in 的真实 checkpoint / full offline evidence / Mem0 live smoke / VikingDB 或 OpenViking live smoke。 |
+| `cd frontend && npm test -- --run` | 通过，1 个 test file / 9 tests passed。 |
+| `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
+| `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 credentials、secrets、provider caches、generated vector indexes、raw datasets、checkpoints、模型文件、`dist` 或 `node_modules`。 |
 
 ## V1.6 已知限制与下一阶段优先级
 

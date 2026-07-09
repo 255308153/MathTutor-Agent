@@ -178,8 +178,9 @@ LangGraph Orchestration
 ```text
 KT facts are authoritative.
 LLM plans are advisory.
+Offline attribution explains prediction, not overwrite prediction facts.
 Memory can influence strategy, not mastery.
-RAG can support explanation, not overwrite prediction.
+RAG can support explanation, not overwrite prediction facts.
 Context can assemble evidence, not decide learning facts.
 ```
 
@@ -187,6 +188,7 @@ Context can assemble evidence, not decide learning facts.
 
 - KTStateEngine 输出掌握度、遗忘风险、薄弱知识点、预测概率和归因证据。
 - LangGraph / Planner 决定教学动作。
+- Offline attribution 只解释 DGEKT prediction，不覆盖 prediction facts。
 - RAG 提供知识点讲解、题目解析、错因和学习策略证据。
 - Mem0 风格记忆提供个人偏好、反思和历史策略效果。
 - LearningContextLayer 统一组织 context assets 和 assembled_context，但不决定学习事实。next-step advice 中，planner / recommender / response 只读取 `assembled_context.normalized_context` 的 student_memory、knowledge_resource、task_state 和 evidence gaps，不直接调用 Mem0、VikingDB、OpenViking 或 provider SDK。
