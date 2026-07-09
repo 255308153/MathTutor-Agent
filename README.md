@@ -512,6 +512,52 @@ python3 scripts/check_repository_safety.py
 | `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
 | `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`，Git tracked 文件未包含 credentials、secrets、provider caches、generated vector indexes、raw datasets、checkpoints、模型文件、`dist` 或 `node_modules`。 |
 
+## V1.8 学生记忆查看、禁用与清理控制
+
+V1.8 记忆控制 gate 让学习驾驶舱支持长期记忆查看、禁用、重新启用和删除。完整说明见 [docs/V1_8_MEMORY_CONTROL.md](docs/V1_8_MEMORY_CONTROL.md)。
+
+本模块固定以下行为：
+
+- 学生可以查看长期记忆列表和详情；公开视图会清洗 raw provider payload、embedding、SDK debug response、credential 和 secret。
+- disabled memory 保留在只读列表中，但默认检索、推荐策略和 selected `student_memory` context assets 都会排除它。
+- deleted memory 不再进入普通列表、详情、检索或 active context assets。
+- `local_fallback` 与 `fake_provider` 复用同一套 list/get/disable/enable/delete contract tests。
+- Mem0 仍是 opt-in live provider；默认 local demo/mock 不需要 Mem0 SDK、API key 或网络。
+- Provider 控制失败返回结构化 recoverable `503`，前端展示可恢复提示，普通 `/api/events` 学习事件流继续运行。
+- Mem0 control / delete 失败不能伪造成功；delete 只有在 provider hard delete 或 metadata tombstone 成功后才本地 tombstone。
+
+核心边界保持不变：
+
+```text
+KT facts are authoritative.
+Offline attribution explains prediction, not overwrite prediction facts.
+Memory can influence strategy, not mastery.
+RAG can support explanation, not overwrite prediction facts.
+Context can assemble evidence, not decide learning facts.
+```
+
+记忆控制只完成 V1.8 内部正式试用 gate 的一部分，不代表完整 V1.8 已经全部可正式试用。完整 V1.8 仍需要 provider health、持久化学习状态、TeachingTrace 持久化和连续学习反馈闭环。
+
+V1.8 记忆控制最终验收命令：
+
+```bash
+python3 -m pytest backend/tests
+cd frontend && npm test -- --run
+cd frontend && npm run build
+python3 scripts/check_repository_safety.py
+git diff --check
+```
+
+2026-07-09 本地验收结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `python3 -m pytest backend/tests` | 通过，166 passed，4 skipped。 |
+| `cd frontend && npm test -- --run` | 通过，1 个 test file / 15 tests passed。 |
+| `cd frontend && npm run build` | 通过，Vite production build 成功；`frontend/dist/` 为 ignored build output，不提交。 |
+| `python3 scripts/check_repository_safety.py` | 通过，`violation_count=0`。 |
+| `git diff --check` | 通过。 |
+
 ## V1.6 已知限制与下一阶段优先级
 
 当前仍是技术内测版本：
