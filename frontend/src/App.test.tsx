@@ -277,6 +277,115 @@ describe("学习驾驶舱", () => {
     expect(screen.getAllByText("暂无").length).toBeGreaterThan(0);
   });
 
+  it("展示 provider-backed selected/omitted context evidence 并隐藏 SDK 噪声", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+      ...baseResponse,
+      teaching_trace_summary: {
+        ...baseResponse.teaching_trace_summary,
+        expert_evidence: {
+          ...baseResponse.teaching_trace_summary.expert_evidence,
+          context_assets: [],
+          assembled_context: {
+            ...baseResponse.teaching_trace_summary.expert_evidence.assembled_context,
+            asset_summaries: [],
+            asset_selection: {
+              selected: [
+                {
+                  asset_id: "provider-memory-selected",
+                  asset_type: "student_memory",
+                  source_type: "provider_memory",
+                  source_ref: "collection://hidden-provider-memory/private-record",
+                  summary: "学生更容易接受分步骤提示。",
+                  included_reason: "参考 provider-backed 学生偏好",
+                  selection_status: "included",
+                  freshness: "fresh",
+                  confidence: 0.94,
+                  metadata: {
+                    provider_backed: true,
+                    provider_mode: "fake_provider",
+                    provider_name: "fake_mem0_fixture",
+                    provider_record_id: "mem-hidden-record",
+                    sdk_response: "sdk_response_should_not_render",
+                    embedding_vector: "embedding_vector_should_not_render",
+                    provider_debug: "provider_debug_should_not_render"
+                  }
+                },
+                {
+                  asset_id: "provider-rag-selected",
+                  asset_type: "knowledge_resource",
+                  source_type: "provider_rag",
+                  source_ref: "collection://hidden-rag/private-doc",
+                  summary: "Provider RAG 题解：先通分再相加。",
+                  included_reason: "参考 provider-backed 知识资源",
+                  selection_status: "included",
+                  freshness: "fresh",
+                  confidence: 0.91,
+                  metadata: {
+                    provider_backed: true,
+                    provider_mode: "fake_provider",
+                    provider_name: "fake_vikingdb",
+                    provider_debug: "rag_debug_should_not_render"
+                  }
+                }
+              ],
+              omitted: [
+                {
+                  asset_id: "provider-rag-omitted",
+                  asset_type: "knowledge_resource",
+                  source_type: "provider_rag",
+                  source_ref: "collection://hidden-rag/omitted-private-doc",
+                  summary: "Provider RAG 长文档",
+                  excluded_reason: "超出上下文预算，已裁剪低优先级 provider 证据",
+                  selection_status: "excluded",
+                  freshness: "stale",
+                  confidence: 0.72,
+                  metadata: {
+                    provider_backed: true,
+                    provider_mode: "fake_provider",
+                    provider_name: "fake_vikingdb",
+                    provider_debug: "omitted_debug_should_not_render"
+                  }
+                }
+              ]
+            },
+            evidence_gaps: [
+              {
+                gap_type: "provider_timeout",
+                reason: "fake_vikingdb search timed out; local flow continues."
+              }
+            ]
+          },
+          evidence_gaps: [
+            {
+              gap_type: "provider_timeout",
+              reason: "fake_vikingdb search timed out; local flow continues."
+            }
+          ],
+          error_records: []
+        }
+      }
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText("上下文证据")).toBeInTheDocument();
+    expect(screen.getByText("学生更容易接受分步骤提示。")).toBeInTheDocument();
+    expect(screen.getByText("Provider RAG 题解：先通分再相加。")).toBeInTheDocument();
+    expect(screen.getByText("Provider RAG 长文档")).toBeInTheDocument();
+    expect(screen.getAllByText("Selected asset").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("RAG citation 已排除")).toBeInTheDocument();
+    expect(screen.getAllByText("fake provider").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText("provider timeout").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("fake_vikingdb search timed out; local flow continues.").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/hidden-provider-memory/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/hidden-rag/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sdk_response_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/embedding_vector_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/provider_debug_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/rag_debug_should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/omitted_debug_should_not_render/)).not.toBeInTheDocument();
+  });
+
   it("展示答题提交追加的 task/tool/trace 上下文证据", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
       ...baseResponse,

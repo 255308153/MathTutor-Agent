@@ -413,14 +413,15 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <p className="muted">本轮没有上下文资产；主学习流程仍按 KT facts 和默认内容运行。</p>
           )}
         </div>
-        {(omittedContextAssets.length > 0 || evidenceGaps.length + errorRecords.length > 0) && (
-          <div className="gap-list">
+        {omittedContextAssets.length > 0 && (
+          <div className="context-asset-list context-asset-list-omitted">
             {omittedContextAssets.map((asset) => (
-              <p key={`omitted-${contextAssetKey(asset)}`}>
-                <strong>{assetTypeName(asset.asset_type)} 已排除</strong>
-                <span>{asset.excluded_reason ?? "未纳入本轮上下文"}</span>
-              </p>
+              <ContextAssetRow key={`omitted-${contextAssetKey(asset)}`} asset={asset} />
             ))}
+          </div>
+        )}
+        {evidenceGaps.length + errorRecords.length > 0 && (
+          <div className="gap-list">
             {[...evidenceGaps, ...errorRecords].map((gap, index) => (
               <p key={`gap-${index}-${gap.gap_type ?? gap.code ?? "context"}`}>
                 <strong>{gapLabel(gap)}</strong>
@@ -514,17 +515,25 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
 }
 
 function ContextAssetRow({ asset }: { asset: ContextAssetEvidence }) {
-  const source = [asset.source_type, asset.source_ref].filter(Boolean).join(" · ");
+  const excluded = isExcludedAsset(asset);
   return (
-    <div className="context-asset">
-      <span className={`asset-badge asset-${asset.asset_type ?? "unknown"}`}>
-        {assetTypeName(asset.asset_type)}
-      </span>
+    <div className={`context-asset ${excluded ? "context-asset-omitted" : ""}`}>
+      <div className="context-asset-badges">
+        <span className={`asset-badge asset-${asset.asset_type ?? "unknown"}`}>
+          {assetTypeName(asset.asset_type)}
+        </span>
+        <span className={`asset-status ${excluded ? "asset-omitted" : "asset-selected"}`}>
+          {excluded ? `${assetTypeName(asset.asset_type)} 已排除` : "Selected asset"}
+        </span>
+        <span className={`asset-provider ${providerBadgeClass(asset)}`}>
+          {providerEvidenceLabel(asset)}
+        </span>
+      </div>
       <div>
         <strong>{asset.summary ?? "上下文资产"}</strong>
         <p>{asset.included_reason ?? asset.excluded_reason ?? "已纳入本轮上下文证据"}</p>
         <small>
-          {source || "本地上下文"} · {freshnessName(asset.freshness)} · confidence{" "}
+          {contextAssetSourceLabel(asset)} · {freshnessName(asset.freshness)} · confidence{" "}
           {formatNumber(asset.confidence)}
         </small>
       </div>
@@ -635,6 +644,14 @@ function contextAssetItems(
     items.push(normalized);
   };
 
+  const assembledSelected = evidence?.assembled_context?.asset_selection?.selected ?? [];
+  const assembledOmitted = evidence?.assembled_context?.asset_selection?.omitted ?? [];
+  for (const asset of assembledSelected) {
+    addAsset(asset, "included");
+  }
+  for (const asset of assembledOmitted) {
+    addAsset(asset, "excluded");
+  }
   for (const asset of evidence?.assembled_context?.asset_summaries ?? []) {
     addAsset(asset);
   }
@@ -657,7 +674,12 @@ function isExcludedAsset(asset: ContextAssetEvidence) {
 }
 
 function contextAssetKey(asset: ContextAssetEvidence) {
-  return asset.asset_id ?? `${asset.asset_type}-${asset.source_ref}-${asset.summary}`;
+  if (asset.asset_id) return asset.asset_id;
+  return (
+    [asset.asset_type, asset.source_type, asset.source_ref, asset.summary]
+      .filter(Boolean)
+      .join("|") || "context-asset"
+  );
 }
 
 function assetTypeName(type: string | undefined) {
@@ -678,6 +700,69 @@ function freshnessName(value: string | undefined) {
   }[value ?? ""] ?? "unknown freshness";
 }
 
+function providerEvidenceLabel(asset: ContextAssetEvidence) {
+  const providerMode = metadataString(asset, "provider_mode");
+  if (providerMode === "fake_provider") return "fake provider";
+  if (providerMode === "live_provider") return "live provider";
+  if (providerMode === "local_fallback") return "local fallback";
+  if (isProviderBackedAsset(asset)) return "provider-backed";
+  if (isLocalFallbackAsset(asset)) return "local fallback";
+  return "local evidence";
+}
+
+function providerBadgeClass(asset: ContextAssetEvidence) {
+  const label = providerEvidenceLabel(asset);
+  if (label === "fake provider") return "asset-provider-fake";
+  if (label === "live provider") return "asset-provider-live";
+  if (label === "local fallback") return "asset-provider-local";
+  if (label === "provider-backed") return "asset-provider-backed";
+  return "asset-provider-local";
+}
+
+function contextAssetSourceLabel(asset: ContextAssetEvidence) {
+  if (isProviderBackedAsset(asset)) return providerEvidenceLabel(asset);
+  if (isLocalFallbackAsset(asset)) return "local fallback";
+  return sourceTypeName(asset.source_type);
+}
+
+function isProviderBackedAsset(asset: ContextAssetEvidence) {
+  const providerBacked = asset.metadata?.provider_backed;
+  const providerMode = metadataString(asset, "provider_mode");
+  return (
+    providerBacked === true ||
+    asset.source_type === "provider_memory" ||
+    asset.source_type === "provider_rag" ||
+    providerMode === "fake_provider" ||
+    providerMode === "live_provider"
+  );
+}
+
+function isLocalFallbackAsset(asset: ContextAssetEvidence) {
+  const providerMode = metadataString(asset, "provider_mode");
+  return (
+    providerMode === "local_fallback" ||
+    asset.source_type === "local_fallback" ||
+    asset.source_type === "local_rag" ||
+    asset.source_type === "student_memory_store"
+  );
+}
+
+function metadataString(asset: ContextAssetEvidence, key: string) {
+  const value = asset.metadata?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function sourceTypeName(value: string | undefined) {
+  return {
+    kt_engine: "KT evidence",
+    learning_event: "learning event",
+    learning_loop_event: "learning event",
+    mistake_diagnoser: "mistake diagnosis",
+    teaching_trace: "TeachingTrace",
+    rag: "RAG evidence"
+  }[value ?? ""] ?? "local context";
+}
+
 function gapLabel(gap: EvidenceGap) {
   return {
     student_memory: "缺少 memory evidence",
@@ -685,6 +770,11 @@ function gapLabel(gap: EvidenceGap) {
     stale_task_state: "task_state 已过期",
     low_confidence_observation: "低置信度 tool observation",
     provider_failure: "provider failure",
+    provider_timeout: "provider timeout",
+    provider_auth_error: "provider auth error",
+    provider_empty_result: "provider empty result",
+    provider_schema_mismatch: "provider schema mismatch",
+    provider_budget_exceeded: "provider budget exceeded",
     context_budget: "上下文预算裁剪",
     missing_content: "教学内容缺口",
     missing_mapping: "映射缺口",
