@@ -1,6 +1,7 @@
 import type {
   LearningEventRequest,
   MathTutorEventResponse,
+  StudentMemoryDetailResponse,
   StudentMemoryListResponse
 } from "./types";
 
@@ -36,6 +37,38 @@ export async function fetchStudentMemories(
   }
 
   return response.json() as Promise<StudentMemoryListResponse>;
+}
+
+export async function updateStudentMemoryControl({
+  studentId,
+  memoryId,
+  action
+}: {
+  studentId: string;
+  memoryId: string;
+  action: "enable" | "disable";
+}): Promise<StudentMemoryDetailResponse> {
+  const memoryUrl =
+    `${API_BASE}/api/students/${encodeURIComponent(studentId)}` +
+    `/memories/${encodeURIComponent(memoryId)}`;
+  const response = await fetch(`${memoryUrl}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actor: "student",
+      reason:
+        action === "disable"
+          ? "学生在记忆控制面板中禁用该记忆。"
+          : "学生在记忆控制面板中重新启用该记忆。"
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`学生记忆控制失败：${response.status} ${errorDetail(body)}`);
+  }
+
+  return response.json() as Promise<StudentMemoryDetailResponse>;
 }
 
 function errorDetail(body: string) {

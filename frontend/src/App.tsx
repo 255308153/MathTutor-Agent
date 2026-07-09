@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Activity,
+  Ban,
   BookOpenCheck,
   Brain,
   ChevronDown,
@@ -9,12 +10,13 @@ import {
   ClipboardCheck,
   RefreshCw,
   MessageCircle,
+  RotateCcw,
   Send,
   ShieldCheck,
   Sparkles,
   Target
 } from "lucide-react";
-import { fetchStudentMemories, sendLearningEvent } from "./api";
+import { fetchStudentMemories, sendLearningEvent, updateStudentMemoryControl } from "./api";
 import type {
   AttributionEvidence,
   ContextAssetEvidence,
@@ -47,6 +49,7 @@ export default function App() {
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
+  const [pendingMemoryControlId, setPendingMemoryControlId] = useState("");
   const [error, setError] = useState("");
   const [memoryError, setMemoryError] = useState("");
   const activeStudentId = studentId || DEFAULT_STUDENT_ID;
@@ -146,6 +149,28 @@ export default function App() {
       setMemoryError(err instanceof Error ? err.message : "学生记忆读取失败");
     } finally {
       setIsMemoryLoading(false);
+    }
+  }
+
+  async function setMemoryEnabled(memory: StudentMemory, enabled: boolean) {
+    setPendingMemoryControlId(memory.memory_id);
+    setMemoryError("");
+    try {
+      const response = await updateStudentMemoryControl({
+        studentId: activeStudentId,
+        memoryId: memory.memory_id,
+        action: enabled ? "enable" : "disable"
+      });
+      setMemories((items) =>
+        items.map((item) =>
+          item.memory_id === response.memory.memory_id ? response.memory : item
+        )
+      );
+      setSelectedMemoryId(response.memory.memory_id);
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : "学生记忆控制失败");
+    } finally {
+      setPendingMemoryControlId("");
     }
   }
 
@@ -311,8 +336,10 @@ export default function App() {
             selectedMemoryId={selectedMemoryId}
             isLoading={isMemoryLoading}
             error={memoryError}
+            pendingMemoryControlId={pendingMemoryControlId}
             onSelect={setSelectedMemoryId}
             onRefresh={() => void loadStudentMemories()}
+            onSetEnabled={(memory, enabled) => void setMemoryEnabled(memory, enabled)}
           />
 
           <TracePanel response={current} />
@@ -366,15 +393,19 @@ function MemoryPanel({
   selectedMemoryId,
   isLoading,
   error,
+  pendingMemoryControlId,
   onSelect,
-  onRefresh
+  onRefresh,
+  onSetEnabled
 }: {
   memories: StudentMemory[];
   selectedMemoryId: string;
   isLoading: boolean;
   error: string;
+  pendingMemoryControlId: string;
   onSelect: (memoryId: string) => void;
   onRefresh: () => void;
+  onSetEnabled: (memory: StudentMemory, enabled: boolean) => void;
 }) {
   const selectedMemory =
     memories.find((memory) => memory.memory_id === selectedMemoryId) ?? memories[0] ?? null;
@@ -425,7 +456,10 @@ function MemoryPanel({
               <button
                 type="button"
                 key={memory.memory_id}
-                className={memory.memory_id === selectedMemory?.memory_id ? "memory-active" : ""}
+                className={[
+                  memory.memory_id === selectedMemory?.memory_id ? "memory-active" : "",
+                  memory.status === "disabled" ? "memory-disabled" : ""
+                ].filter(Boolean).join(" ")}
                 onClick={() => onSelect(memory.memory_id)}
               >
                 <span>{memoryTypeName(memory.memory_type)}</span>
@@ -449,6 +483,21 @@ function MemoryPanel({
               </div>
               <h3>{selectedMemory.summary || selectedMemory.content}</h3>
               <p>{selectedMemory.content}</p>
+              <div className="memory-control-row">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onSetEnabled(selectedMemory, selectedMemory.status === "disabled")}
+                  disabled={pendingMemoryControlId === selectedMemory.memory_id}
+                >
+                  {selectedMemory.status === "disabled" ? (
+                    <RotateCcw size={16} />
+                  ) : (
+                    <Ban size={16} />
+                  )}
+                  {selectedMemory.status === "disabled" ? "重新启用记忆" : "禁用记忆"}
+                </button>
+              </div>
               <div className="memory-facts">
                 <p>
                   <strong>来源</strong>
@@ -748,6 +797,15 @@ function memoryProvenanceFacts(memory: StudentMemory) {
   if (isRecord(provider)) {
     const providerName = primitiveText(provider.name);
     if (providerName) facts.unshift({ label: "Provider", value: providerName });
+  }
+  const control = memory.provenance.control;
+  if (isRecord(control)) {
+    const operation = primitiveText(control.operation);
+    const reason = primitiveText(control.reason);
+    const occurredAt = primitiveText(control.occurred_at);
+    if (operation) facts.push({ label: "控制操作", value: operation });
+    if (reason) facts.push({ label: "控制原因", value: reason });
+    if (occurredAt) facts.push({ label: "控制时间", value: formatDateTime(occurredAt) });
   }
   return facts;
 }

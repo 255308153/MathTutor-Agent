@@ -56,6 +56,11 @@ export interface StudentMemoryListResponse {
   memories: StudentMemory[];
 }
 
+export interface StudentMemoryDetailResponse {
+  student_id: string;
+  memory: StudentMemory;
+}
+
 export interface RecommendedQuestion {
   question_id: string;
   assist2017_question_id?: number | string;

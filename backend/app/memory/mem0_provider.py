@@ -9,6 +9,7 @@ from .store import (
     MemoryStatus,
     MemoryType,
     StudentMemory,
+    apply_memory_control,
     memory_dedupe_key,
     memory_freshness,
 )
@@ -106,6 +107,9 @@ class Mem0StudentMemoryStore:
         if memory_types:
             allowed = set(memory_types)
             memories = [memory for memory in memories if memory.memory_type in allowed]
+        memories = [
+            memory for memory in memories if memory.enabled and memory.status == "enabled"
+        ]
         if not memories and not self._has_gap("provider_schema_mismatch"):
             self._record_gap(
                 provider_evidence_gap(
@@ -215,6 +219,81 @@ class Mem0StudentMemoryStore:
             if memory.student_id == student_id and memory.memory_id == memory_id:
                 return memory
         return None
+
+    def disable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        return self._set_enabled(
+            student_id=student_id,
+            memory_id=memory_id,
+            enabled=False,
+            actor=actor,
+            reason=reason,
+        )
+
+    def enable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        return self._set_enabled(
+            student_id=student_id,
+            memory_id=memory_id,
+            enabled=True,
+            actor=actor,
+            reason=reason,
+        )
+
+    def _set_enabled(
+        self,
+        *,
+        student_id: str,
+        memory_id: str,
+        enabled: bool,
+        actor: str,
+        reason: str | None,
+    ) -> StudentMemory | None:
+        memory = self.get(student_id=student_id, memory_id=memory_id)
+        if memory is None:
+            return None
+        controlled = apply_memory_control(
+            memory,
+            enabled=enabled,
+            actor=actor,
+            reason=reason,
+        )
+        self._clear_provider_gaps()
+        try:
+            updated = self._provider_update(controlled)
+            if updated is None:
+                return controlled
+            return self._to_domain_memory(updated, fallback=controlled, student_id=student_id)
+        except Exception as exc:
+            if not self.fallback_on_error:
+                raise
+            gap = self._record_error("memory_control", exc)
+            return controlled.model_copy(
+                update={
+                    "source": "mem0_unavailable",
+                    "provenance": controlled.provenance
+                    | {
+                        "provider_failure": {
+                            "operation": "memory_control",
+                            "provider": "mem0",
+                            "gap_type": gap["gap_type"],
+                            "reason": gap["reason"],
+                        }
+                    },
+                }
+            )
 
     def _build_client(self, *, api_key: str) -> Any:
         try:

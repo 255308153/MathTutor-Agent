@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
 from ..memory.store import StudentMemoryStore, memory_store
 from ..schemas.memory import (
+    StudentMemoryControlRequest,
     StudentMemoryDetailResponse,
     StudentMemoryListResponse,
     public_memory_view,
@@ -35,6 +36,54 @@ def list_student_memories(
 )
 def get_student_memory(student_id: str, memory_id: str) -> StudentMemoryDetailResponse:
     memory = _active_memory_store().get(student_id=student_id, memory_id=memory_id)
+    if memory is None:
+        raise HTTPException(status_code=404, detail="学生记忆不存在")
+    return StudentMemoryDetailResponse(
+        student_id=student_id,
+        memory=public_memory_view(memory),
+    )
+
+
+@router.post(
+    "/students/{student_id}/memories/{memory_id}/disable",
+    response_model=StudentMemoryDetailResponse,
+)
+def disable_student_memory(
+    student_id: str,
+    memory_id: str,
+    request: StudentMemoryControlRequest | None = Body(default=None),
+) -> StudentMemoryDetailResponse:
+    payload = request or StudentMemoryControlRequest()
+    memory = _active_memory_store().disable(
+        student_id=student_id,
+        memory_id=memory_id,
+        actor=payload.actor,
+        reason=payload.reason,
+    )
+    if memory is None:
+        raise HTTPException(status_code=404, detail="学生记忆不存在")
+    return StudentMemoryDetailResponse(
+        student_id=student_id,
+        memory=public_memory_view(memory),
+    )
+
+
+@router.post(
+    "/students/{student_id}/memories/{memory_id}/enable",
+    response_model=StudentMemoryDetailResponse,
+)
+def enable_student_memory(
+    student_id: str,
+    memory_id: str,
+    request: StudentMemoryControlRequest | None = Body(default=None),
+) -> StudentMemoryDetailResponse:
+    payload = request or StudentMemoryControlRequest()
+    memory = _active_memory_store().enable(
+        student_id=student_id,
+        memory_id=memory_id,
+        actor=payload.actor,
+        reason=payload.reason,
+    )
     if memory is None:
         raise HTTPException(status_code=404, detail="学生记忆不存在")
     return StudentMemoryDetailResponse(

@@ -59,6 +59,26 @@ class StudentMemoryStore(Protocol):
     def get(self, student_id: str, memory_id: str) -> StudentMemory | None:
         """Return one memory by id for read-only detail views."""
 
+    def disable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        """Disable one memory so default learning flows no longer use it."""
+
+    def enable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        """Re-enable one memory so default learning flows can use it again."""
+
 
 class MemoryProviderConfigurationError(RuntimeError):
     pass
@@ -75,7 +95,11 @@ class InMemoryStudentMemoryStore:
         memory_types: list[MemoryType] | None = None,
         limit: int = 5,
     ) -> list[StudentMemory]:
-        memories = self._memories_by_student.get(student_id, [])
+        memories = [
+            memory
+            for memory in self._memories_by_student.get(student_id, [])
+            if memory.enabled and memory.status == "enabled"
+        ]
         if memory_types:
             allowed = set(memory_types)
             memories = [memory for memory in memories if memory.memory_type in allowed]
@@ -135,6 +159,65 @@ class InMemoryStudentMemoryStore:
                     relevance_score=None,
                     source="local_fallback",
                 )
+        return None
+
+    def disable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        return self._set_enabled(
+            student_id=student_id,
+            memory_id=memory_id,
+            enabled=False,
+            actor=actor,
+            reason=reason,
+        )
+
+    def enable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        return self._set_enabled(
+            student_id=student_id,
+            memory_id=memory_id,
+            enabled=True,
+            actor=actor,
+            reason=reason,
+        )
+
+    def _set_enabled(
+        self,
+        *,
+        student_id: str,
+        memory_id: str,
+        enabled: bool,
+        actor: str,
+        reason: str | None,
+    ) -> StudentMemory | None:
+        memories = self._memories_by_student.get(student_id, [])
+        for index, memory in enumerate(memories):
+            if memory.memory_id != memory_id:
+                continue
+            controlled = apply_memory_control(
+                memory,
+                enabled=enabled,
+                actor=actor,
+                reason=reason,
+            )
+            memories[index] = controlled
+            return _with_retrieval_metadata(
+                controlled,
+                relevance_score=None,
+                source="local_fallback",
+            )
         return None
 
     def _score(self, memory: StudentMemory, terms: set[str]) -> float:
@@ -209,6 +292,45 @@ def memory_freshness(updated_at: str | None) -> MemoryFreshness:
     if age_days <= 45:
         return "recent"
     return "stale"
+
+
+def apply_memory_control(
+    memory: StudentMemory,
+    *,
+    enabled: bool,
+    actor: str = "student",
+    reason: str | None = None,
+) -> StudentMemory:
+    now = datetime.now(UTC).isoformat()
+    operation = "enable" if enabled else "disable"
+    status: MemoryStatus = "enabled" if enabled else "disabled"
+    control_event = {
+        "operation": operation,
+        "status": status,
+        "actor": actor or "student",
+        "reason": reason
+        or (
+            "学生重新启用该记忆，允许默认学习上下文使用。"
+            if enabled
+            else "学生禁用该记忆，默认学习上下文排除。"
+        ),
+        "occurred_at": now,
+    }
+    provenance = dict(memory.provenance)
+    raw_history = provenance.get("control_history", [])
+    history = list(raw_history) if isinstance(raw_history, list) else []
+    history.append(control_event)
+    provenance["control"] = control_event
+    provenance["control_history"] = history[-20:]
+    return memory.model_copy(
+        update={
+            "enabled": enabled,
+            "status": status,
+            "freshness": "fresh",
+            "provenance": provenance,
+            "updated_at": now,
+        }
+    )
 
 
 def _with_retrieval_metadata(

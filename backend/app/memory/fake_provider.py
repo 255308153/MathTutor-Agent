@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from .store import MemoryStatus, MemoryType, StudentMemory, memory_freshness
+from .store import MemoryStatus, MemoryType, StudentMemory, apply_memory_control, memory_freshness
 
 
 class FakeStudentMemoryProvider:
@@ -24,7 +24,11 @@ class FakeStudentMemoryProvider:
         memory_types: list[MemoryType] | None = None,
         limit: int = 5,
     ) -> list[StudentMemory]:
-        records = list(self._records_by_student.get(student_id, []))
+        records = [
+            record
+            for record in self._records_by_student.get(student_id, [])
+            if _record_enabled(record)
+        ]
         if memory_types:
             allowed = set(memory_types)
             records = [
@@ -57,10 +61,17 @@ class FakeStudentMemoryProvider:
                 existing["metadata"].get("memory_type") == memory.memory_type
                 and existing["memory"] == memory.content
             ):
+                existing_memory = self._to_domain_memory(existing)
                 updated = self._to_provider_record(
                     memory.model_copy(
                         update={
                             "memory_id": existing["provider_id"],
+                            "enabled": existing_memory.enabled,
+                            "status": existing_memory.status,
+                            "provenance": {
+                                **existing_memory.provenance,
+                                **memory.provenance,
+                            },
                             "updated_at": now,
                         }
                     )
@@ -87,6 +98,61 @@ class FakeStudentMemoryProvider:
         for record in self._records_by_student.get(student_id, []):
             if str(record["provider_id"]) == memory_id:
                 return self._to_domain_memory(record)
+        return None
+
+    def disable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        return self._set_enabled(
+            student_id=student_id,
+            memory_id=memory_id,
+            enabled=False,
+            actor=actor,
+            reason=reason,
+        )
+
+    def enable(
+        self,
+        student_id: str,
+        memory_id: str,
+        *,
+        actor: str = "student",
+        reason: str | None = None,
+    ) -> StudentMemory | None:
+        return self._set_enabled(
+            student_id=student_id,
+            memory_id=memory_id,
+            enabled=True,
+            actor=actor,
+            reason=reason,
+        )
+
+    def _set_enabled(
+        self,
+        *,
+        student_id: str,
+        memory_id: str,
+        enabled: bool,
+        actor: str,
+        reason: str | None,
+    ) -> StudentMemory | None:
+        records = self._records_by_student.get(student_id, [])
+        for index, record in enumerate(records):
+            if str(record["provider_id"]) != memory_id:
+                continue
+            controlled = apply_memory_control(
+                self._to_domain_memory(record),
+                enabled=enabled,
+                actor=actor,
+                reason=reason,
+            )
+            records[index] = self._to_provider_record(controlled)
+            return self._to_domain_memory(records[index])
         return None
 
     def _to_provider_record(self, memory: StudentMemory) -> dict[str, Any]:
@@ -189,3 +255,8 @@ def _normalized_score(value: Any) -> float | None:
 
 def _memory_status(value: Any) -> MemoryStatus:
     return value if value in {"enabled", "disabled"} else "enabled"
+
+
+def _record_enabled(record: dict[str, Any]) -> bool:
+    metadata = record.get("metadata", {})
+    return bool(metadata.get("enabled", True)) and metadata.get("status", "enabled") == "enabled"

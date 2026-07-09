@@ -50,6 +50,11 @@ class StudentMemoryDetailResponse(BaseModel):
     memory: StudentMemoryView
 
 
+class StudentMemoryControlRequest(BaseModel):
+    actor: str = "student"
+    reason: str | None = None
+
+
 def public_memory_view(memory: StudentMemory) -> StudentMemoryView:
     return StudentMemoryView(
         memory_id=memory.memory_id,

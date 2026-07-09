@@ -399,6 +399,59 @@ def _assert_student_memory_store_contract(store: StudentMemoryStore) -> None:
     assert detail.memory_id == preference.memory_id
     assert detail.enabled is True
     assert detail.status == "enabled"
+
+    disabled = store.disable(
+        student_id=student_id,
+        memory_id=preference.memory_id,
+        reason="学生暂时不想让该偏好影响推荐。",
+    )
+    assert disabled is not None
+    assert disabled.enabled is False
+    assert disabled.status == "disabled"
+    assert disabled.provenance["control"]["operation"] == "disable"
+    assert disabled.provenance["control"]["reason"] == "学生暂时不想让该偏好影响推荐。"
+    assert {
+        memory.memory_id for memory in store.list_recent(student_id=student_id, limit=5)
+    } == {preference.memory_id, mistake.memory_id}
+    assert store.search(
+        student_id=student_id,
+        query="通分 步骤",
+        memory_types=["preference"],
+        limit=3,
+    ) == []
+    rewritten = store.write(
+        StudentMemory(
+            student_id=student_id,
+            memory_type="preference",
+            content=preference.content,
+            evidence=preference.evidence,
+        )
+    )
+    assert rewritten.enabled is False
+    assert rewritten.status == "disabled"
+    assert store.search(
+        student_id=student_id,
+        query="通分 步骤",
+        memory_types=["preference"],
+        limit=3,
+    ) == []
+
+    enabled = store.enable(
+        student_id=student_id,
+        memory_id=preference.memory_id,
+        reason="学生重新允许该偏好参与学习策略。",
+    )
+    assert enabled is not None
+    assert enabled.enabled is True
+    assert enabled.status == "enabled"
+    assert enabled.provenance["control"]["operation"] == "enable"
+    assert store.search(
+        student_id=student_id,
+        query="通分 步骤",
+        memory_types=["preference"],
+        limit=3,
+    )[0].memory_id == preference.memory_id
+
     assert store.get(student_id=student_id, memory_id="missing-memory") is None
     assert store.search(student_id="missing-student", query="通分", limit=3) == []
 
