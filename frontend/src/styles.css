@@ -805,6 +805,97 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.runtime-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.runtime-summary p {
+  border-radius: 8px;
+  background: #eef7f4;
+  padding: 9px 10px;
+  margin: 0;
+}
+
+.runtime-summary strong,
+.runtime-summary span {
+  display: block;
+}
+
+.runtime-summary strong {
+  color: #1f4e43;
+  font-size: 0.78rem;
+}
+
+.runtime-summary span {
+  margin-top: 4px;
+  color: #17201b;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.runtime-tool-list,
+.runtime-observation-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.runtime-tool,
+.runtime-observation,
+.runtime-evidence-refs {
+  border: 1px solid #dde5e0;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 10px;
+}
+
+.runtime-tool strong,
+.runtime-tool span,
+.runtime-tool small,
+.runtime-observation strong,
+.runtime-observation span,
+.runtime-observation small,
+.runtime-evidence-refs strong,
+.runtime-evidence-refs span {
+  display: block;
+}
+
+.runtime-tool strong,
+.runtime-observation strong,
+.runtime-evidence-refs strong {
+  color: #1f4e43;
+}
+
+.runtime-tool span,
+.runtime-observation span {
+  color: #617069;
+  font-size: 0.82rem;
+  margin-top: 3px;
+}
+
+.runtime-tool p,
+.runtime-observation p {
+  color: #17201b;
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.runtime-tool small,
+.runtime-observation small,
+.runtime-evidence-refs span {
+  color: #617069;
+  font-size: 0.78rem;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.runtime-evidence-refs {
+  margin-top: 10px;
+}
+
 .citation-list {
   display: grid;
   gap: 10px;
@@ -1135,6 +1226,7 @@ pre {
   }
 
   .context-summary,
+  .runtime-summary,
   .context-asset,
   .memory-layout,
   .memory-facts {

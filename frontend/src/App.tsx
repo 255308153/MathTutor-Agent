@@ -35,6 +35,7 @@ import type {
   ProviderHealthSeverity,
   ProviderHealthStatus,
   RecommendedQuestion,
+  RuntimeToolObservationView,
   StudentMemory
 } from "./types";
 
@@ -50,6 +51,34 @@ interface HistoryItem {
 type RagSource = NonNullable<
   MathTutorEventResponse["teaching_trace_summary"]["expert_evidence"]["rag_sources"]
 >[number];
+
+const RUNTIME_METRIC_ORDER = [
+  "prediction_probability",
+  "weak_concept_count",
+  "forgetting_risk_count",
+  "result_count",
+  "retrieved_count",
+  "selected_count",
+  "omitted_count",
+  "disabled_excluded_count",
+  "citation_count",
+  "gap_count",
+  "provider_gap_count"
+];
+
+const RUNTIME_METRIC_LABELS: Record<string, string> = {
+  prediction_probability: "预测",
+  weak_concept_count: "薄弱点",
+  forgetting_risk_count: "遗忘风险",
+  result_count: "结果",
+  retrieved_count: "读取",
+  selected_count: "纳入",
+  omitted_count: "排除",
+  disabled_excluded_count: "禁用排除",
+  citation_count: "引用",
+  gap_count: "Gap",
+  provider_gap_count: "Provider gap"
+};
 
 export default function App() {
   const [studentId, setStudentId] = useState(DEFAULT_STUDENT_ID);
@@ -799,6 +828,8 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const evidenceStatus = attributionEvidenceStatusLabel(attribution);
   const scorerSummary = attributionScorerSummary(attribution);
   const contextBudget = formatContextBudget(assembledContext);
+  const traceOverview = evidence?.trace_overview ?? null;
+  const observedToolCount = traceOverview?.tool_calls.filter((tool) => tool.observed).length ?? 0;
 
   return (
     <article className="panel trace-panel">
@@ -820,6 +851,74 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
           ))}
           {!response && <p className="muted">等待第一轮事件生成 TeachingTrace。</p>}
         </div>
+      </details>
+
+      <details open>
+        <summary>
+          <span><ChevronDown size={17} /> Runtime 概览</span>
+          <small>{traceOverview ? `${observedToolCount}/${traceOverview.tool_calls.length} 个工具已观察` : "等待 trace_overview"}</small>
+        </summary>
+        {traceOverview ? (
+          <>
+            <div className="runtime-summary">
+              <p>
+                <strong>激活 capability</strong>
+                <span>{traceOverview.active_capability_name}</span>
+              </p>
+              <p>
+                <strong>可见性</strong>
+                <span>{runtimeVisibilitySummary(traceOverview.visibility_counts)}</span>
+              </p>
+              <p>
+                <strong>Provider gaps</strong>
+                <span>{traceOverview.provider_gap_count} 项</span>
+              </p>
+            </div>
+            <div className="runtime-tool-list">
+              {traceOverview.tool_calls.map((tool) => (
+                <div className="runtime-tool" key={tool.tool_id}>
+                  <strong>{tool.name}</strong>
+                  <span>
+                    {stageName(tool.stage)} · {runtimeStatusName(tool.status, tool.observed)} ·{" "}
+                    {visibilityName(tool.visibility)}
+                  </span>
+                  <p>{tool.purpose || tool.output_summary || "已注册为 runtime 工具调用。"}</p>
+                  <small>
+                    {runtimeProviderModeName(tool.provider_mode, tool.provider_modes)} · gaps {tool.provider_gap_count}
+                  </small>
+                  {tool.evidence_refs.length > 0 && (
+                    <small>证据引用：{tool.evidence_refs.join("、")}</small>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="runtime-observation-list">
+              {traceOverview.tool_observations.map((observation) => (
+                <div className="runtime-observation" key={`observation-${observation.tool_id}`}>
+                  <strong>{observation.name}</strong>
+                  <span>
+                    {observation.provider} · {runtimeStatusName(observation.status)} ·{" "}
+                    {observation.provider_mode}
+                    {observation.fallback_used ? " · fallback" : ""}
+                  </span>
+                  <p>Observation 摘要：{runtimeMetricSummary(observation.metrics)}</p>
+                  <small>{observation.evidence_boundary}</small>
+                  {observation.evidence_refs.length > 0 && (
+                    <small>证据引用：{observation.evidence_refs.join("、")}</small>
+                  )}
+                </div>
+              ))}
+            </div>
+            {traceOverview.evidence_refs.length > 0 && (
+              <div className="runtime-evidence-refs">
+                <strong>Evidence refs</strong>
+                <span>{traceOverview.evidence_refs.join("、")}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="muted">等待后端返回标准化 runtime trace_overview。</p>
+        )}
       </details>
 
       <details>
@@ -1411,7 +1510,52 @@ function stageName(stage: string) {
 }
 
 function visibilityName(visibility: string) {
-  return visibility === "student" ? "学生可见" : "专家证据";
+  if (visibility === "student") return "学生可见";
+  if (visibility === "debug") return "调试可见";
+  return "专家证据";
+}
+
+function runtimeVisibilitySummary(counts: Record<string, number>) {
+  const student = counts.student ?? 0;
+  const expert = counts.expert ?? 0;
+  const debug = counts.debug ?? 0;
+  return `学生 ${student} · 专家 ${expert} · Debug ${debug}`;
+}
+
+function runtimeStatusName(status: string | null | undefined, observed = true) {
+  if (!observed) return "未调用";
+  return {
+    completed: "完成",
+    degraded: "降级",
+    failed: "失败",
+    unavailable: "不可用",
+    not_configured: "未配置"
+  }[status ?? ""] ?? (status || "未记录");
+}
+
+function runtimeProviderModeName(
+  providerMode: string | null | undefined,
+  providerModes: string[]
+) {
+  return providerMode || providerModes.join("、") || "provider mode 未记录";
+}
+
+function runtimeMetricSummary(metrics: RuntimeToolObservationView["metrics"]) {
+  const parts = RUNTIME_METRIC_ORDER.flatMap((key) => {
+    const value = metrics[key];
+    const formatted = runtimeMetricValue(value);
+    return formatted ? [`${RUNTIME_METRIC_LABELS[key]} ${formatted}`] : [];
+  });
+  return parts.length > 0 ? parts.join(" · ") : "暂无指标";
+}
+
+function runtimeMetricValue(value: string | number | boolean | null | undefined) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(3);
+  }
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "string") return value;
+  return "";
 }
 
 function formatProbability(value: number | null | undefined) {

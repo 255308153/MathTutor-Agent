@@ -214,6 +214,7 @@ const baseResponse: MathTutorEventResponse = {
           tool_id: "student_memory_evidence",
           provider_mode: "local_fallback",
           fallback_used: true,
+          raw_provider_payload: "runtime_raw_payload_should_not_render",
           result_summary: {
             retrieved_count: 1,
             selected_count: 1,
@@ -221,6 +222,166 @@ const baseResponse: MathTutorEventResponse = {
           }
         }
       ],
+      trace_overview: {
+        runtime_name: "MathTutorAgentRuntime",
+        turn_id: "turn-tt-test",
+        intent: "next_step_advice",
+        active_capability_id: "math_next_step_advice",
+        active_capability_name: "下一步建议与复习规划",
+        active_capability_fallback: false,
+        active_capability_reason: "intent=next_step_advice 匹配数学能力。",
+        stage_events: [],
+        tool_calls: [
+          {
+            tool_id: "kt_authoritative_facts",
+            name: "KT/DGEKT 权威学习事实",
+            stage: "kt_tool_observation",
+            actor: "kt",
+            visibility: "expert",
+            purpose: "读取 KT/DGEKT 权威事实用于诊断展示。",
+            input_summary: "读取本轮 KT diagnosis。",
+            output_summary: "标准化 KT observation。",
+            failure_modes: ["provider_gap"],
+            provider_modes: ["local_fallback", "live_provider"],
+            state_write_policy: "read_only_observation",
+            observed: true,
+            provider: "mock_kt_engine",
+            provider_mode: "local_fallback",
+            status: "completed",
+            degraded: false,
+            fallback_used: true,
+            provider_gap_count: 0,
+            evidence_refs: ["trace:tt-test", "kt_diagnosis:tt-test"]
+          },
+          {
+            tool_id: "rag_retrieval_evidence",
+            name: "RAG 数学知识检索证据",
+            stage: "rag_tool_observation",
+            actor: "rag",
+            visibility: "expert",
+            purpose: "读取数学概念、例题和教材片段 citation。",
+            input_summary: "读取本轮 RAG sources。",
+            output_summary: "标准化 RAG observation。",
+            failure_modes: ["empty_results", "provider_gap"],
+            provider_modes: ["local_fallback", "live_provider"],
+            state_write_policy: "read_only_observation",
+            observed: true,
+            provider: "local_rag",
+            provider_mode: "local_fallback",
+            status: "completed",
+            degraded: false,
+            fallback_used: true,
+            provider_gap_count: 0,
+            evidence_refs: ["demo-rag/fraction_addition.md"]
+          },
+          {
+            tool_id: "student_memory_evidence",
+            name: "学生记忆证据",
+            stage: "memory_tool_observation",
+            actor: "memory",
+            visibility: "expert",
+            purpose: "读取学生长期记忆对教学策略的影响。",
+            input_summary: "读取本轮学生记忆。",
+            output_summary: "标准化 memory observation。",
+            failure_modes: ["provider_gap"],
+            provider_modes: ["local_fallback", "mem0"],
+            state_write_policy: "read_only_observation",
+            observed: true,
+            provider: "local_memory",
+            provider_mode: "local_fallback",
+            status: "completed",
+            degraded: false,
+            fallback_used: true,
+            provider_gap_count: 0,
+            evidence_refs: ["memory:mem-preference-1"]
+          }
+        ],
+        tool_observations: [
+          {
+            tool_id: "kt_authoritative_facts",
+            name: "KT/DGEKT 权威学习事实",
+            stage: "kt_tool_observation",
+            actor: "kt",
+            visibility: "expert",
+            provider: "mock_kt_engine",
+            provider_mode: "local_fallback",
+            status: "completed",
+            degraded: false,
+            fallback_used: true,
+            metrics: {
+              prediction_probability: 0.58,
+              weak_concept_count: 1,
+              forgetting_risk_count: 1
+            },
+            evidence_refs: ["trace:tt-test", "kt_diagnosis:tt-test"],
+            evidence_boundary: "KT facts are authoritative.",
+            provider_gap_count: 0,
+            provider_gaps: [],
+            gap_count: 0,
+            state_write_policy: "read_only_observation"
+          },
+          {
+            tool_id: "rag_retrieval_evidence",
+            name: "RAG 数学知识检索证据",
+            stage: "rag_tool_observation",
+            actor: "rag",
+            visibility: "expert",
+            provider: "local_rag",
+            provider_mode: "local_fallback",
+            status: "completed",
+            degraded: false,
+            fallback_used: true,
+            metrics: {
+              result_count: 1,
+              citation_count: 1
+            },
+            evidence_refs: ["demo-rag/fraction_addition.md"],
+            evidence_boundary: "RAG can support explanation, not overwrite prediction facts.",
+            provider_gap_count: 0,
+            provider_gaps: [],
+            gap_count: 0,
+            state_write_policy: "read_only_observation"
+          },
+          {
+            tool_id: "student_memory_evidence",
+            name: "学生记忆证据",
+            stage: "memory_tool_observation",
+            actor: "memory",
+            visibility: "expert",
+            provider: "local_memory",
+            provider_mode: "local_fallback",
+            status: "completed",
+            degraded: false,
+            fallback_used: true,
+            metrics: {
+              retrieved_count: 1,
+              selected_count: 1,
+              omitted_count: 0
+            },
+            evidence_refs: ["memory:mem-preference-1"],
+            evidence_boundary: "Memory can influence strategy, not mastery.",
+            provider_gap_count: 0,
+            provider_gaps: [],
+            gap_count: 0,
+            state_write_policy: "read_only_observation"
+          }
+        ],
+        evidence_refs: [
+          "trace:tt-test",
+          "kt_diagnosis:tt-test",
+          "demo-rag/fraction_addition.md",
+          "memory:mem-preference-1"
+        ],
+        visibility_counts: {
+          student: 1,
+          expert: 6,
+          debug: 0
+        },
+        provider_gap_count: 0,
+        provider_gaps: [],
+        state_reference_only: true,
+        boundary: "Runtime observability is read-only and cannot overwrite KT facts."
+      },
       context_assets: [],
       assembled_context: {
         context_id: "assembled-test",
@@ -705,6 +866,16 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("RAG 工具观察")).toBeInTheDocument();
     expect(screen.getByText("记忆工具观察")).toBeInTheDocument();
     expect(screen.getByText("Runtime 结束")).toBeInTheDocument();
+    expect(screen.getByText("Runtime 概览")).toBeInTheDocument();
+    expect(screen.getByText("下一步建议与复习规划")).toBeInTheDocument();
+    expect(screen.getByText("学生 1 · 专家 6 · Debug 0")).toBeInTheDocument();
+    expect(screen.getAllByText("KT/DGEKT 权威学习事实").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("RAG 数学知识检索证据").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("学生记忆证据").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Observation 摘要：预测 0\.580 · 薄弱点 1 · 遗忘风险 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Observation 摘要：结果 1 · 引用 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Observation 摘要：读取 1 · 纳入 1 · 排除 0/)).toBeInTheDocument();
+    expect(screen.getByText(/trace:tt-test、kt_diagnosis:tt-test、demo-rag\/fraction_addition\.md、memory:mem-preference-1/)).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
     expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2")).toBeInTheDocument();
     expect(screen.getByText("模型证据")).toBeInTheDocument();
@@ -729,6 +900,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("偏好知识点")).toBeInTheDocument();
     expect(screen.getByText("来源链")).toBeInTheDocument();
     expect(screen.queryByText(/should_not_render/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/runtime_raw_payload_should_not_render/)).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
     await userEvent.click(screen.getByLabelText("提交答案"));

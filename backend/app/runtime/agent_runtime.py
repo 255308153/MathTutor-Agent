@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Iterable
 from typing import Any
 
 from ..graph.learning_loop import MathTutorLearningLoop, learning_loop as default_learning_loop
 from ..schemas.learning import LearningEvent, MathTutorEventResponse
-from ..schemas.trace import TeachingTraceEvent, TeachingTraceEventType
+from ..schemas.trace import (
+    RuntimeToolCallView,
+    RuntimeToolObservationView,
+    RuntimeTraceOverview,
+    RuntimeTraceStageView,
+    TeachingTraceEvent,
+    TeachingTraceEventType,
+)
 from .capabilities import (
     CapabilitySelection,
     MathCapabilityRegistry,
@@ -198,8 +207,188 @@ class MathTutorAgentRuntime:
                 "and KT remains authoritative."
             ),
         }
+        expert_evidence["trace_overview"] = self._runtime_trace_overview(
+            response=response,
+            context=context,
+            capability_selection=capability_selection,
+            tool_observations=tool_observations,
+        ).model_dump(mode="json", exclude_none=True)
         response.teaching_trace_summary.expert_evidence = sanitize_runtime_value(
             expert_evidence
+        )
+
+    def _runtime_trace_overview(
+        self,
+        *,
+        response: MathTutorEventResponse,
+        context: LearningTurnContext,
+        capability_selection: CapabilitySelection,
+        tool_observations: list[ToolObservation],
+    ) -> RuntimeTraceOverview:
+        capability_summary = capability_selection.public_summary()
+        tool_manifest = self.tool_registry.manifest()
+        observation_by_tool = {
+            observation.tool_id: observation.public_summary()
+            for observation in tool_observations
+        }
+        tool_calls = [
+            self._runtime_tool_call_view(
+                manifest,
+                observation_by_tool.get(manifest["tool_id"]),
+            )
+            for manifest in tool_manifest
+        ]
+        observation_views = [
+            self._runtime_tool_observation_view(observation)
+            for observation in tool_observations
+        ]
+        provider_gaps = _dedupe_records(
+            gap
+            for observation in observation_views
+            for gap in observation.provider_gaps
+        )
+        stage_events = [
+            self._runtime_stage_view(event, capability_summary)
+            for event in response.teaching_trace
+        ]
+        visibility_counts: dict[str, int] = {"student": 0, "expert": 0, "debug": 0}
+        for event in stage_events:
+            visibility_counts[event.visibility] = (
+                visibility_counts.get(event.visibility, 0) + 1
+            )
+        evidence_refs = _dedupe_strings(
+            ref for event in stage_events for ref in event.evidence_refs
+        )
+        return RuntimeTraceOverview(
+            runtime_name=context.runtime_name,
+            turn_id=context.turn_id,
+            intent=context.intent,
+            active_capability_id=str(capability_summary["capability_id"]),
+            active_capability_name=str(
+                capability_summary.get("capability_name")
+                or capability_summary.get("name")
+                or "现有学习流 fallback"
+            ),
+            active_capability_fallback=bool(capability_summary["fallback"]),
+            active_capability_reason=str(capability_summary["reason"]),
+            stage_events=stage_events,
+            tool_calls=tool_calls,
+            tool_observations=observation_views,
+            evidence_refs=evidence_refs,
+            visibility_counts=visibility_counts,
+            provider_gap_count=sum(
+                observation.provider_gap_count for observation in observation_views
+            ),
+            provider_gaps=provider_gaps,
+        )
+
+    def _runtime_tool_call_view(
+        self,
+        manifest: dict[str, Any],
+        observation: dict[str, Any] | None,
+    ) -> RuntimeToolCallView:
+        provider_gap_count = _int_metric(
+            _dict_or_empty(observation).get("result_summary"),
+            "provider_gap_count",
+        )
+        return RuntimeToolCallView(
+            tool_id=str(manifest["tool_id"]),
+            name=str(manifest["name"]),
+            stage=str(manifest["trace_stage"]),
+            actor=str(manifest["trace_actor"]),
+            visibility=manifest.get("visibility", "expert"),
+            purpose=str(manifest.get("purpose") or ""),
+            input_summary=str(manifest.get("input_summary") or ""),
+            output_summary=str(manifest.get("output_summary") or ""),
+            failure_modes=[str(item) for item in manifest.get("failure_modes", [])],
+            provider_modes=[str(item) for item in manifest.get("provider_modes", [])],
+            state_write_policy=str(manifest.get("state_write_policy") or ""),
+            observed=observation is not None,
+            provider=observation.get("provider") if observation else None,
+            provider_mode=observation.get("provider_mode") if observation else None,
+            status=observation.get("status") if observation else None,
+            degraded=bool(observation.get("degraded")) if observation else False,
+            fallback_used=bool(observation.get("fallback_used")) if observation else False,
+            provider_gap_count=provider_gap_count,
+            evidence_refs=[
+                str(ref)
+                for ref in _list_or_empty(
+                    observation.get("evidence_refs") if observation else []
+                )
+            ],
+        )
+
+    def _runtime_tool_observation_view(
+        self,
+        observation: ToolObservation,
+    ) -> RuntimeToolObservationView:
+        summary = observation.public_summary()
+        result_summary = _dict_or_empty(summary.get("result_summary"))
+        tool = self.tool_registry.find(observation.tool_id)
+        provider_gaps = _list_of_dicts(result_summary.get("provider_gaps"))
+        return RuntimeToolObservationView(
+            tool_id=observation.tool_id,
+            name=observation.tool_name,
+            stage=tool.trace_stage if tool else "tool_observation",
+            actor=tool.trace_actor if tool else "system",
+            visibility=observation.visibility,
+            provider=observation.provider,
+            provider_mode=observation.provider_mode,
+            status=observation.status,
+            degraded=observation.degraded,
+            fallback_used=observation.fallback_used,
+            metrics=_observation_metrics(result_summary),
+            evidence_refs=list(dict.fromkeys(observation.evidence_refs)),
+            evidence_boundary=observation.evidence_boundary,
+            provider_gap_count=_int_metric(result_summary, "provider_gap_count"),
+            provider_gaps=provider_gaps,
+            gap_count=_int_metric(result_summary, "gap_count"),
+            state_write_policy=observation.state_write_policy,
+        )
+
+    def _runtime_stage_view(
+        self,
+        event: TeachingTraceEvent,
+        capability_summary: dict[str, Any],
+    ) -> RuntimeTraceStageView:
+        metadata = _dict_or_empty(event.metadata)
+        tool_observation = _dict_or_empty(metadata.get("tool_observation"))
+        result_summary = _dict_or_empty(
+            metadata.get("result_summary") or tool_observation.get("result_summary")
+        )
+        capability = _dict_or_empty(metadata.get("capability_selection"))
+        capability_id = capability.get("capability_id")
+        tool_id = metadata.get("tool_id") or tool_observation.get("tool_id")
+        return RuntimeTraceStageView(
+            event_id=event.id,
+            event_type=event.type.value,
+            stage=event.stage,
+            actor=event.actor,
+            visibility=event.visibility,
+            student_visible=event.visibility == "student",
+            content=event.content,
+            evidence_refs=list(dict.fromkeys(event.evidence_refs)),
+            capability_id=str(capability_id or capability_summary["capability_id"])
+            if event.stage.startswith("runtime_") or capability_id
+            else None,
+            tool_id=str(tool_id) if tool_id else None,
+            provider=_optional_string(
+                metadata.get("provider") or tool_observation.get("provider")
+            ),
+            provider_mode=_optional_string(
+                metadata.get("provider_mode") or tool_observation.get("provider_mode")
+            ),
+            status=_optional_string(
+                metadata.get("status") or tool_observation.get("status")
+            ),
+            degraded=bool(metadata.get("degraded") or tool_observation.get("degraded")),
+            fallback_used=bool(
+                metadata.get("fallback_used") or tool_observation.get("fallback_used")
+            ),
+            provider_gap_count=_int_metric(result_summary, "provider_gap_count"),
+            gap_count=_int_metric(result_summary, "gap_count"),
+            evidence_boundary=_optional_string(metadata.get("evidence_boundary")),
+            state_write_policy=_optional_string(metadata.get("state_write_policy")),
         )
 
     def _collect_tool_observations(
@@ -338,6 +527,7 @@ class MathTutorAgentRuntime:
         tool = self.tool_registry.find(observation.tool_id)
         stage = tool.trace_stage if tool else "tool_observation"
         actor = tool.trace_actor if tool else "system"
+        tool_call = tool.manifest_entry() if tool else {}
         return TeachingTraceEvent(
             type=TeachingTraceEventType.OBSERVATION,
             stage=stage,
@@ -345,6 +535,7 @@ class MathTutorAgentRuntime:
             visibility=observation.visibility,
             content=self._tool_observation_content(observation),
             metadata={
+                "tool_call": tool_call,
                 "tool_observation": summary,
                 "tool_name": observation.tool_name,
                 "tool_id": observation.tool_id,
@@ -399,3 +590,89 @@ class MathTutorAgentRuntime:
                 self.learning_loop.kt_engine.__class__.__name__,
             )
         )
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _int_metric(summary: Any, key: str) -> int:
+    value = _dict_or_empty(summary).get(key)
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _observation_metrics(
+    result_summary: dict[str, Any],
+) -> dict[str, str | int | float | bool | None]:
+    allowed = {
+        "prediction_probability",
+        "weak_concept_count",
+        "forgetting_risk_count",
+        "result_count",
+        "retrieved_count",
+        "selected_count",
+        "omitted_count",
+        "disabled_excluded_count",
+        "gap_count",
+        "provider_gap_count",
+        "fallback_used",
+        "state_reference_only",
+    }
+    metrics: dict[str, str | int | float | bool | None] = {}
+    for key in allowed:
+        value = result_summary.get(key)
+        if isinstance(value, (str, int, float, bool)):
+            metrics[key] = value
+    citation_refs = _list_or_empty(result_summary.get("citation_refs"))
+    if citation_refs:
+        metrics["citation_count"] = len(citation_refs)
+    return metrics
+
+
+def _dedupe_strings(values: Iterable[Any]) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        ref = str(value)
+        if ref in seen:
+            continue
+        seen.add(ref)
+        refs.append(ref)
+    return refs
+
+
+def _dedupe_records(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        sanitized = sanitize_runtime_value(record)
+        key = json.dumps(sanitized, ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(sanitized)
+    return deduped

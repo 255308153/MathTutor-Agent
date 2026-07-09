@@ -61,6 +61,35 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
     assert expert["rag_sources"]
     assert expert["assembled_context"]["authoritative_kt_facts"]["prediction_probability"] == 0.58
     assert expert["planner_decision"]["selected_action"]["type"] == "worked_example_steps_after_mistake"
+    overview = expert["trace_overview"]
+    assert overview["runtime_name"] == "MathTutorAgentRuntime"
+    assert overview["intent"] == "answer_submission"
+    assert overview["active_capability_id"] == "math_answer_diagnosis"
+    assert overview["active_capability_name"] == "答题诊断与错因分析"
+    assert overview["state_reference_only"] is True
+    assert "cannot overwrite KT facts" in overview["boundary"]
+    assert len(overview["stage_events"]) == len(body["teaching_trace"])
+    assert overview["visibility_counts"]["student"] == 1
+    assert any(
+        event["stage"] == "generate_response" and event["student_visible"] is True
+        for event in overview["stage_events"]
+    )
+    assert any(
+        event["stage"] == "kt_tool_observation"
+        and event["tool_id"] == "kt_authoritative_facts"
+        and event["provider_mode"] == "local_fallback"
+        for event in overview["stage_events"]
+    )
+    assert [item["tool_id"] for item in overview["tool_calls"]] == [
+        "kt_authoritative_facts",
+        "rag_retrieval_evidence",
+        "student_memory_evidence",
+    ]
+    assert all(item["observed"] is True for item in overview["tool_calls"])
+    assert {
+        item["tool_id"]: item["metrics"] for item in overview["tool_observations"]
+    }["kt_authoritative_facts"]["prediction_probability"] == 0.58
+    assert "trace:" + body["trace_id"] in overview["evidence_refs"]
 
 
 def test_trace_events_distinguish_student_and_expert_evidence() -> None:
@@ -85,10 +114,26 @@ def test_trace_events_distinguish_student_and_expert_evidence() -> None:
     assert by_stage["diagnose"]["actor"] == "kt"
     assert by_stage["kt_tool_observation"]["actor"] == "kt"
     assert by_stage["kt_tool_observation"]["type"] == "observation"
+    assert (
+        by_stage["kt_tool_observation"]["metadata"]["tool_call"]["tool_id"]
+        == "kt_authoritative_facts"
+    )
+    assert (
+        by_stage["kt_tool_observation"]["metadata"]["tool_call"]["trace_stage"]
+        == "kt_tool_observation"
+    )
     assert by_stage["rag_tool_observation"]["actor"] == "rag"
     assert by_stage["rag_tool_observation"]["type"] == "observation"
+    assert (
+        by_stage["rag_tool_observation"]["metadata"]["tool_call"]["tool_id"]
+        == "rag_retrieval_evidence"
+    )
     assert by_stage["memory_tool_observation"]["actor"] == "memory"
     assert by_stage["memory_tool_observation"]["type"] == "observation"
+    assert (
+        by_stage["memory_tool_observation"]["metadata"]["tool_call"]["tool_id"]
+        == "student_memory_evidence"
+    )
     assert by_stage["context_assemble"]["actor"] == "context"
     assert by_stage["plan"]["actor"] == "planner"
     assert by_stage["generate_response"]["visibility"] == "student"
@@ -129,3 +174,10 @@ def test_learning_turn_context_summary_sanitizes_sensitive_payload_values() -> N
     assert "token" not in payload["nested"]
     assert payload["nested"]["visible"] == "保留"
     assert payload["notes"] == ["普通提示", "<redacted>"]
+    serialized = str(
+        body["teaching_trace_summary"]["expert_evidence"]["trace_overview"]
+    )
+    assert "secret-key" not in serialized
+    assert "secret-token" not in serialized
+    assert "/Users/lqc/private" not in serialized
+    assert ".pt" not in serialized

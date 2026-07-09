@@ -119,14 +119,99 @@ export interface RecommendedQuestion {
   score_factors: Record<string, number>;
 }
 
+export type TraceVisibility = "student" | "expert" | "debug";
+
 export interface TeachingTraceEvent {
   id: string;
   stage: string;
   actor: string;
-  visibility: "student" | "expert" | "debug";
+  visibility: TraceVisibility;
   content: string;
   metadata: Record<string, unknown>;
   evidence_refs: string[];
+}
+
+export interface RuntimeTraceStageView {
+  event_id: string;
+  event_type: string;
+  stage: string;
+  actor: string;
+  visibility: TraceVisibility;
+  student_visible: boolean;
+  content: string;
+  evidence_refs: string[];
+  capability_id?: string | null;
+  tool_id?: string | null;
+  provider?: string | null;
+  provider_mode?: string | null;
+  status?: string | null;
+  degraded: boolean;
+  fallback_used: boolean;
+  provider_gap_count: number;
+  gap_count: number;
+  evidence_boundary?: string | null;
+  state_write_policy?: string | null;
+}
+
+export interface RuntimeToolCallView {
+  tool_id: string;
+  name: string;
+  stage: string;
+  actor: string;
+  visibility: TraceVisibility;
+  purpose: string;
+  input_summary: string;
+  output_summary: string;
+  failure_modes: string[];
+  provider_modes: string[];
+  state_write_policy: string;
+  observed: boolean;
+  provider?: string | null;
+  provider_mode?: string | null;
+  status?: string | null;
+  degraded: boolean;
+  fallback_used: boolean;
+  provider_gap_count: number;
+  evidence_refs: string[];
+}
+
+export interface RuntimeToolObservationView {
+  tool_id: string;
+  name: string;
+  stage: string;
+  actor: string;
+  visibility: TraceVisibility;
+  provider: string;
+  provider_mode: string;
+  status: string;
+  degraded: boolean;
+  fallback_used: boolean;
+  metrics: Record<string, string | number | boolean | null>;
+  evidence_refs: string[];
+  evidence_boundary: string;
+  provider_gap_count: number;
+  provider_gaps: EvidenceGap[];
+  gap_count: number;
+  state_write_policy: string;
+}
+
+export interface RuntimeTraceOverview {
+  runtime_name: string;
+  turn_id?: string | null;
+  intent: string;
+  active_capability_id: string;
+  active_capability_name: string;
+  active_capability_fallback: boolean;
+  active_capability_reason: string;
+  stage_events: RuntimeTraceStageView[];
+  tool_calls: RuntimeToolCallView[];
+  tool_observations: RuntimeToolObservationView[];
+  evidence_refs: string[];
+  visibility_counts: Record<string, number>;
+  provider_gap_count: number;
+  provider_gaps: EvidenceGap[];
+  state_reference_only: boolean;
+  boundary: string;
 }
 
 export interface ContextAssetEvidence {
@@ -226,6 +311,7 @@ export interface TeachingTraceSummary {
     tool_registry_manifest?: Array<Record<string, unknown>>;
     tool_observations?: Array<Record<string, unknown>>;
     runtime?: Record<string, unknown>;
+    trace_overview?: RuntimeTraceOverview | null;
   };
   invariants: string[];
   errors: string[];
