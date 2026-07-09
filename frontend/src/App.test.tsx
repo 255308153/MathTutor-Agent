@@ -377,6 +377,48 @@ const degradedProviderHealthResponse: ProviderHealthResponse = {
   })
 };
 
+const ktArtifactProviderHealthResponse: ProviderHealthResponse = {
+  ...baseProviderHealthResponse,
+  status: "degraded",
+  summary: "DGEKT 与 imported artifact readiness 存在降级；默认学习流程仍可继续。",
+  components: baseProviderHealthResponse.components.map((component) => {
+    if (component.component === "kt") {
+      return {
+        ...component,
+        mode: "dgekt",
+        provider: "dgekt",
+        configured: true,
+        status: "degraded",
+        severity: "warning",
+        actionable_hint: "DGEKT 核心配置可诊断，但 offline evidence 未配置；当前只能视为 partial readiness。"
+      };
+    }
+    if (component.component === "content_rag_artifact") {
+      return {
+        ...component,
+        mode: "content:imported/rag:imported",
+        provider: "imported_artifacts",
+        configured: false,
+        status: "unavailable",
+        severity: "error",
+        actionable_hint: "Content/RAG artifact readiness 存在缺口；补齐导入路径或切回 demo。"
+      };
+    }
+    if (component.component === "learning_context") {
+      return {
+        ...component,
+        mode: "context_evidence_assembly",
+        provider: "in_memory_context_layer",
+        configured: true,
+        status: "healthy",
+        severity: "info",
+        actionable_hint: "LearningContextLayer 会组装当前 Memory/RAG/Content/KT 证据；只保留 evidence gap，不改写学习事实。"
+      };
+    }
+    return component;
+  })
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -426,6 +468,27 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("错误")).toBeInTheDocument();
     expect(screen.getByText(/MATHTUTOR_MEM0_API_KEY/)).toBeInTheDocument();
     expect(screen.getByText(/OpenViking live RAG 不可用/)).toBeInTheDocument();
+  });
+
+  it("展示 KT/DGEKT、Content/RAG artifact 与 LearningContextLayer readiness", async () => {
+    mockMathTutorApi({
+      providerHealthResponse: ktArtifactProviderHealthResponse
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
+    expect(screen.getByText("DGEKT 与 imported artifact readiness 存在降级；默认学习流程仍可继续。")).toBeInTheDocument();
+    expect(screen.getByText("KT / DGEKT")).toBeInTheDocument();
+    expect(screen.getAllByText("dgekt").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/offline evidence 未配置/)).toBeInTheDocument();
+    expect(screen.getByText("Content/RAG artifact")).toBeInTheDocument();
+    expect(screen.getByText("content:imported/rag:imported")).toBeInTheDocument();
+    expect(screen.getByText("imported_artifacts")).toBeInTheDocument();
+    expect(screen.getByText(/补齐导入路径或切回 demo/)).toBeInTheDocument();
+    expect(screen.getByText("LearningContextLayer")).toBeInTheDocument();
+    expect(screen.getByText("context_evidence_assembly")).toBeInTheDocument();
+    expect(screen.getByText(/不改写学习事实/)).toBeInTheDocument();
   });
 
   it("可以加载建议、提交推荐题答案，并展示 trace 与证据", async () => {

@@ -2,13 +2,28 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .core.config import MathTutorSettings, get_settings
+from .mapping.assist2017_mapping import DEFAULT_MAPPING_PATH
+from .rag.knowledge_rag import RAG_PATH
 from .schemas.provider_health import (
     ProviderHealthComponent,
     ProviderHealthResponse,
     ProviderHealthStatus,
+)
+from .storage.content_repository import CONTENT_PATH
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DGEKT_DATASET_FILES = ("assist2017_pid_train.csv", "assist2017_pid_test.csv")
+DGEKT_OFFLINE_EVIDENCE_FILES = (
+    "diagnosis_cases.json",
+    "attribution_paths.csv",
+    "key_history.csv",
+    "path_ablation.csv",
+    "weak_concepts.csv",
 )
 
 
@@ -170,25 +185,77 @@ def _rag_health(settings: MathTutorSettings, checked_at: str) -> ProviderHealthC
 
 def _kt_health(settings: MathTutorSettings, checked_at: str) -> ProviderHealthComponent:
     if settings.kt_engine == "dgekt":
-        configured = bool(
-            settings.dgekt_checkpoint_path
-            and settings.dgekt_dataset_dir
-            and settings.dgekt_q_matrix_path
+        missing_fields: list[str] = []
+        missing_artifacts: list[str] = []
+        if not settings.dgekt_checkpoint_path:
+            missing_fields.append("MATHTUTOR_DGEKT_CHECKPOINT_PATH")
+        elif not _resolve_project_path(settings.dgekt_checkpoint_path).is_file():
+            missing_artifacts.append("DGEKT checkpoint file")
+
+        if not settings.dgekt_dataset_dir:
+            missing_fields.append("MATHTUTOR_DGEKT_DATASET_DIR")
+        else:
+            dataset_dir = _resolve_project_path(settings.dgekt_dataset_dir)
+            if not dataset_dir.is_dir():
+                missing_artifacts.append("DGEKT dataset directory")
+            else:
+                for filename in DGEKT_DATASET_FILES:
+                    if not (dataset_dir / filename).is_file():
+                        missing_artifacts.append(f"DGEKT dataset file {filename}")
+
+        if not settings.dgekt_q_matrix_path:
+            missing_fields.append("MATHTUTOR_DGEKT_Q_MATRIX_PATH")
+        elif not _resolve_project_path(settings.dgekt_q_matrix_path).is_file():
+            missing_artifacts.append("DGEKT Q-matrix file")
+
+        mapping_path = (
+            _resolve_project_path(settings.dgekt_canonical_mapping_path)
+            if settings.dgekt_canonical_mapping_path
+            else DEFAULT_MAPPING_PATH
         )
+        if not mapping_path.is_file():
+            missing_artifacts.append("DGEKT canonical mapping artifact")
+
+        offline_gaps, offline_status = _dgekt_offline_evidence_gaps(settings)
+        configured = not missing_fields and not missing_artifacts
+        status: ProviderHealthStatus = "healthy"
+        severity = "info"
+        if missing_fields:
+            status = "not_configured"
+            severity = "warning"
+        elif missing_artifacts:
+            status = "unavailable"
+            severity = "error"
+        elif offline_status != "complete":
+            status = "degraded"
+            severity = "warning"
+
+        hint = _dgekt_hint(status=status, offline_status=offline_status)
         return ProviderHealthComponent(
             component="kt",
             display_name="KT / DGEKT",
             mode=settings.kt_engine,
             provider="dgekt",
             configured=configured,
-            status="healthy" if configured else "not_configured",
-            severity="info" if configured else "warning",
+            status=status,
+            severity=severity,
             recoverable=True,
-            actionable_hint=(
-                "DGEKT 已显式启用并具备 checkpoint、dataset_dir 与 Q-matrix 基础配置。"
-                if configured
-                else "DGEKT 已显式启用，但缺少 checkpoint、dataset_dir 或 Q-matrix；"
-                "补齐配置或切回默认 mock KT。"
+            actionable_hint=hint,
+            evidence_gaps=(
+                _configuration_gaps(
+                    provider="dgekt",
+                    operation="kt_readiness",
+                    missing_fields=missing_fields,
+                    hint=hint,
+                )
+                + _artifact_gaps(
+                    provider="dgekt",
+                    operation="kt_readiness",
+                    missing_artifacts=missing_artifacts,
+                    hint=hint,
+                    severity="error",
+                )
+                + offline_gaps
             ),
             last_checked_at=checked_at,
         )
@@ -210,23 +277,69 @@ def _content_rag_artifact_health(
     settings: MathTutorSettings,
     checked_at: str,
 ) -> ProviderHealthComponent:
-    content_configured = settings.content_source == "demo" or bool(settings.content_import_path)
-    rag_configured = settings.rag_source == "demo" or bool(settings.rag_artifact_path)
-    configured = content_configured and rag_configured
+    missing_fields: list[str] = []
+    missing_artifacts: list[str] = []
+
+    if settings.content_source == "demo":
+        if not CONTENT_PATH.is_file():
+            missing_artifacts.append("demo teaching content artifact")
+    elif settings.content_source == "imported":
+        if not settings.content_import_path:
+            missing_fields.append("MATHTUTOR_CONTENT_IMPORT_PATH")
+        elif not _resolve_project_path(settings.content_import_path).is_file():
+            missing_artifacts.append("imported content_import.json")
+
+    if settings.rag_source == "demo":
+        if not RAG_PATH.is_file():
+            missing_artifacts.append("demo RAG artifact")
+    elif settings.rag_source == "imported":
+        if not settings.rag_artifact_path:
+            missing_fields.append("MATHTUTOR_RAG_ARTIFACT_PATH")
+        elif not _resolve_project_path(settings.rag_artifact_path).is_file():
+            missing_artifacts.append("imported rag_documents.json")
+
+    configured = not missing_fields and not missing_artifacts
     mode = f"content:{settings.content_source}/rag:{settings.rag_source}"
+    status: ProviderHealthStatus = "healthy"
+    severity = "info"
+    if missing_fields:
+        status = "not_configured"
+        severity = "warning"
+    elif missing_artifacts:
+        status = "unavailable"
+        severity = "error"
+    provider = _content_rag_provider(settings)
+    hint = (
+        "默认 demo content 与 demo RAG artifact 可运行；当前内容/RAG artifact 只作为教学和解释证据，不覆盖 KT facts。"
+        if configured and provider == "demo_artifacts"
+        else f"{provider} 可用于学习驾驶舱；当前内容/RAG artifact 只作为教学和解释证据，不覆盖 KT facts。"
+        if configured
+        else "Content/RAG artifact readiness 存在缺口；补齐导入路径或切回 demo，默认学习流程可继续使用可用本地证据。"
+    )
     return ProviderHealthComponent(
         component="content_rag_artifact",
         display_name="Content/RAG artifact",
         mode=mode,
-        provider="demo_artifacts" if configured else "imported_artifacts",
+        provider=provider,
         configured=configured,
-        status="healthy" if configured else "not_configured",
-        severity="info" if configured else "warning",
+        status=status,
+        severity=severity,
         recoverable=True,
-        actionable_hint=(
-            "默认 demo content 与 demo RAG artifact 可运行；当前未要求 full ASSISTments2017 或 generated vector index。"
-            if configured
-            else "已选择 imported content 或 RAG artifact，但缺少导入路径；补齐路径或切回 demo。"
+        actionable_hint=hint,
+        evidence_gaps=(
+            _configuration_gaps(
+                provider=provider,
+                operation="content_rag_artifact_readiness",
+                missing_fields=missing_fields,
+                hint=hint,
+            )
+            + _artifact_gaps(
+                provider=provider,
+                operation="content_rag_artifact_readiness",
+                missing_artifacts=missing_artifacts,
+                hint=hint,
+                severity="error",
+            )
         ),
         last_checked_at=checked_at,
     )
@@ -236,18 +349,35 @@ def _learning_context_health(
     settings: MathTutorSettings,
     checked_at: str,
 ) -> ProviderHealthComponent:
+    provider_inputs = [
+        f"memory:{settings.memory_provider_mode}",
+        f"rag:{settings.rag_provider_mode}",
+        f"content:{settings.content_source}",
+        f"kt:{settings.kt_engine}",
+    ]
+    mode = "local_fallback" if provider_inputs == [
+        "memory:local_fallback",
+        "rag:local_fallback",
+        "content:demo",
+        "kt:mock",
+    ] else "context_evidence_assembly"
+    provider = "in_memory_context_layer"
+    hint = (
+        "LearningContextLayer 使用本地 fallback 证据组装上下文；它只汇总 evidence，不决定 mastery 或 KT facts。"
+        if mode == "local_fallback"
+        else "LearningContextLayer 会组装当前 Memory/RAG/Content/KT 证据；若上游 provider 或 artifact 降级，只保留 evidence gap，不改写学习事实。"
+    )
     return ProviderHealthComponent(
         component="learning_context",
         display_name="LearningContextLayer",
-        mode="local_fallback",
-        provider="in_memory_context_layer",
+        mode=mode,
+        provider=provider,
         configured=True,
         status="healthy",
         severity="info",
         recoverable=True,
-        actionable_hint=(
-            "LearningContextLayer 使用本地上下文组装证据；它只汇总 evidence，不决定 mastery 或 KT facts。"
-        ),
+        actionable_hint=hint,
+        evidence_gaps=[],
         last_checked_at=checked_at,
     )
 
@@ -261,6 +391,77 @@ def _overall_status(statuses: Iterable[ProviderHealthStatus]) -> ProviderHealthS
     if "not_configured" in status_set:
         return "degraded"
     return "healthy"
+
+
+def _dgekt_offline_evidence_gaps(
+    settings: MathTutorSettings,
+) -> tuple[list[dict[str, Any]], str]:
+    hint = (
+        "DGEKT offline evidence 未配置；在线 partial proxy 可继续解释 prediction，"
+        "但不能伪装成 complete offline evidence。"
+    )
+    if not settings.dgekt_offline_evidence_dir:
+        return [
+            {
+                "gap_type": "missing_artifact",
+                "code": "offline_evidence_not_configured",
+                "category": "missing_artifact",
+                "provider": "dgekt",
+                "operation": "kt_readiness",
+                "reason": "DGEKT offline evidence 未配置，当前 explanation readiness 为 partial。",
+                "message": "DGEKT offline evidence 未配置。",
+                "severity": "warning",
+                "recoverable": True,
+                "actionable_hint": hint,
+                "details": {
+                    "offline_evidence_status": "partial",
+                    "missing_fields": ["MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR"],
+                },
+            }
+        ], "partial"
+
+    offline_dir = _resolve_project_path(settings.dgekt_offline_evidence_dir)
+    if not offline_dir.is_dir():
+        return _artifact_gaps(
+            provider="dgekt",
+            operation="kt_readiness",
+            missing_artifacts=["DGEKT offline evidence directory"],
+            hint=(
+                "DGEKT offline evidence 路径不可用；请指向包含 offline explainability "
+                "fixture 或正式导出文件的目录。"
+            ),
+            severity="error",
+            details={"offline_evidence_status": "unavailable"},
+        ), "unavailable"
+
+    missing_files = [
+        f"DGEKT offline evidence file {filename}"
+        for filename in DGEKT_OFFLINE_EVIDENCE_FILES
+        if not (offline_dir / filename).is_file()
+    ]
+    if missing_files:
+        return _artifact_gaps(
+            provider="dgekt",
+            operation="kt_readiness",
+            missing_artifacts=missing_files,
+            hint="DGEKT offline evidence artifact 不完整；请重新导出完整 explainability outputs。",
+            severity="error",
+            details={"offline_evidence_status": "unavailable"},
+        ), "unavailable"
+    return [], "complete"
+
+
+def _dgekt_hint(*, status: ProviderHealthStatus, offline_status: str) -> str:
+    if status == "healthy":
+        return "DGEKT 已显式启用，checkpoint、dataset、Q-matrix、canonical mapping 与 offline evidence 基础 artifact 均可诊断。"
+    if status == "degraded" and offline_status == "partial":
+        return (
+            "DGEKT 核心配置可诊断，但 offline evidence 未配置；当前只能视为 partial readiness，"
+            "不能伪装成 complete offline evidence。"
+        )
+    if status == "not_configured":
+        return "DGEKT 已显式启用，但缺少必要配置；补齐 env 或切回默认 mock KT。"
+    return "DGEKT readiness 路径不可用或 artifact 不完整；请修复本地 artifact 后再用于正式试用。"
 
 
 def _configuration_gaps(
@@ -287,6 +488,55 @@ def _configuration_gaps(
             "details": {"missing_fields": missing_fields},
         }
     ]
+
+
+def _artifact_gaps(
+    *,
+    provider: str,
+    operation: str,
+    missing_artifacts: list[str],
+    hint: str,
+    severity: str,
+    details: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    if not missing_artifacts:
+        return []
+    return [
+        {
+            "gap_type": "missing_artifact",
+            "code": "missing_artifact",
+            "category": "missing_artifact",
+            "provider": provider,
+            "operation": operation,
+            "reason": f"{provider} readiness 缺少或无法访问必要 artifact。",
+            "message": f"{provider} readiness artifact 不完整。",
+            "severity": severity,
+            "recoverable": True,
+            "actionable_hint": hint,
+            "details": {
+                "missing_artifacts": missing_artifacts,
+                **(details or {}),
+            },
+        }
+    ]
+
+
+def _content_rag_provider(settings: MathTutorSettings) -> str:
+    if settings.content_source == "demo" and settings.rag_source == "demo":
+        return "demo_artifacts"
+    paths = [settings.content_import_path, settings.rag_artifact_path]
+    if any("assist2017_fixture" in path for path in paths if path):
+        return "fixture_artifacts"
+    if settings.content_source == "imported" or settings.rag_source == "imported":
+        return "imported_artifacts"
+    return "mixed_artifacts"
+
+
+def _resolve_project_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute() or path.exists():
+        return path
+    return PROJECT_ROOT / path
 
 
 def _summary(status: ProviderHealthStatus) -> str:
