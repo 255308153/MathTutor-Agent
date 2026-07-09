@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -278,17 +277,16 @@ def test_mem0_memory_cannot_overwrite_authoritative_kt_facts() -> None:
     assert memory_context["metadata"]["evidence"]["mastery_by_concept"][concept_id] == 1.0
 
 
-@pytest.mark.skipif(
-    os.getenv("MATHTUTOR_RUN_MEM0_LIVE_SMOKE") != "1"
-    or not os.getenv("MATHTUTOR_MEM0_API_KEY"),
-    reason="Mem0 live smoke 需要显式 MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1 和 API key。",
-)
 def test_mem0_live_provider_smoke_is_opt_in() -> None:
+    smoke_settings = MathTutorSettings()
+    if not (smoke_settings.run_mem0_live_smoke and smoke_settings.mem0_api_key):
+        pytest.skip("Mem0 live smoke 需要显式 MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1 和 API key。")
+
     try:
         store = create_student_memory_store(
             MathTutorSettings(
                 memory_provider_mode="live_provider",
-                mem0_api_key=str(os.environ["MATHTUTOR_MEM0_API_KEY"]),
+                mem0_api_key=smoke_settings.mem0_api_key,
             )
         )
     except MemoryProviderConfigurationError as exc:

@@ -84,6 +84,7 @@ def test_artifact_cli_full_mode_requires_explicit_paths(tmp_path: Path) -> None:
 
 def test_repository_safety_allows_only_committed_fixture_assets() -> None:
     fixture_paths = [
+        ".env.example",
         "data/import/assist2017_source.fixture.csv",
         "data/mapping/assist2017_q_matrix.fixture.csv",
         "data/mapping/assist2017_canonical_mapping.fixture.json",
@@ -101,10 +102,18 @@ def test_repository_safety_allows_only_committed_fixture_assets() -> None:
 def test_repository_safety_flags_raw_models_cache_and_full_generated_outputs() -> None:
     violations = find_banned_tracked_paths(
         [
+            ".env",
+            ".env.production",
+            "secrets/provider.env",
+            "config/provider_credentials.json",
+            "config/openviking_api_key.txt",
             "data/raw/assist2017/assist2017_pid_train.csv",
             "data/import/assist2017/source_rows.csv",
             "data/import/full/content_import.json",
             "data/import/assist2017/assist2017_pid_test.csv",
+            "data/provider_cache/mem0/search.json",
+            "data/generated_vector_indexes/openviking/index.faiss",
+            "data/vector_indexes/chroma/collection.sqlite",
             "data/imported/assist2017_full/content_import.json",
             "data/dgekt/full_outputs/diagnosis_cases.json",
             "data/dgekt/full_outputs/attribution_paths.csv",
@@ -112,6 +121,8 @@ def test_repository_safety_flags_raw_models_cache_and_full_generated_outputs() -
             "data/dgekt/full_outputs/path_ablation.csv",
             "data/dgekt/full_outputs/weak_concepts.csv",
             "research/explainability/weak_concept_hit.csv",
+            "provider_caches/vikingdb/raw_response.json",
+            "vector_indexes/demo/index.hnsw",
             "checkpoints/save2017model.pkl",
             "frontend/dist/index.html",
             "backend/.pytest_cache/v/cache/nodeids",
@@ -119,10 +130,18 @@ def test_repository_safety_flags_raw_models_cache_and_full_generated_outputs() -
     )
 
     assert {violation.path for violation in violations} == {
+        ".env",
+        ".env.production",
+        "secrets/provider.env",
+        "config/provider_credentials.json",
+        "config/openviking_api_key.txt",
         "data/raw/assist2017/assist2017_pid_train.csv",
         "data/import/assist2017/source_rows.csv",
         "data/import/full/content_import.json",
         "data/import/assist2017/assist2017_pid_test.csv",
+        "data/provider_cache/mem0/search.json",
+        "data/generated_vector_indexes/openviking/index.faiss",
+        "data/vector_indexes/chroma/collection.sqlite",
         "data/imported/assist2017_full/content_import.json",
         "data/dgekt/full_outputs/diagnosis_cases.json",
         "data/dgekt/full_outputs/attribution_paths.csv",
@@ -130,6 +149,8 @@ def test_repository_safety_flags_raw_models_cache_and_full_generated_outputs() -
         "data/dgekt/full_outputs/path_ablation.csv",
         "data/dgekt/full_outputs/weak_concepts.csv",
         "research/explainability/weak_concept_hit.csv",
+        "provider_caches/vikingdb/raw_response.json",
+        "vector_indexes/demo/index.hnsw",
         "checkpoints/save2017model.pkl",
         "frontend/dist/index.html",
         "backend/.pytest_cache/v/cache/nodeids",
