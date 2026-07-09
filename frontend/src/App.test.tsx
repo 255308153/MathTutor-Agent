@@ -112,7 +112,89 @@ const baseResponse: MathTutorEventResponse = {
       ],
       planner_decision: { decision: "recommend" },
       recommendations: [],
-      evidence_gaps: [],
+      context_assets: [],
+      assembled_context: {
+        context_id: "assembled-test",
+        budget_used: 45,
+        budget_limit: 1200,
+        compression_summary: {
+          strategy: "priority_budget_summary",
+          selected_asset_count: 4,
+          excluded_asset_count: 1,
+          candidate_asset_count: 5,
+          budget_used: 45,
+          budget_limit: 1200
+        },
+        asset_summaries: [
+          {
+            asset_id: "memory-preference",
+            asset_type: "student_memory",
+            source_type: "local_fallback",
+            source_ref: "memory/student-demo",
+            summary: "学生偏好步骤化讲解。",
+            included_reason: "参考学生偏好",
+            selection_status: "included",
+            freshness: "recent",
+            confidence: 0.86
+          },
+          {
+            asset_id: "rag-concept-note",
+            asset_type: "knowledge_resource",
+            source_type: "local_rag",
+            source_ref: "demo-rag/fraction_addition.md",
+            summary: "异分母分数加法知识资源",
+            included_reason: "参考相关知识资源",
+            selection_status: "included",
+            freshness: "fresh",
+            confidence: 0.9
+          },
+          {
+            asset_id: "tool-kt-snapshot",
+            asset_type: "tool_observation",
+            source_type: "kt_engine",
+            source_ref: "tt-test",
+            summary: "KT diagnosis snapshot",
+            included_reason: "记录 KT 工具观察快照；不能覆盖当前 KT facts",
+            selection_status: "included",
+            freshness: "fresh",
+            confidence: 1
+          },
+          {
+            asset_id: "task-state-current",
+            asset_type: "task_state",
+            source_type: "learning_event",
+            source_ref: "event/tt-test",
+            summary: "当前推荐题 q_frac_001 待作答",
+            included_reason: "记录当前任务状态；不能替代 progress runtime state",
+            selection_status: "included",
+            freshness: "fresh",
+            confidence: 1
+          },
+          {
+            asset_id: "trace-reference-old",
+            asset_type: "trace_reference",
+            source_type: "teaching_trace",
+            source_ref: "trace-old",
+            summary: "上一轮 trace reference",
+            excluded_reason: "超出上下文预算，已裁剪低优先级资产",
+            selection_status: "excluded",
+            freshness: "stale",
+            confidence: 0.5
+          }
+        ],
+        evidence_gaps: [
+          {
+            gap_type: "context_budget",
+            reason: "部分上下文资产因预算限制被裁剪"
+          }
+        ]
+      },
+      evidence_gaps: [
+        {
+          gap_type: "context_budget",
+          reason: "部分上下文资产因预算限制被裁剪"
+        }
+      ],
       error_records: []
     },
     invariants: ["KT facts are authoritative."],
@@ -150,6 +232,17 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("partial evidence")).toBeInTheDocument();
     expect(screen.getByText("1 -> 2")).toBeInTheDocument();
     expect(screen.getByText("0.850")).toBeInTheDocument();
+    expect(screen.getByText("上下文证据")).toBeInTheDocument();
+    expect(screen.getByText("45/1200")).toBeInTheDocument();
+    expect(screen.getByText("priority_budget_summary")).toBeInTheDocument();
+    expect(screen.getByText("Memory evidence")).toBeInTheDocument();
+    expect(screen.getByText("RAG citation")).toBeInTheDocument();
+    expect(screen.getByText("Tool snapshot")).toBeInTheDocument();
+    expect(screen.getByText("Task state")).toBeInTheDocument();
+    expect(screen.getByText("学生偏好步骤化讲解。")).toBeInTheDocument();
+    expect(screen.getByText("参考相关知识资源")).toBeInTheDocument();
+    expect(screen.getByText("Trace reference 已排除")).toBeInTheDocument();
+    expect(screen.getByText("部分上下文资产因预算限制被裁剪")).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("q_frac_001 答案"), "3/4");
     await userEvent.click(screen.getByLabelText("提交答案"));
@@ -160,6 +253,28 @@ describe("学习驾驶舱", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1][1]?.body).toContain("\"answer\":\"3/4\"");
     expect(fetchMock.mock.calls[1][1]?.body).toContain("\"assist2017_question_id\":1");
+  });
+
+  it("没有上下文资产时保持推荐主流程可用并展示 fallback", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({
+      ...baseResponse,
+      teaching_trace_summary: {
+        ...baseResponse.teaching_trace_summary,
+        expert_evidence: {
+          ...baseResponse.teaching_trace_summary.expert_evidence,
+          context_assets: [],
+          assembled_context: null,
+          evidence_gaps: []
+        }
+      }
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText("计算：1/2 + 1/4 = ?")).toBeInTheDocument();
+    expect(screen.getByText("上下文证据")).toBeInTheDocument();
+    expect(screen.getByText("本轮没有上下文资产；主学习流程仍按 KT facts 和默认内容运行。")).toBeInTheDocument();
+    expect(screen.getAllByText("暂无").length).toBeGreaterThan(0);
   });
 
   it("后端不可达时展示中文错误和重试入口", async () => {
@@ -213,8 +328,10 @@ describe("学习驾驶舱", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("q_missing_answer 缺少标准答案");
     expect(screen.getByRole("alert")).toHaveTextContent("补齐题目的 standard_answer");
-    expect(screen.getByText("Evidence gaps")).toBeInTheDocument();
-    expect(screen.getByText("2 项")).toBeInTheDocument();
+    expect(screen.getAllByText("Evidence gaps").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2 项").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("教学内容缺口").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("q_missing_answer 缺少标准答案，请补齐教学内容后再用于完整练习。").length).toBeGreaterThan(0);
   });
 
   it("后端返回 DGEKT detail 时展示可理解错误", async () => {

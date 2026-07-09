@@ -14,7 +14,12 @@ import {
   Target
 } from "lucide-react";
 import { sendLearningEvent } from "./api";
-import type { MathTutorEventResponse, RecommendedQuestion } from "./types";
+import type {
+  ContextAssetEvidence,
+  EvidenceGap,
+  MathTutorEventResponse,
+  RecommendedQuestion
+} from "./types";
 
 const SESSION_ID = `demo-${Date.now()}`;
 const DEFAULT_STUDENT_ID = "student-demo";
@@ -322,11 +327,16 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const ktDiagnosis = evidence?.kt_diagnosis;
   const plannerDecision = evidence?.planner_decision;
   const recommendations = evidence?.recommendations ?? [];
+  const assembledContext = evidence?.assembled_context ?? null;
+  const contextAssets = contextAssetItems(evidence);
+  const selectedContextAssets = contextAssets.filter((asset) => !isExcludedAsset(asset)).slice(0, 6);
+  const omittedContextAssets = contextAssets.filter(isExcludedAsset).slice(0, 4);
   const topPath = attribution?.top_paths?.[0];
   const keyHistory = attribution?.key_history?.[0];
-  const evidenceGaps = evidenceGapItems(evidence?.evidence_gaps ?? evidence?.assembled_context?.evidence_gaps);
+  const evidenceGaps = evidenceGapItems(evidence?.evidence_gaps ?? assembledContext?.evidence_gaps);
   const errorRecords = evidenceGapItems(evidence?.error_records);
   const evidenceStatus = topPath?.partial_evidence ? "partial evidence" : "完整证据";
+  const contextBudget = formatContextBudget(assembledContext);
 
   return (
     <article className="panel trace-panel">
@@ -365,6 +375,51 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
           ))}
           {ragSources.length === 0 && <p className="muted">本轮没有 RAG 引用。</p>}
         </div>
+      </details>
+
+      <details>
+        <summary>
+          <span><ChevronDown size={17} /> 上下文证据</span>
+          <small>{selectedContextAssets.length} 纳入 · {omittedContextAssets.length} 排除</small>
+        </summary>
+        <div className="context-summary">
+          <p>
+            <strong>预算</strong>
+            <span>{contextBudget}</span>
+          </p>
+          <p>
+            <strong>Evidence gaps</strong>
+            <span>{evidenceGaps.length + errorRecords.length} 项</span>
+          </p>
+          <p>
+            <strong>压缩策略</strong>
+            <span>{assembledContext?.compression_summary?.strategy ?? "暂无"}</span>
+          </p>
+        </div>
+        <div className="context-asset-list">
+          {selectedContextAssets.map((asset) => (
+            <ContextAssetRow key={contextAssetKey(asset)} asset={asset} />
+          ))}
+          {selectedContextAssets.length === 0 && (
+            <p className="muted">本轮没有上下文资产；主学习流程仍按 KT facts 和默认内容运行。</p>
+          )}
+        </div>
+        {(omittedContextAssets.length > 0 || evidenceGaps.length + errorRecords.length > 0) && (
+          <div className="gap-list">
+            {omittedContextAssets.map((asset) => (
+              <p key={`omitted-${contextAssetKey(asset)}`}>
+                <strong>{assetTypeName(asset.asset_type)} 已排除</strong>
+                <span>{asset.excluded_reason ?? "未纳入本轮上下文"}</span>
+              </p>
+            ))}
+            {[...evidenceGaps, ...errorRecords].map((gap, index) => (
+              <p key={`gap-${index}-${gap.gap_type ?? gap.code ?? "context"}`}>
+                <strong>{gapLabel(gap)}</strong>
+                <span>{gap.reason ?? gap.message ?? gap.impact ?? "上下文证据缺口"}</span>
+              </p>
+            ))}
+          </div>
+        )}
       </details>
 
       <details>
@@ -425,6 +480,25 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   );
 }
 
+function ContextAssetRow({ asset }: { asset: ContextAssetEvidence }) {
+  const source = [asset.source_type, asset.source_ref].filter(Boolean).join(" · ");
+  return (
+    <div className="context-asset">
+      <span className={`asset-badge asset-${asset.asset_type ?? "unknown"}`}>
+        {assetTypeName(asset.asset_type)}
+      </span>
+      <div>
+        <strong>{asset.summary ?? "上下文资产"}</strong>
+        <p>{asset.included_reason ?? asset.excluded_reason ?? "已纳入本轮上下文证据"}</p>
+        <small>
+          {source || "本地上下文"} · {freshnessName(asset.freshness)} · confidence{" "}
+          {formatNumber(asset.confidence)}
+        </small>
+      </div>
+    </div>
+  );
+}
+
 function visibleResponseIssue(response: MathTutorEventResponse | null) {
   const records = response?.state_summary.error_records ?? [];
   const warning = records.find((record) => record.severity !== "info");
@@ -435,12 +509,81 @@ function visibleResponseIssue(response: MathTutorEventResponse | null) {
   return response?.state_summary.errors?.[0] ?? "";
 }
 
-function evidenceGapItems(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? value.filter(isRecord) : [];
+function evidenceGapItems(value: unknown): EvidenceGap[] {
+  return Array.isArray(value) ? value.filter(isRecord) as EvidenceGap[] : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function contextAssetItems(
+  evidence: MathTutorEventResponse["teaching_trace_summary"]["expert_evidence"] | undefined
+): ContextAssetEvidence[] {
+  const assembled = evidence?.assembled_context?.asset_summaries ?? [];
+  if (assembled.length > 0) return assembled;
+  const selected = evidence?.context_asset_selection?.selected ?? [];
+  const omitted = evidence?.context_asset_selection?.omitted ?? [];
+  if (selected.length + omitted.length > 0) {
+    return [
+      ...selected.map((asset) => ({ ...asset, selection_status: "included" })),
+      ...omitted.map((asset) => ({ ...asset, selection_status: "excluded" }))
+    ];
+  }
+  return evidence?.context_assets ?? [];
+}
+
+function isExcludedAsset(asset: ContextAssetEvidence) {
+  return asset.selection_status === "excluded" || Boolean(asset.excluded_reason);
+}
+
+function contextAssetKey(asset: ContextAssetEvidence) {
+  return asset.asset_id ?? `${asset.asset_type}-${asset.source_ref}-${asset.summary}`;
+}
+
+function assetTypeName(type: string | undefined) {
+  return {
+    student_memory: "Memory evidence",
+    knowledge_resource: "RAG citation",
+    task_state: "Task state",
+    tool_observation: "Tool snapshot",
+    trace_reference: "Trace reference"
+  }[type ?? ""] ?? "Context asset";
+}
+
+function freshnessName(value: string | undefined) {
+  return {
+    fresh: "fresh",
+    recent: "recent",
+    stale: "stale"
+  }[value ?? ""] ?? "unknown freshness";
+}
+
+function gapLabel(gap: EvidenceGap) {
+  return {
+    student_memory: "缺少 memory evidence",
+    knowledge_resource: "缺少 RAG citation",
+    stale_task_state: "task_state 已过期",
+    low_confidence_observation: "低置信度 tool observation",
+    provider_failure: "provider failure",
+    context_budget: "上下文预算裁剪",
+    missing_content: "教学内容缺口",
+    missing_mapping: "映射缺口",
+    missing_rag_citation: "RAG citation 缺口"
+  }[gap.gap_type ?? gap.category ?? ""] ?? "Evidence gap";
+}
+
+function formatContextBudget(
+  assembledContext: MathTutorEventResponse["teaching_trace_summary"]["expert_evidence"]["assembled_context"]
+) {
+  if (!assembledContext) return "暂无";
+  if (
+    typeof assembledContext.budget_used === "number" &&
+    typeof assembledContext.budget_limit === "number"
+  ) {
+    return `${assembledContext.budget_used}/${assembledContext.budget_limit}`;
+  }
+  return "未记录";
 }
 
 function teachingTypeName(type: string) {

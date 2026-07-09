@@ -431,6 +431,121 @@ pre {
   font-weight: 800;
 }
 
+.context-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.context-summary p,
+.gap-list p {
+  border-radius: 8px;
+  background: #f7f4ec;
+  padding: 9px 10px;
+  margin: 0;
+}
+
+.context-summary strong,
+.context-summary span,
+.gap-list strong,
+.gap-list span {
+  display: block;
+}
+
+.context-summary strong,
+.gap-list strong {
+  color: #4c432d;
+  font-size: 0.78rem;
+}
+
+.context-summary span,
+.gap-list span {
+  margin-top: 4px;
+  color: #17201b;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.context-asset-list,
+.gap-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.context-asset {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid #dde5e0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfb;
+}
+
+.context-asset strong,
+.context-asset p,
+.context-asset small {
+  display: block;
+}
+
+.context-asset strong {
+  color: #17201b;
+  line-height: 1.35;
+}
+
+.context-asset p {
+  margin: 4px 0;
+  color: #47564f;
+  line-height: 1.4;
+}
+
+.context-asset small {
+  color: #617069;
+  overflow-wrap: anywhere;
+}
+
+.asset-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #edf4f1;
+  color: #1f4e43;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.asset-knowledge_resource {
+  background: #eef2fb;
+  color: #254f8f;
+}
+
+.asset-student_memory {
+  background: #f4eef9;
+  color: #6b3b87;
+}
+
+.asset-tool_observation {
+  background: #fff1e8;
+  color: #8f3d12;
+}
+
+.asset-task_state {
+  background: #eaf6ef;
+  color: #23734f;
+}
+
+.asset-trace_reference {
+  background: #f0f2f4;
+  color: #45525f;
+}
+
 .history-list button {
   width: 100%;
   border: 1px solid #dde5e0;
@@ -516,6 +631,11 @@ pre {
   }
 
   .concept-row {
+    grid-template-columns: 1fr;
+  }
+
+  .context-summary,
+  .context-asset {
     grid-template-columns: 1fr;
   }
 
