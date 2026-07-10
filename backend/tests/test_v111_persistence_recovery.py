@@ -74,6 +74,12 @@ def test_continuous_learning_persists_across_new_loop_instance(tmp_path: Path) -
     assert traces[0]["recommendation_basis"] or recovered_progress.recommendation_history
 
     # Duplicate graded event must not bump mastery version again.
+    mastery_before = {
+        item.concept_id: item.mastery for item in recovered_progress.concept_states
+    }
+    evidence_before = {
+        item.concept_id: item.evidence_count for item in recovered_progress.concept_states
+    }
     dup = loop_b.handle_event(
         LearningEvent(
             session_id=session_id,
@@ -95,6 +101,95 @@ def test_continuous_learning_persists_across_new_loop_instance(tmp_path: Path) -
                 f"trace_count={len(traces)}",
                 f"duplicate_version={dup.state_summary['progress_version']}",
                 f"first_trace={traces[0]['trace_id']}",
+                f"mastery_before={mastery_before}",
+                f"evidence_before={evidence_before}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_duplicate_wrong_answer_does_not_rebump_mastery(tmp_path: Path) -> None:
+    """Regression: is_correct=False must still count as a graded event for idempotency."""
+    db_path = tmp_path / "wrong-dup.sqlite"
+    store = SqliteLearningStore(db_path)
+    loop = MathTutorLearningLoop(
+        store=SqliteProgressStore(store),
+        memories=SqliteStudentMemoryStore(store),
+        learning_store=store,
+    )
+    student_id = "student-v111-wrong-dup"
+    session_id = "session-v111-wrong-dup"
+    wrong_answer = "__definitely_wrong_answer__"
+
+    first = loop.handle_event(
+        LearningEvent(
+            session_id=session_id,
+            student_id=student_id,
+            type="chat_message",
+            message="我下一步应该练什么？",
+            payload={},
+        )
+    )
+    question = first.recommended_questions[0]
+    question_id = question["question_id"]
+
+    wrong = loop.handle_event(
+        LearningEvent(
+            session_id=session_id,
+            student_id=student_id,
+            type="answer_submitted",
+            message="故意答错",
+            payload={"question_id": question_id, "answer": wrong_answer},
+        )
+    )
+    assert "判定为不正确" in wrong.response or wrong.state_summary.get("mistake_diagnosis")
+    version_after_wrong = wrong.state_summary["progress_version"]
+    progress_after_wrong = loop.store.get_or_create(student_id)
+    # Confirm the stored graded event carries is_correct=False (the falsy pitfall).
+    graded_payloads = [
+        event.payload
+        for event in progress_after_wrong.recent_events
+        if event.type == "answer_submitted"
+        and str(event.payload.get("question_id") or "") == question_id
+        and str(event.payload.get("answer") or "") == wrong_answer
+    ]
+    assert graded_payloads
+    assert graded_payloads[-1].get("is_correct") is False
+    mastery_after_wrong = {
+        item.concept_id: (item.mastery, item.evidence_count)
+        for item in progress_after_wrong.concept_states
+    }
+
+    # Identical wrong resubmit must not re-run KT mastery updates.
+    dup_wrong = loop.handle_event(
+        LearningEvent(
+            session_id=session_id,
+            student_id=student_id,
+            type="answer_submitted",
+            message="重复错误提交",
+            payload={"question_id": question_id, "answer": wrong_answer},
+        )
+    )
+    assert "重复提交" in dup_wrong.response
+    assert dup_wrong.state_summary["progress_version"] == version_after_wrong
+    progress_after_dup = loop.store.get_or_create(student_id)
+    assert progress_after_dup.version == version_after_wrong
+    mastery_after_dup = {
+        item.concept_id: (item.mastery, item.evidence_count)
+        for item in progress_after_dup.concept_states
+    }
+    assert mastery_after_dup == mastery_after_wrong
+
+    SCRATCH.mkdir(parents=True, exist_ok=True)
+    (SCRATCH / "persist-recovery-wrong-dup.log").write_text(
+        "\n".join(
+            [
+                f"version_after_wrong={version_after_wrong}",
+                f"duplicate_version={dup_wrong.state_summary['progress_version']}",
+                f"stored_is_correct={graded_payloads[-1].get('is_correct')!r}",
+                f"mastery_after_wrong={mastery_after_wrong}",
+                f"mastery_after_dup={mastery_after_dup}",
             ]
         ),
         encoding="utf-8",

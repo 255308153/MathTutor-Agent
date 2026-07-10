@@ -136,10 +136,12 @@ class MathTutorLearningLoop:
             if getattr(recent, "type", None) != "answer_submitted":
                 continue
             payload = getattr(recent, "payload", {}) or {}
+            # is_correct may be False for wrong answers — treat any graded
+            # boolean as present (do not use truthiness / `or ""`).
             if (
                 str(payload.get("question_id") or "") == question_id
                 and str(payload.get("answer") or "") == answer
-                and str(payload.get("is_correct") or "") != ""
+                and payload.get("is_correct") is not None
             ):
                 return True
         return False
