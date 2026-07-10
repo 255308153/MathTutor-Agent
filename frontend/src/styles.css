@@ -344,9 +344,50 @@ button:disabled {
   margin-bottom: 16px;
 }
 
-.provider-health-panel {
+.provider-health-panel,
+.trial-readiness-panel {
   display: grid;
   gap: 12px;
+}
+
+.trial-boundary {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.trial-checklist,
+.trial-risks {
+  display: grid;
+  gap: 8px;
+}
+
+.trial-risks ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #47564f;
+  line-height: 1.45;
+}
+
+.trial-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.trial-actions button,
+.trial-actions select,
+.trial-actions input {
+  min-height: 36px;
+  border: 1px solid #c9d5cf;
+  border-radius: 8px;
+  background: #fff;
+  color: #17201b;
+  padding: 6px 10px;
+}
+
+.trial-actions button {
+  background: #edf7f1;
+  border-color: #b7d8c7;
+  font-weight: 700;
 }
 
 .provider-health-summary {

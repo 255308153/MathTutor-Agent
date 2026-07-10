@@ -37,6 +37,7 @@ V1 优先服务一个学生、一个数学学习场景、一条可审计学习�
 - TeachingTrace，可追踪每次 agent 决策依据。
 - React 学习驾驶舱首版。
 - V1.10 Runtime Context Governance：每轮审计 evidence priority、budget、工具挂载与 selected-only response context package。
+- V1.11 Trial Readiness Gate：只读 `ready/degraded/not_ready` 内部试用报告、本地 SQLite 连续学习恢复、受控 canary probe、人工试用结论入口。默认 local fallback 可运行，但不自动等于内部试用 ready。详见 `docs/V1_11_TRIAL_READINESS.md`。
 
 暂不包含：
 
@@ -70,7 +71,8 @@ Context can assemble evidence, not decide learning facts.
 - Memory 可以影响讲解风格、复习策略和偏好，不直接改写 mastery。
 - RAG 支持解释、证据和题解，不覆盖 prediction facts。
 - Context 负责收集和组装证据，不决定或改写 mastery、weak concepts、forgetting risk、prediction probability。
-- Runtime Context Governance 只编排和审计上下文；V1.10 默认仍使用 local fallback，V1.11 才处理真实 provider 的生产 readiness。
+- Runtime Context Governance 只编排和审计上下文；V1.10 默认仍使用 local fallback。
+- V1.11 Trial Readiness Gate / Provider Health / Probe / 持久化恢复不得写入或覆盖 KT/DGEKT 学习事实；真实 provider、checkpoint、完整 artifact 与 canary probe 必须显式 opt-in，凭据与数据不得提交 Git。
 
 ## 目录结构
 

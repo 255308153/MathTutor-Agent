@@ -1,12 +1,13 @@
 from fastapi.testclient import TestClient
 
+from backend.app.api import events as events_api
 from backend.app.main import create_app
-from backend.app.memory.store import StudentMemory, memory_store
+from backend.app.memory.store import StudentMemory
 
 
 def test_memory_preference_influences_recommendation_without_overwriting_kt() -> None:
     student_id = "student-memory-pref-001"
-    memory_store.write(
+    events_api.learning_loop.memories.write(
         StudentMemory(
             student_id=student_id,
             memory_type="preference",
@@ -62,6 +63,6 @@ def test_wrong_answer_writes_repeated_mistake_memory() -> None:
     )
     assert memory_update_trace["stage"] == "memory_update"
     assert memory_update_trace["metadata"]["memory_update_count"] == 1
-    recent = memory_store.list_recent(student_id)
+    recent = events_api.learning_loop.memories.list_recent(student_id)
     assert recent[0].memory_type == "repeated_mistake"
     assert recent[0].evidence["concept_id"] == "c_fraction_addition"

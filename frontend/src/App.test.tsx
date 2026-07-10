@@ -1414,7 +1414,7 @@ describe("学习驾驶舱", () => {
     render(<App />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("网络不可用");
-    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "重试" }).length).toBeGreaterThan(0);
   });
 
   it("后端返回可恢复 evidence gap 时在顶部展示处理提示", async () => {

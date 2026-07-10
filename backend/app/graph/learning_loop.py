@@ -25,20 +25,22 @@ from ..schemas.learning import (
 )
 from ..schemas.trace import TeachingTraceEvent, TeachingTraceEventType
 from ..storage.content_repository import ContentRepository, content_repository
-from ..storage.progress_store import InMemoryProgressStore, progress_store
+from ..storage.progress_store import ProgressStore, progress_store
+from ..storage.sqlite_store import SqliteLearningStore, get_learning_store
 
 
 class MathTutorLearningLoop:
     def __init__(
         self,
         kt_engine: KTStateEngine | None = None,
-        store: InMemoryProgressStore | None = None,
+        store: ProgressStore | None = None,
         content: ContentRepository | None = None,
         question_recommender: RiskPrioritizedRecommender | None = None,
         rag: KnowledgeRAG | None = None,
         memories: StudentMemoryStore | None = None,
         planner: TeachingPlanner | None = None,
         context_layer: LearningContextLayer | None = None,
+        learning_store: SqliteLearningStore | None = None,
     ) -> None:
         self.kt_engine = kt_engine or create_kt_engine()
         self.store = store or progress_store
@@ -48,9 +50,44 @@ class MathTutorLearningLoop:
         self.memories = memories or memory_store
         self.planner = planner or teaching_planner
         self.context_layer = context_layer or default_context_layer
+        self.learning_store = learning_store
 
     def handle_event(self, event: LearningEvent) -> MathTutorEventResponse:
         progress = self.store.get_or_create(event.student_id)
+        # Idempotency: identical graded answer events already applied to this
+        # progress snapshot must not re-run KT mastery updates.
+        if self._is_duplicate_graded_event(progress, event):
+            state = MathTutorState(
+                session_id=event.session_id,
+                student_id=event.student_id,
+                intent=self._classify_intent(event),
+                learning_event=event,
+                kt_progress=progress,
+            )
+            # Diagnose/plan from restored facts only — no update_from_event / memory write.
+            try:
+                state.kt_diagnosis = self.kt_engine.diagnose(
+                    state.kt_progress,
+                    target_question_id=self._target_question_id(event),
+                )
+            except Exception:  # noqa: BLE001
+                state.kt_diagnosis = None
+            self._plan(state)
+            self._generate_response(state)
+            state.response = (
+                f"{state.response}\n\n（检测到重复提交，未重复更新 mastery 或 TeachingTrace 学习决策。）"
+            )
+            response = MathTutorEventResponse(
+                trace_id=state.trace_id,
+                response=state.response,
+                state_summary=state.summary(),
+                recommended_questions=state.recommended_questions,
+                teaching_trace=state.teaching_trace,
+                teaching_trace_summary=state.trace_summary(),
+            )
+            self._persist_turn(state, response, event_type=event.type, duplicate=True)
+            return response
+
         state = MathTutorState(
             session_id=event.session_id,
             student_id=event.student_id,
@@ -66,8 +103,14 @@ class MathTutorLearningLoop:
         self._generate_response(state)
         self._update_memory(state)
 
+        state.kt_progress.current_session_id = event.session_id or state.kt_progress.current_session_id
+        if state.trace_id not in state.kt_progress.teaching_trace_ids:
+            state.kt_progress.teaching_trace_ids = [
+                *state.kt_progress.teaching_trace_ids,
+                state.trace_id,
+            ][-50:]
         self.store.save(state.kt_progress)
-        return MathTutorEventResponse(
+        response = MathTutorEventResponse(
             trace_id=state.trace_id,
             response=state.response,
             state_summary=state.summary(),
@@ -75,6 +118,93 @@ class MathTutorLearningLoop:
             teaching_trace=state.teaching_trace,
             teaching_trace_summary=state.trace_summary(),
         )
+        self._persist_turn(state, response, event_type=event.type, duplicate=False)
+        return response
+
+    def _is_duplicate_graded_event(
+        self,
+        progress: Any,
+        event: LearningEvent,
+    ) -> bool:
+        if event.type != "answer_submitted":
+            return False
+        question_id = str(event.payload.get("question_id") or "")
+        answer = str(event.payload.get("answer") or "")
+        if not question_id:
+            return False
+        for recent in reversed(progress.recent_events[-20:]):
+            if getattr(recent, "type", None) != "answer_submitted":
+                continue
+            payload = getattr(recent, "payload", {}) or {}
+            if (
+                str(payload.get("question_id") or "") == question_id
+                and str(payload.get("answer") or "") == answer
+                and str(payload.get("is_correct") or "") != ""
+            ):
+                return True
+        return False
+
+    def _persist_turn(
+        self,
+        state: MathTutorState,
+        response: MathTutorEventResponse,
+        *,
+        event_type: str,
+        duplicate: bool,
+    ) -> None:
+        durable = self.learning_store
+        if durable is None:
+            try:
+                durable = get_learning_store()
+            except Exception:  # noqa: BLE001 - persistence must not break learning
+                return
+        try:
+            summary = response.teaching_trace_summary.model_dump(mode="json")
+            # Keep recovery payload lean and free of raw provider secrets.
+            expert = summary.get("expert_evidence") or {}
+            recommendation_basis = [
+                {
+                    "question_id": item.get("question_id"),
+                    "concept_id": item.get("concept_id"),
+                    "concept_name": item.get("concept_name"),
+                    "reason": item.get("reason"),
+                    "score": item.get("score"),
+                }
+                for item in (response.recommended_questions or [])[:5]
+            ]
+            governance = expert.get("context_governance_overview") or expert.get(
+                "learning_turn_context"
+            )
+            governance_ref = None
+            if isinstance(governance, dict):
+                governance_ref = (
+                    governance.get("governance_id")
+                    or governance.get("context_package_id")
+                    or governance.get("turn_id")
+                )
+            durable.save_trace(
+                trace_id=response.trace_id,
+                student_id=state.student_id,
+                session_id=state.session_id,
+                event_type=event_type,
+                payload={
+                    "trace_id": response.trace_id,
+                    "student_id": state.student_id,
+                    "session_id": state.session_id,
+                    "intent": state.intent,
+                    "progress_version": state.kt_progress.version,
+                    "duplicate": duplicate,
+                    "summary": {
+                        "intent": summary.get("intent"),
+                        "stages": summary.get("stages"),
+                        "student_explanation": summary.get("student_explanation"),
+                    },
+                    "recommendation_basis": recommendation_basis,
+                    "governance_audit_ref": governance_ref,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            return
 
     def _load_context(self, state: MathTutorState) -> None:
         self._grade_answer_if_needed(state)

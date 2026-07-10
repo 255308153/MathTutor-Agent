@@ -90,6 +90,80 @@ export interface ProviderHealthResponse {
   components: ProviderHealthComponent[];
 }
 
+export type TrialReadinessStatus = "ready" | "degraded" | "not_ready";
+export type TrialComponentStatus = "ready" | "degraded" | "not_ready" | "skipped";
+export type TrialDecision = "ready" | "hold" | "not_ready";
+export type ChecklistItemStatus = "met" | "degraded" | "blocking" | "pending_human";
+
+export interface TrialReadinessComponent {
+  component: string;
+  display_name: string;
+  status: TrialComponentStatus;
+  reason: string;
+  actionable_hint: string;
+  details: Record<string, unknown>;
+}
+
+export interface TrialProbeSummary {
+  provider: string;
+  mode: string;
+  status: TrialComponentStatus;
+  recoverable: boolean;
+  reason: string;
+  actionable_hint: string;
+  probed_at?: string | null;
+  skipped: boolean;
+}
+
+export interface TrialChecklistItem {
+  item_id: string;
+  title: string;
+  status: ChecklistItemStatus;
+  summary: string;
+  actionable_hint: string;
+}
+
+export interface TrialFeedbackRecord {
+  feedback_id: string;
+  student_flow: string;
+  issue_category: string;
+  impact: string;
+  handling_status: string;
+  residual_risk: string;
+  decision: TrialDecision;
+  operator_note: string;
+  recorded_at: string;
+  actor: string;
+}
+
+export interface TrialReadinessReport {
+  status: TrialReadinessStatus;
+  summary: string;
+  generated_at: string;
+  demo_runnable: boolean;
+  internal_trial_ready: boolean;
+  fallback_is_not_trial_ready: boolean;
+  components: TrialReadinessComponent[];
+  probe_summaries: TrialProbeSummary[];
+  artifact_summaries: TrialReadinessComponent[];
+  checklist: TrialChecklistItem[];
+  recent_feedback: TrialFeedbackRecord[];
+  residual_risks: string[];
+  human_decision_required: boolean;
+  boundary: string;
+}
+
+export interface TrialFeedbackCreate {
+  student_flow: string;
+  issue_category: string;
+  impact: string;
+  handling_status: string;
+  residual_risk: string;
+  decision: TrialDecision;
+  operator_note?: string;
+  actor?: string;
+}
+
 export interface RecommendedQuestion {
   question_id: string;
   assist2017_question_id?: number | string;

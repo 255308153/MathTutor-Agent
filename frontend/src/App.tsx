@@ -22,11 +22,15 @@ import {
   deleteStudentMemory,
   fetchProviderHealth,
   fetchStudentMemories,
+  fetchTrialReadiness,
   sendLearningEvent,
+  submitTrialFeedback,
+  triggerCanaryProbes,
   updateStudentMemoryControl
 } from "./api";
 import type {
   AttributionEvidence,
+  ChecklistItemStatus,
   ContextAssetEvidence,
   ContextGovernanceOverview,
   EvidenceGap,
@@ -37,7 +41,11 @@ import type {
   ProviderHealthStatus,
   RecommendedQuestion,
   RuntimeToolObservationView,
-  StudentMemory
+  StudentMemory,
+  TrialComponentStatus,
+  TrialDecision,
+  TrialReadinessReport,
+  TrialReadinessStatus
 } from "./types";
 
 const SESSION_ID = `demo-${Date.now()}`;
@@ -89,16 +97,22 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [memories, setMemories] = useState<StudentMemory[]>([]);
   const [providerHealth, setProviderHealth] = useState<ProviderHealthResponse | null>(null);
+  const [trialReadiness, setTrialReadiness] = useState<TrialReadinessReport | null>(null);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
   const [isProviderHealthLoading, setIsProviderHealthLoading] = useState(false);
+  const [isTrialLoading, setIsTrialLoading] = useState(false);
   const [pendingMemoryControlId, setPendingMemoryControlId] = useState("");
   const [confirmingMemoryDeleteId, setConfirmingMemoryDeleteId] = useState("");
   const [error, setError] = useState("");
   const [memoryError, setMemoryError] = useState("");
   const [providerHealthError, setProviderHealthError] = useState("");
+  const [trialError, setTrialError] = useState("");
+  const [trialNotice, setTrialNotice] = useState("");
   const [memoryNotice, setMemoryNotice] = useState("");
+  const [feedbackDecision, setFeedbackDecision] = useState<TrialDecision>("hold");
+  const [feedbackNote, setFeedbackNote] = useState("默认 demo 可运行，真实依赖待人工确认。");
   const activeStudentId = studentId || DEFAULT_STUDENT_ID;
 
   useEffect(() => {
@@ -107,6 +121,7 @@ export default function App() {
 
   useEffect(() => {
     void loadProviderHealth();
+    void loadTrialReadiness();
   }, []);
 
   useEffect(() => {
@@ -214,6 +229,63 @@ export default function App() {
       setProviderHealthError(err instanceof Error ? err.message : "Provider 状态读取失败");
     } finally {
       setIsProviderHealthLoading(false);
+    }
+  }
+
+  async function loadTrialReadiness() {
+    setIsTrialLoading(true);
+    setTrialError("");
+    try {
+      const response = await fetchTrialReadiness();
+      setTrialReadiness(response);
+    } catch (err) {
+      setTrialError(err instanceof Error ? err.message : "试用 Readiness 读取失败");
+    } finally {
+      setIsTrialLoading(false);
+    }
+  }
+
+  async function runCanaryProbe() {
+    setIsTrialLoading(true);
+    setTrialError("");
+    setTrialNotice("");
+    try {
+      const probes = await triggerCanaryProbes();
+      const skipped = probes.every((item) => item.skipped);
+      setTrialNotice(
+        skipped
+          ? "Canary probe 已安全跳过（默认未启用真实外部访问）。"
+          : `已记录 ${probes.length} 条脱敏 probe 摘要。`
+      );
+      await loadTrialReadiness();
+    } catch (err) {
+      setTrialError(err instanceof Error ? err.message : "Canary probe 失败");
+    } finally {
+      setIsTrialLoading(false);
+    }
+  }
+
+  async function saveTrialFeedback() {
+    setIsTrialLoading(true);
+    setTrialError("");
+    setTrialNotice("");
+    try {
+      await submitTrialFeedback({
+        student_flow: "连续学习：下一步建议 → 答题 → 记忆控制",
+        issue_category: "trial_review",
+        impact: "影响内部试用邀请决策",
+        handling_status: "recorded",
+        residual_risk: trialReadiness?.residual_risks?.[0] ?? "真实 provider 证据不足",
+        decision: feedbackDecision,
+        operator_note: feedbackNote,
+        actor: "operator"
+      });
+      setTrialNotice("已记录人工试用结论（系统不会自动批准）。");
+      await loadTrialReadiness();
+    } catch (err) {
+      setTrialError(err instanceof Error ? err.message : "试用反馈写入失败");
+    } finally {
+      setIsTrialLoading(false);
     }
   }
 
@@ -422,6 +494,20 @@ export default function App() {
             {isLoading && <p className="loading-line">正在处理学习事件...</p>}
           </article>
 
+          <TrialReadinessPanel
+            report={trialReadiness}
+            isLoading={isTrialLoading}
+            error={trialError}
+            notice={trialNotice}
+            feedbackDecision={feedbackDecision}
+            feedbackNote={feedbackNote}
+            onFeedbackDecisionChange={setFeedbackDecision}
+            onFeedbackNoteChange={setFeedbackNote}
+            onRefresh={() => void loadTrialReadiness()}
+            onProbe={() => void runCanaryProbe()}
+            onSaveFeedback={() => void saveTrialFeedback()}
+          />
+
           <ProviderHealthPanel
             health={providerHealth}
             isLoading={isProviderHealthLoading}
@@ -469,6 +555,155 @@ export default function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function TrialReadinessPanel({
+  report,
+  isLoading,
+  error,
+  notice,
+  feedbackDecision,
+  feedbackNote,
+  onFeedbackDecisionChange,
+  onFeedbackNoteChange,
+  onRefresh,
+  onProbe,
+  onSaveFeedback
+}: {
+  report: TrialReadinessReport | null;
+  isLoading: boolean;
+  error: string;
+  notice: string;
+  feedbackDecision: TrialDecision;
+  feedbackNote: string;
+  onFeedbackDecisionChange: (value: TrialDecision) => void;
+  onFeedbackNoteChange: (value: string) => void;
+  onRefresh: () => void;
+  onProbe: () => void;
+  onSaveFeedback: () => void;
+}) {
+  const components = report?.components ?? [];
+  const checklist = report?.checklist ?? [];
+  const residualRisks = report?.residual_risks ?? [];
+  return (
+    <article className="panel trial-readiness-panel" data-testid="trial-readiness-overview">
+      <div className="panel-title panel-title-with-action">
+        <span>
+          <ShieldCheck size={18} />
+          <h2>内部试用 Readiness Gate</h2>
+        </span>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          aria-label="刷新试用 Readiness"
+          title="刷新试用 Readiness"
+        >
+          <RefreshCw size={16} />
+        </button>
+      </div>
+
+      <div className="provider-health-summary">
+        <span className={`provider-status provider-status-${trialStatusClass(report?.status)}`}>
+          {trialStatusName(report?.status)}
+        </span>
+        <strong>{report?.summary ?? "正在读取内部试用 readiness..."}</strong>
+        <small>
+          {report
+            ? `demo 可运行：${report.demo_runnable ? "是" : "否"} · 内部试用 ready：${
+                report.internal_trial_ready ? "是" : "否"
+              } · 更新 ${formatDateTime(report.generated_at)}`
+            : "等待读取"}
+        </small>
+      </div>
+
+      {report && (
+        <p className="muted trial-boundary">{report.boundary}</p>
+      )}
+
+      {isLoading && <p className="loading-line">正在读取试用 Readiness...</p>}
+      {error && (
+        <div className="memory-error" role="status">
+          <span>{error}</span>
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={15} />
+            重试
+          </button>
+        </div>
+      )}
+      {notice && <p className="memory-notice">{notice}</p>}
+
+      <div className="provider-component-list" aria-label="试用 readiness 组件">
+        {components.map((component) => (
+          <div key={component.component} className="provider-component">
+            <div className="provider-component-heading">
+              <strong>{component.display_name}</strong>
+              <span className={`provider-status provider-status-${trialStatusClass(component.status)}`}>
+                {trialComponentStatusName(component.status)}
+              </span>
+            </div>
+            <p>{component.reason}</p>
+            <small>{component.actionable_hint}</small>
+          </div>
+        ))}
+      </div>
+
+      <div className="trial-checklist">
+        <div className="panel-title">
+          <ClipboardCheck size={16} />
+          <h3>内部试用 Checklist</h3>
+        </div>
+        {checklist.map((item) => (
+          <div key={item.item_id} className="provider-component">
+            <div className="provider-component-heading">
+              <strong>{item.title}</strong>
+              <span className={`provider-status provider-status-${checklistStatusClass(item.status)}`}>
+                {checklistStatusName(item.status)}
+              </span>
+            </div>
+            <p>{item.summary}</p>
+            <small>{item.actionable_hint}</small>
+          </div>
+        ))}
+      </div>
+
+      {residualRisks.length > 0 && (
+        <div className="trial-risks">
+          <strong>剩余风险</strong>
+          <ul>
+            {residualRisks.slice(0, 6).map((risk) => (
+              <li key={risk}>{risk}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="trial-actions">
+        <button type="button" onClick={onProbe} disabled={isLoading}>
+          手动 Canary Probe
+        </button>
+        <select
+          aria-label="人工试用结论"
+          value={feedbackDecision}
+          onChange={(event) => onFeedbackDecisionChange(event.target.value as TrialDecision)}
+        >
+          <option value="hold">hold 暂缓邀请</option>
+          <option value="ready">ready 可有限试用</option>
+          <option value="not_ready">not_ready 暂停</option>
+        </select>
+        <input
+          aria-label="运营备注"
+          value={feedbackNote}
+          onChange={(event) => onFeedbackNoteChange(event.target.value)}
+          placeholder="运营备注 / 剩余风险"
+        />
+        <button type="button" onClick={onSaveFeedback} disabled={isLoading}>
+          记录人工结论
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -1228,6 +1463,42 @@ function memoryProviderName(source: string) {
     mem0: "Mem0",
     mem0_unavailable: "Mem0 unavailable"
   }[source] ?? source;
+}
+
+function trialStatusName(status: TrialReadinessStatus | undefined) {
+  if (status === "ready") return "ready";
+  if (status === "degraded") return "degraded";
+  if (status === "not_ready") return "not_ready";
+  return "读取中";
+}
+
+function trialComponentStatusName(status: TrialComponentStatus) {
+  if (status === "ready") return "ready";
+  if (status === "degraded") return "degraded";
+  if (status === "not_ready") return "not_ready";
+  if (status === "skipped") return "skipped";
+  return status;
+}
+
+function trialStatusClass(status: TrialReadinessStatus | TrialComponentStatus | undefined) {
+  if (status === "ready") return "healthy";
+  if (status === "degraded") return "degraded";
+  if (status === "skipped") return "not_configured";
+  return "unavailable";
+}
+
+function checklistStatusName(status: ChecklistItemStatus) {
+  if (status === "met") return "已满足";
+  if (status === "degraded") return "可恢复降级";
+  if (status === "blocking") return "阻塞试用";
+  return "待人工确认";
+}
+
+function checklistStatusClass(status: ChecklistItemStatus) {
+  if (status === "met") return "healthy";
+  if (status === "degraded") return "degraded";
+  if (status === "blocking") return "unavailable";
+  return "not_configured";
 }
 
 function statusName(status: ProviderHealthStatus | undefined) {

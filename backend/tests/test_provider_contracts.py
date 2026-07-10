@@ -45,7 +45,12 @@ def test_default_provider_modes_keep_demo_mock_local_fallback() -> None:
     assert settings.mem0_api_key == ""
     assert settings.vikingdb_api_key == ""
     assert settings.openviking_api_key == ""
-    assert isinstance(create_student_memory_store(settings), InMemoryStudentMemoryStore)
+    # V1.11: local_fallback defaults to durable SQLite memory; in-memory is opt-in.
+    from backend.app.memory.sqlite_store import SqliteStudentMemoryStore
+
+    assert isinstance(create_student_memory_store(settings), SqliteStudentMemoryStore)
+    memory_settings = settings.model_copy(update={"persistence_backend": "memory"})
+    assert isinstance(create_student_memory_store(memory_settings), InMemoryStudentMemoryStore)
     assert isinstance(create_knowledge_rag(settings), LocalKnowledgeRAG)
 
 

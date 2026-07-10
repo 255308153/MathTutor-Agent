@@ -287,7 +287,12 @@ def create_student_memory_store(
 ) -> StudentMemoryStore:
     active_settings = settings or get_settings()
     if active_settings.memory_provider_mode == "local_fallback":
-        return InMemoryStudentMemoryStore()
+        # V1.11: default local fallback persists memory control across restarts.
+        if active_settings.persistence_backend == "memory":
+            return InMemoryStudentMemoryStore()
+        from .sqlite_store import SqliteStudentMemoryStore
+
+        return SqliteStudentMemoryStore()
     if active_settings.memory_provider_mode == "fake_provider":
         from .fake_provider import FakeStudentMemoryProvider
 

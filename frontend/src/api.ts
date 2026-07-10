@@ -3,7 +3,11 @@ import type {
   MathTutorEventResponse,
   ProviderHealthResponse,
   StudentMemoryDetailResponse,
-  StudentMemoryListResponse
+  StudentMemoryListResponse,
+  TrialFeedbackCreate,
+  TrialFeedbackRecord,
+  TrialProbeSummary,
+  TrialReadinessReport
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_MATHTUTOR_API_BASE ?? "";
@@ -49,6 +53,52 @@ export async function fetchProviderHealth(): Promise<ProviderHealthResponse> {
   }
 
   return response.json() as Promise<ProviderHealthResponse>;
+}
+
+export async function fetchTrialReadiness(): Promise<TrialReadinessReport> {
+  const response = await fetch(`${API_BASE}/api/trial-readiness`);
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`试用 Readiness 读取失败：${response.status} ${errorDetail(body)}`);
+  }
+
+  return response.json() as Promise<TrialReadinessReport>;
+}
+
+export async function triggerCanaryProbes(providers: string[] = ["memory", "rag"]) {
+  const response = await fetch(`${API_BASE}/api/trial-readiness/probes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      providers,
+      canary_token: "mathtutor-canary"
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Canary Probe 失败：${response.status} ${errorDetail(body)}`);
+  }
+
+  return response.json() as Promise<TrialProbeSummary[]>;
+}
+
+export async function submitTrialFeedback(
+  payload: TrialFeedbackCreate
+): Promise<TrialFeedbackRecord> {
+  const response = await fetch(`${API_BASE}/api/trial-readiness/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`试用反馈写入失败：${response.status} ${errorDetail(body)}`);
+  }
+
+  return response.json() as Promise<TrialFeedbackRecord>;
 }
 
 export async function updateStudentMemoryControl({

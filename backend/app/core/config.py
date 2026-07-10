@@ -60,6 +60,10 @@ class MathTutorSettings(BaseSettings):
     dgekt_offline_evidence_dir: str = ""
     dgekt_canonical_mapping_path: str = ""
 
+    # V1.11 Trial Readiness / canary probes (all default off for safety)
+    enable_provider_canary_probe: bool = False
+    persistence_backend: Literal["sqlite", "memory"] = "sqlite"
+
 
 @lru_cache
 def get_settings() -> MathTutorSettings:
