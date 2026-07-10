@@ -35,7 +35,6 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
         "memory_update",
         "kt_tool_observation",
         "rag_tool_observation",
-        "memory_tool_observation",
         "runtime_end",
     ]
     assert "KT facts are authoritative." in body["teaching_trace_summary"]["invariants"]
@@ -85,7 +84,13 @@ def test_event_response_contains_auditable_teaching_trace_summary() -> None:
         "rag_retrieval_evidence",
         "student_memory_evidence",
     ]
-    assert all(item["observed"] is True for item in overview["tool_calls"])
+    assert {
+        item["tool_id"]: item["mount_status"] for item in overview["tool_calls"]
+    } == {
+        "kt_authoritative_facts": "mounted",
+        "rag_retrieval_evidence": "mounted",
+        "student_memory_evidence": "skipped",
+    }
     assert {
         item["tool_id"]: item["metrics"] for item in overview["tool_observations"]
     }["kt_authoritative_facts"]["prediction_probability"] == 0.58

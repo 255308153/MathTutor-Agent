@@ -87,6 +87,8 @@ class RuntimeToolCallView(BaseModel):
     provider_modes: list[str] = Field(default_factory=list)
     state_write_policy: str = ""
     observed: bool = False
+    mount_status: Literal["mounted", "skipped", "blocked"] = "skipped"
+    mount_reason: str = ""
     provider: str | None = None
     provider_mode: str | None = None
     status: str | None = None

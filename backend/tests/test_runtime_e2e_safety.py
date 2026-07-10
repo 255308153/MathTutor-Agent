@@ -35,7 +35,6 @@ EXPECTED_RUNTIME_STAGES = [
     "memory_update",
     "kt_tool_observation",
     "rag_tool_observation",
-    "memory_tool_observation",
     "runtime_end",
 ]
 FORBIDDEN_RUNTIME_OUTPUT_TOKENS = [
@@ -105,7 +104,6 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
     }
     kt_observation = observations[KT_AUTHORITY_TOOL_ID]
     rag_observation = observations[RAG_RETRIEVAL_TOOL_ID]
-    memory_observation = observations[STUDENT_MEMORY_TOOL_ID]
     trace_overview = expert["trace_overview"]
 
     assert body["recommended_questions"]
@@ -120,6 +118,8 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
     )
 
     turn_context = expert["learning_turn_context"]
+    governance = expert["context_governance"]
+    response_context = expert["response_context_package"]
     assert turn_context["runtime_name"] == "MathTutorAgentRuntime"
     assert turn_context["subject"] == "math"
     assert turn_context["intent"] == "answer_submission"
@@ -128,6 +128,33 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
     assert "RAG can support explanation, not overwrite prediction facts." in turn_context[
         "authority_boundaries"
     ]
+    assert governance["governance_id"] == turn_context["context_governance_ref"]
+    assert governance["state_reference_only"] is True
+    assert governance["intent"] == "answer_submission"
+    assert governance["response_context_ref"] == response_context["context_package_id"]
+    assert response_context["governance_id"] == governance["governance_id"]
+    assert response_context["selected_evidence_only"] is True
+    assert response_context["debug_evidence_included"] is False
+    assert response_context["authoritative_kt_facts"]["prediction_probability"] == 0.58
+    assert response_context["authority_boundary"]["student_memory"].endswith("never mastery.")
+    assert governance["budget_summary"]["budget_limit"] == 1200
+    assert governance["budget_summary"]["policy"] == "LearningContextLayer priority_budget_summary"
+    assert governance["non_clippable_evidence"] == ["authoritative_kt_facts"]
+    assert governance["evidence_selection_summary"]["selected_count"] >= 1
+    assert all(
+        decision["status"] in {"selected", "clipped", "omitted"}
+        for decision in governance["evidence_decisions"]
+    )
+    assert set(governance["tool_mount_summary"]["mounted"]) == {
+        KT_AUTHORITY_TOOL_ID,
+        RAG_RETRIEVAL_TOOL_ID,
+    }
+    assert governance["tool_mount_summary"]["skipped"] == [
+        {
+            "tool_id": STUDENT_MEMORY_TOOL_ID,
+            "reason": "答题诊断优先当前题目与 KT facts。",
+        }
+    ]
 
     tool_ids = {tool["tool_id"] for tool in expert["tool_registry_manifest"]}
     assert tool_ids == {
@@ -135,7 +162,7 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
         RAG_RETRIEVAL_TOOL_ID,
         STUDENT_MEMORY_TOOL_ID,
     }
-    assert set(observations) == tool_ids
+    assert set(observations) == {KT_AUTHORITY_TOOL_ID, RAG_RETRIEVAL_TOOL_ID}
 
     kt_prediction = expert["kt_diagnosis"]["prediction_probability"]
     assert kt_prediction == 0.58
@@ -174,15 +201,6 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
         gap["gap_type"] for gap in rag_observation["result_summary"]["evidence_gaps"]
     }
 
-    assert memory_observation["provider_mode"] == "local_fallback"
-    assert memory_observation["status"] == "degraded"
-    assert memory_observation["result_summary"]["retrieved_count"] == 0
-    assert memory_observation["result_summary"]["selected_count"] == 0
-    assert (
-        "cannot directly modify mastery"
-        in memory_observation["result_summary"]["authority"]
-    )
-
     assert trace_overview["runtime_name"] == "MathTutorAgentRuntime"
     assert trace_overview["active_capability_id"] == "math_answer_diagnosis"
     assert trace_overview["state_reference_only"] is True
@@ -195,10 +213,10 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
     }
     assert {
         call["tool_id"] for call in trace_overview["tool_calls"] if call["observed"]
-    } == tool_ids
+    } == {KT_AUTHORITY_TOOL_ID, RAG_RETRIEVAL_TOOL_ID}
     assert {
         observation["tool_id"] for observation in trace_overview["tool_observations"]
-    } == tool_ids
+    } == {KT_AUTHORITY_TOOL_ID, RAG_RETRIEVAL_TOOL_ID}
     assert any(
         event["stage"] == "rag_tool_observation"
         and event["status"] == "degraded"
@@ -219,10 +237,15 @@ def test_v19_runtime_e2e_smoke_preserves_kt_authority_and_empty_rag_safety(
             "rag_tool_observation_is_read_only_and_cannot_write_mastery_or_prediction_facts",
             "memory_tool_observation_is_read_only_and_cannot_write_mastery_or_prediction_facts",
         }
-        if call["provider_mode"] is not None:
+        if call.get("provider_mode") is not None:
             assert call["provider_mode"] in RUNTIME_PROVIDER_MODES
-        if call["status"] is not None:
+        if call.get("status") is not None:
             assert call["status"] in RUNTIME_READINESS_STATUSES
+    skipped_memory = next(
+        call for call in trace_overview["tool_calls"] if call["tool_id"] == STUDENT_MEMORY_TOOL_ID
+    )
+    assert skipped_memory["mount_status"] == "skipped"
+    assert skipped_memory["mount_reason"] == "答题诊断优先当前题目与 KT facts。"
     for observation in trace_overview["tool_observations"]:
         assert observation["provider_mode"] in RUNTIME_PROVIDER_MODES
         assert observation["status"] in RUNTIME_READINESS_STATUSES

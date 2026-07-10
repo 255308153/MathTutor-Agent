@@ -166,6 +166,8 @@ export interface RuntimeToolCallView {
   provider_modes: string[];
   state_write_policy: string;
   observed: boolean;
+  mount_status?: "mounted" | "skipped" | "blocked";
+  mount_reason?: string;
   provider?: string | null;
   provider_mode?: string | null;
   status?: string | null;
@@ -271,6 +273,38 @@ export interface AssembledContextEvidence {
   };
 }
 
+export interface ContextGovernanceOverview {
+  governance_id: string;
+  intent: string;
+  budget_summary: {
+    budget_used?: number | null;
+    budget_limit?: number | null;
+    policy?: string;
+  };
+  evidence_priority_rules: string[];
+  evidence_selection_summary: {
+    selected_count?: number;
+    omitted_count?: number;
+    clipped_count?: number;
+    policy?: string;
+  };
+  evidence_decisions: Array<{
+    asset_id?: string;
+    asset_type?: string;
+    status: "selected" | "clipped" | "omitted";
+    reason?: string | null;
+  }>;
+  non_clippable_evidence: string[];
+  tool_mount_summary: {
+    mounted: string[];
+    skipped: Array<{ tool_id: string; reason: string }>;
+    blocked: Array<{ tool_id: string; reason: string }>;
+    fallback_used: string[];
+  };
+  response_context_ref?: string | null;
+  state_reference_only: boolean;
+}
+
 export interface TeachingTraceSummary {
   trace_id: string;
   intent: string;
@@ -312,6 +346,7 @@ export interface TeachingTraceSummary {
     tool_observations?: Array<Record<string, unknown>>;
     runtime?: Record<string, unknown>;
     trace_overview?: RuntimeTraceOverview | null;
+    context_governance?: ContextGovernanceOverview | null;
   };
   invariants: string[];
   errors: string[];

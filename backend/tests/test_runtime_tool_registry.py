@@ -158,7 +158,6 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
     }
     observation = observations[KT_AUTHORITY_TOOL_ID]
     rag_observation = observations[RAG_RETRIEVAL_TOOL_ID]
-    memory_observation = observations[STUDENT_MEMORY_TOOL_ID]
     trace_event = next(
         event for event in body["teaching_trace"] if event["stage"] == "kt_tool_observation"
     )
@@ -184,12 +183,11 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
     assert trace_event["metadata"]["fallback_used"] is True
     assert "kt_tool_observation" in body["teaching_trace_summary"]["stages"]
     assert "rag_tool_observation" in body["teaching_trace_summary"]["stages"]
-    assert "memory_tool_observation" in body["teaching_trace_summary"]["stages"]
-    assert expert["runtime"]["tool_observation_count"] == 3
+    assert "memory_tool_observation" not in body["teaching_trace_summary"]["stages"]
+    assert expert["runtime"]["tool_observation_count"] == 2
     assert set(expert["runtime"]["tool_observation_refs"]) == {
         f"tool_observation:{KT_AUTHORITY_TOOL_ID}",
         f"tool_observation:{RAG_RETRIEVAL_TOOL_ID}",
-        f"tool_observation:{STUDENT_MEMORY_TOOL_ID}",
     }
     assert set(expert["learning_turn_context"]["tool_observation_refs"]) == set(
         expert["runtime"]["tool_observation_refs"]
@@ -203,19 +201,6 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
         == "RAG can support mathematical explanation, citations, examples, theorem notes, "
         "and worked-solution context, but cannot overwrite KT/DGEKT prediction facts."
     )
-    assert memory_observation["provider_mode"] == "local_fallback"
-    assert memory_observation["status"] == "degraded"
-    assert memory_observation["result_summary"]["retrieved_count"] == 0
-    assert any(
-        gap["gap_type"] == "student_memory"
-        for gap in memory_observation["result_summary"]["evidence_gaps"]
-    )
-    assert (
-        memory_observation["result_summary"]["authority"]
-        == "Student memory can influence teaching strategy, expression style, review reminders, "
-        "and personalization, but cannot directly modify mastery, weak concepts, "
-        "prediction probability, or forgetting risks."
-    )
     for item in observations.values():
         assert item["provider_mode"] in RUNTIME_PROVIDER_MODES
         assert item["status"] in RUNTIME_READINESS_STATUSES
@@ -225,10 +210,68 @@ def test_runtime_records_kt_tool_observation_for_default_local_fallback() -> Non
         assert item["status"] in RUNTIME_READINESS_STATUSES
     for item in overview["tool_calls"]:
         assert set(item["provider_modes"]) <= RUNTIME_PROVIDER_MODES
-        if item["provider_mode"] is not None:
+        if item.get("provider_mode") is not None:
             assert item["provider_mode"] in RUNTIME_PROVIDER_MODES
-        if item["status"] is not None:
+        if item.get("status") is not None:
             assert item["status"] in RUNTIME_READINESS_STATUSES
+    assert next(
+        item for item in overview["tool_calls"] if item["tool_id"] == STUDENT_MEMORY_TOOL_ID
+    )["mount_status"] == "skipped"
+
+
+def test_runtime_mounts_tools_by_math_learning_intent() -> None:
+    client = TestClient(create_app())
+
+    answer = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-mount-answer",
+            "student_id": "student-mount-answer",
+            "type": "answer_submitted",
+            "message": "答案是 1/6",
+            "payload": {"question_id": "q_frac_001", "answer": "1/6"},
+        },
+    ).json()
+    next_step = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-mount-next",
+            "student_id": "student-mount-next",
+            "type": "chat_message",
+            "message": "下一步应该练什么？",
+            "payload": {},
+        },
+    ).json()
+    concept = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-mount-concept",
+            "student_id": "student-mount-concept",
+            "type": "chat_message",
+            "message": "请讲解异分母分数加法。",
+            "payload": {},
+        },
+    ).json()
+
+    def mounts(body: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        return {
+            item["tool_id"]: item
+            for item in body["teaching_trace_summary"]["expert_evidence"]["trace_overview"][
+                "tool_calls"
+            ]
+        }
+
+    answer_mounts = mounts(answer)
+    next_mounts = mounts(next_step)
+    concept_mounts = mounts(concept)
+
+    assert answer_mounts[KT_AUTHORITY_TOOL_ID]["mount_status"] == "mounted"
+    assert answer_mounts[STUDENT_MEMORY_TOOL_ID]["mount_status"] == "skipped"
+    assert answer_mounts[STUDENT_MEMORY_TOOL_ID]["mount_reason"] == "答题诊断优先当前题目与 KT facts。"
+    assert all(item["mount_status"] == "mounted" for item in next_mounts.values())
+    assert concept_mounts[KT_AUTHORITY_TOOL_ID]["mount_status"] == "skipped"
+    assert concept_mounts[KT_AUTHORITY_TOOL_ID]["mount_reason"] == "概念讲解不挂载答题诊断工具。"
+    assert concept_mounts[RAG_RETRIEVAL_TOOL_ID]["mount_status"] == "mounted"
 
 
 def test_runtime_records_empty_rag_observation_without_fabricated_citation(
@@ -348,6 +391,10 @@ def test_runtime_memory_observation_respects_disabled_and_deleted_controls() -> 
     )
     assert _student_visible_trace_payload(disabled_body).find(disabled_memory_id) == -1
     assert "参考你之前的学习偏好" not in disabled_body["response"]
+    assert f"memory:{disabled_memory_id}" not in json.dumps(
+        disabled_body["teaching_trace_summary"]["expert_evidence"]["response_context_package"],
+        ensure_ascii=False,
+    )
 
     deleted_observation = _tool_observation(deleted_body, STUDENT_MEMORY_TOOL_ID)
     deleted_summary = deleted_observation["result_summary"]
@@ -363,6 +410,10 @@ def test_runtime_memory_observation_respects_disabled_and_deleted_controls() -> 
     )
     assert _student_visible_trace_payload(deleted_body).find(deleted_memory_id) == -1
     assert "参考你之前的学习偏好" not in deleted_body["response"]
+    assert f"memory:{deleted_memory_id}" not in json.dumps(
+        deleted_body["teaching_trace_summary"]["expert_evidence"]["response_context_package"],
+        ensure_ascii=False,
+    )
 
 
 def test_runtime_rag_and_memory_provider_gaps_do_not_override_kt_facts() -> None:
@@ -388,9 +439,9 @@ def test_runtime_rag_and_memory_provider_gaps_do_not_override_kt_facts() -> None
         LearningEvent(
             session_id="session-provider-gap-observation",
             student_id="student-provider-gap-observation",
-            type="answer_submitted",
-            message="我选 1/6",
-            payload={"question_id": "q_frac_001", "answer": "1/6"},
+            type="chat_message",
+            message="下一步应该学什么？",
+            payload={},
         )
     )
     body = response.model_dump(mode="json")

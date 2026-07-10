@@ -382,6 +382,33 @@ const baseResponse: MathTutorEventResponse = {
         state_reference_only: true,
         boundary: "Runtime observability is read-only and cannot overwrite KT facts."
       },
+      context_governance: {
+        governance_id: "governance-test",
+        intent: "next_step_advice",
+        budget_summary: { budget_used: 45, budget_limit: 1200, policy: "priority_budget_summary" },
+        evidence_priority_rules: [
+          "KT/DGEKT authoritative facts are non-clippable.",
+          "Current task, question, answer, learning event, and capability target come first."
+        ],
+        evidence_selection_summary: {
+          selected_count: 4,
+          omitted_count: 1,
+          clipped_count: 1,
+          policy: "priority_budget_summary"
+        },
+        evidence_decisions: [
+          { asset_id: "trace-reference", asset_type: "trace_reference", status: "clipped", reason: "超出上下文预算，已裁剪低优先级资产" }
+        ],
+        non_clippable_evidence: ["authoritative_kt_facts"],
+        tool_mount_summary: {
+          mounted: ["kt_authoritative_facts", "rag_retrieval_evidence", "student_memory_evidence"],
+          skipped: [],
+          blocked: [],
+          fallback_used: ["kt_authoritative_facts", "rag_retrieval_evidence", "student_memory_evidence"]
+        },
+        response_context_ref: "response-context-test",
+        state_reference_only: true
+      },
       context_assets: [],
       assembled_context: {
         context_id: "assembled-test",
@@ -867,6 +894,9 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("记忆工具观察")).toBeInTheDocument();
     expect(screen.getByText("Runtime 结束")).toBeInTheDocument();
     expect(screen.getByText("Runtime 概览")).toBeInTheDocument();
+    expect(screen.getByText("Context Governance")).toBeInTheDocument();
+    expect(screen.getAllByText("45/1200").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("已裁剪 · 超出上下文预算，已裁剪低优先级资产")).toBeInTheDocument();
     expect(screen.getByText("3/3 个工具已观察")).toBeInTheDocument();
     expect(screen.getByText("下一步建议与复习规划")).toBeInTheDocument();
     expect(screen.getByText("学生 1 · 专家 6 · Debug 0")).toBeInTheDocument();
@@ -893,7 +923,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("1 -> 2")).toBeInTheDocument();
     expect(screen.getByText("0.850")).toBeInTheDocument();
     expect(screen.getByText("上下文证据")).toBeInTheDocument();
-    expect(screen.getByText("45/1200")).toBeInTheDocument();
+    expect(screen.getAllByText("45/1200").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("priority_budget_summary")).toBeInTheDocument();
     expect(screen.getByText("Memory evidence")).toBeInTheDocument();
     expect(screen.getByText("RAG citation")).toBeInTheDocument();

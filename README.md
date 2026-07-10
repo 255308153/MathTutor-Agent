@@ -36,6 +36,7 @@ V1 优先服务一个学生、一个数学学习场景、一条可审计学习�
 - 错因诊断和四类教学动作。
 - TeachingTrace，可追踪每次 agent 决策依据。
 - React 学习驾驶舱首版。
+- V1.10 Runtime Context Governance：每轮审计 evidence priority、budget、工具挂载与 selected-only response context package。
 
 暂不包含：
 
@@ -69,6 +70,7 @@ Context can assemble evidence, not decide learning facts.
 - Memory 可以影响讲解风格、复习策略和偏好，不直接改写 mastery。
 - RAG 支持解释、证据和题解，不覆盖 prediction facts。
 - Context 负责收集和组装证据，不决定或改写 mastery、weak concepts、forgetting risk、prediction probability。
+- Runtime Context Governance 只编排和审计上下文；V1.10 默认仍使用 local fallback，V1.11 才处理真实 provider 的生产 readiness。
 
 ## 目录结构
 

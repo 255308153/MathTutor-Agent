@@ -80,6 +80,83 @@ def test_v11_dashboard_demo_flow_has_recommendation_grading_trace_and_evidence()
         "memory_update",
         "kt_tool_observation",
         "rag_tool_observation",
-        "memory_tool_observation",
         "runtime_end",
     ]
+
+
+def test_v110_context_governance_demo_varies_by_math_learning_intent() -> None:
+    client = TestClient(create_app())
+    student_id = "student-v110-governance-demo"
+
+    answer = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v110-answer",
+            "student_id": student_id,
+            "type": "answer_submitted",
+            "message": "我提交答案 1/6。",
+            "payload": {"question_id": "q_frac_001", "answer": "1/6"},
+        },
+    ).json()
+    next_step = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v110-next",
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "下一步应该练什么？",
+            "payload": {},
+        },
+    ).json()
+    concept = client.post(
+        "/api/events",
+        json={
+            "session_id": "session-v110-concept",
+            "student_id": student_id,
+            "type": "chat_message",
+            "message": "请讲解异分母分数加法。",
+            "payload": {},
+        },
+    ).json()
+
+    def expert(turn: dict) -> dict:
+        return turn["teaching_trace_summary"]["expert_evidence"]
+
+    def tool_mounts(turn: dict) -> dict[str, str]:
+        return {
+            item["tool_id"]: item["mount_status"]
+            for item in expert(turn)["trace_overview"]["tool_calls"]
+        }
+
+    assert [turn["state_summary"]["intent"] for turn in (answer, next_step, concept)] == [
+        "answer_submission",
+        "next_step_advice",
+        "general_chat",
+    ]
+    assert tool_mounts(answer) == {
+        "kt_authoritative_facts": "mounted",
+        "rag_retrieval_evidence": "mounted",
+        "student_memory_evidence": "skipped",
+    }
+    assert tool_mounts(next_step) == {
+        "kt_authoritative_facts": "mounted",
+        "rag_retrieval_evidence": "mounted",
+        "student_memory_evidence": "mounted",
+    }
+    assert tool_mounts(concept)["kt_authoritative_facts"] == "skipped"
+    assert not any(event["stage"] == "kt_tool_observation" for event in concept["teaching_trace"])
+
+    for turn in (answer, next_step, concept):
+        evidence = expert(turn)
+        governance = evidence["context_governance"]
+        package = evidence["response_context_package"]
+        assert governance["intent"] == turn["state_summary"]["intent"]
+        assert governance["response_context_ref"] == package["context_package_id"]
+        assert package["governance_id"] == governance["governance_id"]
+        assert package["selected_evidence_only"] is True
+        assert package["debug_evidence_included"] is False
+        assert package["authoritative_kt_facts"] == evidence["assembled_context"][
+            "authoritative_kt_facts"
+        ]
+        assert "raw_provider_payload" not in turn["response"]
+        assert "Context Governance" not in turn["response"]

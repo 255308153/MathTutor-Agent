@@ -858,7 +858,6 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
         "memory_update",
         "kt_tool_observation",
         "rag_tool_observation",
-        "memory_tool_observation",
         "runtime_end",
     ]
     assert "判定为不正确" in body["response"]

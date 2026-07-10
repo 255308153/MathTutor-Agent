@@ -56,6 +56,8 @@ RAG observation 只支持数学概念、定理、例题、解法和教材片段�
 
 V1.9 的 dashboard 不直接解析 provider 原始响应。后端在 `teaching_trace_summary.expert_evidence.trace_overview` 中提供标准化只读视图，统一表达 runtime stage、激活 capability、tool call、tool observation、evidence refs、学生 / 专家 / 调试可见性和 provider gap。前端只消费这个规范化视图展示“Runtime 概览”；`trace_overview` 只能用于审计和运营可见性，不能写 memory、progress、context、RAG、TeachingTrace 或 KT state，也不能覆盖 KT / DGEKT prediction facts。
 
+V1.10 在此基础上新增 `context_governance` 与 `response_context_package`。Governance 复用 LearningContextLayer 的 evidence priority 与 budget selection，明确 KT/DGEKT facts 不可裁剪，记录 selected/clipped/omitted evidence 和 mounted/skipped/blocked 工具原因；它不产生学习事实。`response_context_package` 是未来 response generator / LLM 唯一应消费的结构化入口，只含 authoritative KT facts 和 selected task/RAG/memory evidence，排除 provider raw payload、SDK response、embedding、credentials、checkpoint/private path、debug evidence 与 disabled/deleted memory。Dashboard 只在专家 TeachingTrace 面板展示治理详情，学生回答保持学习导向。
+
 ## 2. 参考项目与吸收点
 
 ### DeepTutor

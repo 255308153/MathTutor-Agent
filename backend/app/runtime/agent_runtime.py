@@ -20,6 +20,7 @@ from .capabilities import (
     default_capability_registry,
 )
 from .context import LearningTurnContext, RuntimeIntent
+from .governance import ContextGovernanceOverview, ResponseContextPackage
 from .tools import (
     KT_AUTHORITY_TOOL_ID,
     RAG_RETRIEVAL_TOOL_ID,
@@ -73,13 +74,33 @@ class MathTutorAgentRuntime:
             ],
         )
         response = self.learning_loop.handle_event(event)
+        tool_mounts = self._tool_mount_decisions(response=response, context=turn_context)
         tool_observations = self._collect_tool_observations(
             response=response,
             context=turn_context,
+            tool_mounts=tool_mounts,
         )
         response.teaching_trace.extend(
             self._tool_observation_trace(observation)
             for observation in tool_observations
+        )
+        governance = self._context_governance_overview(
+            response=response,
+            context=turn_context,
+            tool_observations=tool_observations,
+            tool_mounts=tool_mounts,
+        )
+        response_context = self._response_context_package(
+            response=response,
+            context=turn_context,
+            governance=governance,
+        )
+        governance.response_context_ref = response_context.context_package_id
+        response.teaching_trace_summary.expert_evidence["context_governance"] = governance.model_dump(
+            mode="json"
+        )
+        response.teaching_trace_summary.expert_evidence["response_context_package"] = (
+            response_context.model_dump(mode="json")
         )
         completed_progress = self.learning_loop.store.get_or_create(
             event.student_id
@@ -115,6 +136,7 @@ class MathTutorAgentRuntime:
             completed_context,
             capability_selection,
             tool_observations,
+            tool_mounts,
         )
         return response
 
@@ -177,6 +199,7 @@ class MathTutorAgentRuntime:
         context: LearningTurnContext,
         capability_selection: CapabilitySelection,
         tool_observations: list[ToolObservation],
+        tool_mounts: list[dict[str, str]],
     ) -> None:
         response.teaching_trace_summary.stages = [
             event.stage for event in response.teaching_trace
@@ -212,10 +235,143 @@ class MathTutorAgentRuntime:
             context=context,
             capability_selection=capability_selection,
             tool_observations=tool_observations,
+            tool_mounts=tool_mounts,
         ).model_dump(mode="json", exclude_none=True)
         response.teaching_trace_summary.expert_evidence = sanitize_runtime_value(
             expert_evidence
         )
+
+    def _context_governance_overview(
+        self,
+        *,
+        response: MathTutorEventResponse,
+        context: LearningTurnContext,
+        tool_observations: list[ToolObservation],
+        tool_mounts: list[dict[str, str]],
+    ) -> ContextGovernanceOverview:
+        assembled = _dict_or_empty(
+            response.teaching_trace_summary.expert_evidence.get("assembled_context")
+        )
+        selection = _dict_or_empty(assembled.get("asset_selection"))
+        selected = _list_of_dicts(selection.get("selected"))
+        omitted = _list_of_dicts(selection.get("omitted"))
+        return ContextGovernanceOverview(
+            intent=context.intent,
+            budget_summary={
+                "budget_used": assembled.get("budget_used"),
+                "budget_limit": assembled.get("budget_limit"),
+                "policy": "LearningContextLayer priority_budget_summary",
+            },
+            evidence_priority_rules=[
+                "KT/DGEKT authoritative facts are non-clippable.",
+                "Current task, question, answer, learning event, and capability target come first.",
+                "RAG and student memory are ranked by intent, freshness, confidence, relevance, and authority boundary.",
+            ],
+            evidence_selection_summary={
+                "selected_count": len(selected),
+                "omitted_count": len(omitted),
+                "clipped_count": sum(
+                    "预算" in str(item.get("excluded_reason") or "") for item in omitted
+                ),
+                "policy": "LearningContextLayer priority_budget_summary",
+            },
+            evidence_decisions=[
+                *[
+                    {
+                        "asset_id": item.get("asset_id"),
+                        "asset_type": item.get("asset_type"),
+                        "status": "selected",
+                        "reason": item.get("included_reason"),
+                    }
+                    for item in selected
+                ],
+                *[
+                    {
+                        "asset_id": item.get("asset_id"),
+                        "asset_type": item.get("asset_type"),
+                        "status": (
+                            "clipped"
+                            if "预算" in str(item.get("excluded_reason") or "")
+                            else "omitted"
+                        ),
+                        "reason": item.get("excluded_reason"),
+                    }
+                    for item in omitted
+                ],
+            ],
+            non_clippable_evidence=["authoritative_kt_facts"],
+            tool_mount_summary={
+                "mounted": [
+                    item["tool_id"] for item in tool_mounts if item["status"] == "mounted"
+                ],
+                "skipped": [
+                    {"tool_id": item["tool_id"], "reason": item["reason"]}
+                    for item in tool_mounts
+                    if item["status"] == "skipped"
+                ],
+                "blocked": [
+                    {"tool_id": item["tool_id"], "reason": item["reason"]}
+                    for item in tool_mounts
+                    if item["status"] == "blocked"
+                ],
+                "fallback_used": [
+                    observation.tool_id
+                    for observation in tool_observations
+                    if observation.fallback_used
+                ],
+            },
+            response_context_ref=None,
+        )
+
+    def _response_context_package(
+        self,
+        *,
+        response: MathTutorEventResponse,
+        context: LearningTurnContext,
+        governance: ContextGovernanceOverview,
+    ) -> ResponseContextPackage:
+        assembled = _dict_or_empty(
+            response.teaching_trace_summary.expert_evidence.get("assembled_context")
+        )
+        selected = _list_of_dicts(_dict_or_empty(assembled.get("asset_selection")).get("selected"))
+        assets_by_type = {
+            asset_type: [
+                self._response_context_asset(item)
+                for item in selected
+                if item.get("asset_type") == asset_type
+                and not _disabled_or_deleted_memory(item)
+            ]
+            for asset_type in ("task_state", "knowledge_resource", "student_memory")
+        }
+        evidence_refs = _dedupe_strings(
+            ref
+            for item in selected
+            for ref in _list_or_empty(item.get("evidence_refs"))
+        )
+        return ResponseContextPackage(
+            governance_id=governance.governance_id,
+            intent=context.intent,
+            authority_boundary={
+                "kt_dgekt_facts": "authoritative learning facts; never overwritten by this package.",
+                "task_state": "current task context only.",
+                "rag_evidence": "explanation and citation support only.",
+                "student_memory": "strategy and expression support only; never mastery.",
+                "debug_evidence": "expert-only and excluded from the response context package.",
+            },
+            authoritative_kt_facts=_dict_or_empty(assembled.get("authoritative_kt_facts")),
+            task_state=assets_by_type["task_state"],
+            rag_evidence=assets_by_type["knowledge_resource"],
+            student_memory=assets_by_type["student_memory"],
+            evidence_refs=evidence_refs,
+        )
+
+    def _response_context_asset(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "asset_id": item.get("asset_id"),
+            "source_ref": item.get("source_ref"),
+            "summary": item.get("summary"),
+            "evidence_refs": _list_or_empty(item.get("evidence_refs")),
+        }
 
     def _runtime_trace_overview(
         self,
@@ -224,6 +380,7 @@ class MathTutorAgentRuntime:
         context: LearningTurnContext,
         capability_selection: CapabilitySelection,
         tool_observations: list[ToolObservation],
+        tool_mounts: list[dict[str, str]],
     ) -> RuntimeTraceOverview:
         capability_summary = capability_selection.public_summary()
         tool_manifest = self.tool_registry.manifest()
@@ -235,6 +392,10 @@ class MathTutorAgentRuntime:
             self._runtime_tool_call_view(
                 manifest,
                 observation_by_tool.get(manifest["tool_id"]),
+                next(
+                    (item for item in tool_mounts if item["tool_id"] == manifest["tool_id"]),
+                    {"status": "skipped", "reason": "本轮未挂载该工具。"},
+                ),
             )
             for manifest in tool_manifest
         ]
@@ -286,6 +447,7 @@ class MathTutorAgentRuntime:
         self,
         manifest: dict[str, Any],
         observation: dict[str, Any] | None,
+        mount: dict[str, str],
     ) -> RuntimeToolCallView:
         provider_gap_count = _int_metric(
             _dict_or_empty(observation).get("result_summary"),
@@ -304,6 +466,8 @@ class MathTutorAgentRuntime:
             provider_modes=[str(item) for item in manifest.get("provider_modes", [])],
             state_write_policy=str(manifest.get("state_write_policy") or ""),
             observed=observation is not None,
+            mount_status=mount["status"],
+            mount_reason=mount["reason"],
             provider=observation.get("provider") if observation else None,
             provider_mode=observation.get("provider_mode") if observation else None,
             status=observation.get("status") if observation else None,
@@ -396,6 +560,7 @@ class MathTutorAgentRuntime:
         *,
         response: MathTutorEventResponse,
         context: LearningTurnContext,
+        tool_mounts: list[dict[str, str]],
     ) -> list[ToolObservation]:
         expert_evidence = response.teaching_trace_summary.expert_evidence
         load_context_event = self._trace_event(response, "load_context")
@@ -425,7 +590,12 @@ class MathTutorAgentRuntime:
                 "learning_turn_context": context.public_summary(),
             },
         )
-        observations = self._call_tool_if_available(KT_AUTHORITY_TOOL_ID, invocation)
+        mount_status = {item["tool_id"]: item["status"] for item in tool_mounts}
+        observations = (
+            self._call_tool_if_available(KT_AUTHORITY_TOOL_ID, invocation)
+            if mount_status.get(KT_AUTHORITY_TOOL_ID) == "mounted"
+            else []
+        )
         assembled_context = expert_evidence.get("assembled_context") or {}
         context_asset_selection = (
             expert_evidence.get("context_asset_selection")
@@ -467,9 +637,8 @@ class MathTutorAgentRuntime:
             },
             context_summary={"learning_turn_context": context.public_summary()},
         )
-        observations.extend(
-            self._call_tool_if_available(RAG_RETRIEVAL_TOOL_ID, rag_invocation)
-        )
+        if mount_status.get(RAG_RETRIEVAL_TOOL_ID) == "mounted":
+            observations.extend(self._call_tool_if_available(RAG_RETRIEVAL_TOOL_ID, rag_invocation))
         memory_invocation = ToolInvocation(
             tool_id=STUDENT_MEMORY_TOOL_ID,
             turn_id=context.turn_id,
@@ -498,10 +667,53 @@ class MathTutorAgentRuntime:
             },
             context_summary={"learning_turn_context": context.public_summary()},
         )
-        observations.extend(
-            self._call_tool_if_available(STUDENT_MEMORY_TOOL_ID, memory_invocation)
-        )
+        if mount_status.get(STUDENT_MEMORY_TOOL_ID) == "mounted":
+            observations.extend(
+                self._call_tool_if_available(STUDENT_MEMORY_TOOL_ID, memory_invocation)
+            )
         return observations
+
+    def _tool_mount_decisions(
+        self,
+        *,
+        response: MathTutorEventResponse,
+        context: LearningTurnContext,
+    ) -> list[dict[str, str]]:
+        evidence = response.teaching_trace_summary.expert_evidence
+        has_rag = bool(evidence.get("rag_sources"))
+        has_memory = bool(evidence.get("student_memories"))
+        intent_policy = {
+            "answer_submission": {
+                KT_AUTHORITY_TOOL_ID: ("mounted", "答题提交必须保留 KT/DGEKT observation。"),
+                RAG_RETRIEVAL_TOOL_ID: ("mounted", "当前题目可使用数学讲解 citation。"),
+                STUDENT_MEMORY_TOOL_ID: ("skipped", "答题诊断优先当前题目与 KT facts。"),
+            },
+            "next_step_advice": {
+                KT_AUTHORITY_TOOL_ID: ("mounted", "下一步建议需要 KT facts。"),
+                RAG_RETRIEVAL_TOOL_ID: ("mounted", "下一步建议可使用 RAG 讲解证据。"),
+                STUDENT_MEMORY_TOOL_ID: ("mounted", "下一步建议可使用学生记忆策略。"),
+            },
+            "general_chat": {
+                KT_AUTHORITY_TOOL_ID: ("skipped", "概念讲解不挂载答题诊断工具。"),
+                RAG_RETRIEVAL_TOOL_ID: (
+                    ("mounted", "本轮概念讲解有可用 RAG evidence。")
+                    if has_rag
+                    else ("skipped", "本轮没有可用 RAG evidence。")
+                ),
+                STUDENT_MEMORY_TOOL_ID: (
+                    ("mounted", "本轮概念讲解可使用学生记忆。")
+                    if has_memory
+                    else ("skipped", "本轮没有可用学生记忆。")
+                ),
+            },
+        }[context.intent]
+        decisions: list[dict[str, str]] = []
+        for tool_id in (KT_AUTHORITY_TOOL_ID, RAG_RETRIEVAL_TOOL_ID, STUDENT_MEMORY_TOOL_ID):
+            status, reason = intent_policy[tool_id]
+            if self.tool_registry.find(tool_id) is None:
+                status, reason = "blocked", "工具不可用，已保持 local fallback 学习路径。"
+            decisions.append({"tool_id": tool_id, "status": status, "reason": reason})
+        return decisions
 
     def _trace_event(
         self,
@@ -621,6 +833,13 @@ def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _disabled_or_deleted_memory(item: dict[str, Any]) -> bool:
+    metadata = _dict_or_empty(item.get("metadata"))
+    control = _dict_or_empty(metadata.get("memory_control"))
+    status = str(control.get("status") or metadata.get("status") or "")
+    return item.get("asset_type") == "student_memory" and status in {"disabled", "deleted"}
 
 
 def _observation_metrics(

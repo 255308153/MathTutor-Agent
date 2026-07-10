@@ -30,6 +30,7 @@ class LearningTurnContext(BaseModel):
     kt_progress: KTLearningProgress
     context_asset_refs: list[str] = Field(default_factory=list)
     assembled_context_ref: str | None = None
+    context_governance_ref: str | None = None
     tool_observation_refs: list[str] = Field(default_factory=list)
     trace_refs: list[str] = Field(default_factory=list)
     teaching_trace_id: str | None = None
@@ -58,6 +59,12 @@ class LearningTurnContext(BaseModel):
         assembled_context_ref = None
         if isinstance(assembled_context, dict) and assembled_context.get("context_id"):
             assembled_context_ref = str(assembled_context["context_id"])
+        governance = expert_evidence.get("context_governance") or {}
+        governance_ref = (
+            str(governance["governance_id"])
+            if isinstance(governance, dict) and governance.get("governance_id")
+            else None
+        )
         tool_observation_refs = [
             f"tool_observation:{event.metadata['tool_id']}"
             for event in response.teaching_trace
@@ -70,6 +77,7 @@ class LearningTurnContext(BaseModel):
             update={
                 "context_asset_refs": list(dict.fromkeys(context_asset_refs)),
                 "assembled_context_ref": assembled_context_ref,
+                "context_governance_ref": governance_ref,
                 "tool_observation_refs": list(dict.fromkeys(tool_observation_refs)),
                 "trace_refs": list(dict.fromkeys(trace_refs)),
                 "teaching_trace_id": response.trace_id,
@@ -92,6 +100,7 @@ class LearningTurnContext(BaseModel):
             "current_session_id": self.kt_progress.current_session_id,
             "context_asset_refs": self.context_asset_refs,
             "assembled_context_ref": self.assembled_context_ref,
+            "context_governance_ref": self.context_governance_ref,
             "tool_observation_refs": self.tool_observation_refs,
             "trace_refs": self.trace_refs,
             "teaching_trace_id": self.teaching_trace_id,

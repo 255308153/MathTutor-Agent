@@ -896,6 +896,77 @@ button:disabled {
   margin-top: 10px;
 }
 
+.governance-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.governance-summary p,
+.governance-rules p,
+.governance-tool-list p,
+.governance-decision-list p {
+  margin: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.governance-summary p {
+  background: #eef3f8;
+}
+
+.governance-summary strong,
+.governance-summary span,
+.governance-tool-list strong,
+.governance-tool-list span,
+.governance-decision-list strong,
+.governance-decision-list span {
+  display: block;
+}
+
+.governance-summary strong,
+.governance-tool-list strong,
+.governance-decision-list strong {
+  color: #284663;
+  font-size: 0.78rem;
+}
+
+.governance-summary span,
+.governance-tool-list span,
+.governance-decision-list span {
+  margin-top: 4px;
+  color: #17201b;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.governance-rules,
+.governance-tool-list,
+.governance-decision-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.governance-rules p {
+  border-left: 3px solid #4d789d;
+  background: #f5f8fb;
+  color: #31485b;
+  line-height: 1.4;
+}
+
+.governance-tool-list p,
+.governance-decision-list p {
+  border: 1px solid #dde5e0;
+  background: #fbfcfb;
+}
+
+.governance-decision-list p {
+  border-color: #e4d8bf;
+  background: #fffdf7;
+}
+
 .citation-list {
   display: grid;
   gap: 10px;
@@ -1227,6 +1298,7 @@ pre {
 
   .context-summary,
   .runtime-summary,
+  .governance-summary,
   .context-asset,
   .memory-layout,
   .memory-facts {

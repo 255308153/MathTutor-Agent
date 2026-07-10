@@ -28,6 +28,7 @@ import {
 import type {
   AttributionEvidence,
   ContextAssetEvidence,
+  ContextGovernanceOverview,
   EvidenceGap,
   MathTutorEventResponse,
   ProviderHealthComponent,
@@ -829,6 +830,7 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
   const scorerSummary = attributionScorerSummary(attribution);
   const contextBudget = formatContextBudget(assembledContext);
   const traceOverview = evidence?.trace_overview ?? null;
+  const governance = evidence?.context_governance ?? null;
   const observedToolCount = traceOverview?.tool_calls.filter((tool) => tool.observed).length ?? 0;
 
   return (
@@ -882,6 +884,10 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
                     {stageName(tool.stage)} · {runtimeStatusName(tool.status, tool.observed)} ·{" "}
                     {visibilityName(tool.visibility)}
                   </span>
+                  <small>
+                    {toolMountStatusName(tool.mount_status)}
+                    {tool.mount_reason ? ` · ${tool.mount_reason}` : ""}
+                  </small>
                   <p>{tool.purpose || tool.output_summary || "已注册为 runtime 工具调用。"}</p>
                   <small>
                     {runtimeProviderModeName(tool.provider_mode, tool.provider_modes)} · gaps {tool.provider_gap_count}
@@ -918,6 +924,57 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
           </>
         ) : (
           <p className="muted">等待后端返回标准化 runtime trace_overview。</p>
+        )}
+      </details>
+
+      <details open>
+        <summary>
+          <span><ChevronDown size={17} /> Context Governance</span>
+          <small>{governance ? `${governance.evidence_selection_summary.selected_count ?? 0} 项已选` : "等待治理摘要"}</small>
+        </summary>
+        {governance ? (
+          <>
+            <div className="governance-summary">
+              <p>
+                <strong>Context budget</strong>
+                <span>{governanceBudget(governance)}</span>
+              </p>
+              <p>
+                <strong>Evidence</strong>
+                <span>{governance.evidence_selection_summary.selected_count ?? 0} 已选 · {governance.evidence_selection_summary.clipped_count ?? 0} 裁剪</span>
+              </p>
+              <p>
+                <strong>Response context</strong>
+                <span>{governance.response_context_ref ? "已生成" : "等待生成"}</span>
+              </p>
+            </div>
+            <div className="governance-rules">
+              {governance.evidence_priority_rules.map((rule) => <p key={rule}>{rule}</p>)}
+            </div>
+            <div className="governance-tool-list">
+              {governance.tool_mount_summary.mounted.map((toolId) => (
+                <p key={`mounted-${toolId}`}><strong>{toolName(toolId)}</strong><span>已挂载</span></p>
+              ))}
+              {governance.tool_mount_summary.skipped.map((tool) => (
+                <p key={`skipped-${tool.tool_id}`}><strong>{toolName(tool.tool_id)}</strong><span>已跳过 · {tool.reason}</span></p>
+              ))}
+              {governance.tool_mount_summary.blocked.map((tool) => (
+                <p key={`blocked-${tool.tool_id}`}><strong>{toolName(tool.tool_id)}</strong><span>已阻塞 · {tool.reason}</span></p>
+              ))}
+            </div>
+            {governance.evidence_decisions.filter((item) => item.status !== "selected").length > 0 && (
+              <div className="governance-decision-list">
+                {governance.evidence_decisions.filter((item) => item.status !== "selected").map((item) => (
+                  <p key={`${item.status}-${item.asset_id}`}>
+                    <strong>{contextAssetTypeName(item.asset_type)}</strong>
+                    <span>{item.status === "clipped" ? "已裁剪" : "已排除"} · {item.reason ?? "无原因"}</span>
+                  </p>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="muted">等待后端返回标准化 context governance overview。</p>
         )}
       </details>
 
@@ -1461,6 +1518,27 @@ function formatContextBudget(
     return `${assembledContext.budget_used}/${assembledContext.budget_limit}`;
   }
   return "未记录";
+}
+
+function governanceBudget(governance: ContextGovernanceOverview) {
+  const { budget_used: used, budget_limit: limit } = governance.budget_summary;
+  return typeof used === "number" && typeof limit === "number" ? `${used}/${limit}` : "未记录";
+}
+
+function toolName(toolId: string) {
+  return {
+    kt_authoritative_facts: "KT/DGEKT 权威事实",
+    rag_retrieval_evidence: "RAG 数学证据",
+    student_memory_evidence: "学生记忆证据"
+  }[toolId] ?? toolId;
+}
+
+function toolMountStatusName(status: string | undefined) {
+  return { mounted: "已挂载", skipped: "已跳过", blocked: "已阻塞" }[status ?? ""] ?? "未决策";
+}
+
+function contextAssetTypeName(type: string | undefined) {
+  return assetTypeName(type);
 }
 
 function teachingTypeName(type: string) {
