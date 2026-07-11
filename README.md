@@ -20,6 +20,113 @@ V1 的一句话定位：
 一个基于可解释知识追踪、RAG 和长期学习记忆的数学个人教师 Agent。
 ```
 
+## 项目目标与实现细节
+
+### 项目真正要解决什么
+
+MathTutor Agent 的目标不是把数学题直接交给大模型回答，而是构建一条受控的学习闭环：系统先确认学生当前在做哪一道题、是否答对、过去哪些知识点表现薄弱，再把相关题解、学习偏好和教学策略组装为有限上下文，最后生成讲解或下一步练习建议。
+
+这条闭环的核心是把“学习事实”和“教学表达”分开：
+
+- **学习事实**：服务端判题结果、知识点掌握度、遗忘风险、预测概率、错题和待复习任务，由 `KTStateEngine`、`KTLearningProgress` 和 progress store 维护。
+- **教学证据**：RAG 引用、学生偏好、有效教学策略、工具 observation，只能影响讲解方式、提示节奏和推荐理由。
+- **Agent 编排**：Runtime 根据本轮 intent 选择能力和工具；Context Governance 只负责选择、裁剪和审计上下文，不能改写学习事实。
+
+因此，RAG 告诉系统“可以怎样解释”，Memory 告诉系统“这个学生更适合怎样解释”，KT/DGEKT 告诉系统“学生当前到底学会了什么”。三者不能互相越权。
+
+### 一轮学习请求如何运行
+
+所有请求从 `POST /api/events` 进入。事件至少包含 `student_id`、`session_id`、`type`、`message` 和 `payload`；`type` 可以是 `chat_message`、`answer_submitted`、`hint_requested` 等。
+
+```text
+POST /api/events
+        |
+MathTutorAgentRuntime
+        |
+LearningTurnContext：确定 intent、读取当前 progress 快照
+        |
+MathTutorLearningLoop
+        |
+load_context -> diagnose -> assemble_context -> plan -> generate_response -> update_memory
+        |
+保存学习进度 + TeachingTrace + 返回学生回复与推荐题
+```
+
+`MathTutorAgentRuntime` 把一轮请求分类为 `answer_submission`、`next_step_advice` 或 `general_chat`；Capability Registry 决定本轮是答题诊断、学习规划还是概念讲解。随后 Tool Registry 按意图挂载 KT、RAG、Memory 三类只读 observation：答题时优先保留 KT/DGEKT 和当前题目，概念讲解不会强行挂载答题诊断工具。
+
+### 学生做过的题怎样记录
+
+系统以 `student_id` 为主键保存一份 `KTLearningProgress` 快照。默认使用 SQLite，路径为 `data/local/mathtutor.sqlite`；测试或临时演示可切换为内存 store。
+
+```text
+learning_progress
+  student_id
+  payload_json -> KTLearningProgress
+  updated_at
+
+teaching_traces
+  trace_id / student_id / session_id / event_type
+  payload_json -> 本轮审计摘要与推荐依据
+```
+
+`KTLearningProgress` 中与“学生以前做过什么”直接相关的字段如下：
+
+| 字段 | 内容 | 当前保留策略 | 用途 |
+| --- | --- | --- | --- |
+| `recent_events` | 最近的学习事件；答题事件含 `question_id`、提交答案、服务端补写的 `is_correct`、知识点等 | 最近 30 条 | 近期历史、重复提交检测、模型输入 / 归因 |
+| `concept_states` | 每个知识点的 `mastery`、`forgetting_risk`、`recent_accuracy`、`evidence_count` | 持续累积 | KT 诊断、难度适配、练习规划 |
+| `error_records` | 错题、提交答案、标准答案、错因模式 | 最近 30 条 | 错因讲解与审计 |
+| `review_queue` | 待复习题及加入原因 | 最近 30 条 | 后续复习规划 |
+| `recommendation_history` | 已推荐题、分数和推荐理由 | 最近 30 条 | 避免短期重复推荐 |
+| `pending_question` | 当前推荐、等待作答的题目 | 单条 | 未传 `question_id` 时辅助定位当前题 |
+| `teaching_trace_ids` | 关联的 Trace ID | 最近 50 条 | 连续学习审计 |
+
+这不是一张无限增长的、逐题规范化答题明细表。当前实现保存最近事件和知识点聚合状态，足够支撑默认 demo 的连续学习、错题复习、重复提交保护和风险推荐；长期全量作答档案仍是后续数据层演进方向。
+
+### 答题提交时状态怎样变化
+
+当事件类型是 `answer_submitted` 时，服务端不会信任前端传入的“是否正确”或知识点字段，而是按 `question_id` 从教学内容仓库读取标准答案并重新判题。判题成功后，系统将以下字段写回本轮 `LearningEvent.payload`：
+
+```json
+{
+  "question_id": "q_frac_001",
+  "answer": "1/6",
+  "is_correct": false,
+  "correct_answer": "3/4",
+  "concept_id": "c_fraction_addition",
+  "concept_name": "异分母分数加法",
+  "difficulty": 0.35,
+  "mistake_patterns": ["common_denominator_missing"]
+}
+```
+
+随后 `KTStateEngine.update_from_event(...)` 会把事件加入 `recent_events`，更新对应 `ConceptState`。默认 `MockKTStateEngine` 中，答对会提升 mastery、降低 forgetting risk；答错会降低 mastery、提高 forgetting risk，并写入 `error_records` 与 `review_queue`。真实 DGEKT 模式只在显式配置 checkpoint、数据集和 Q-matrix 后启用；它同样只读取历史事件并输出 KT facts，RAG 与 Memory 不会覆盖这些结果。
+
+对于相同的 `question_id`、答案和已判题结果，系统会检查最近 20 条答题事件并识别为重复提交；重复请求仍可返回诊断和建议，但不会再次更新 mastery、证据计数或长期记忆。
+
+### 上下文如何组装，Agent 实际看到了什么
+
+学习循环先读取 progress、召回相关 Memory、检索 RAG，再由 `LearningContextLayer` 组装五类 context asset：
+
+1. `task_state`：本轮事件、当前题、进度版本和待作答题。
+2. `student_memory`：学习偏好、重复错因、有效策略和反思。
+3. `knowledge_resource`：概念说明、题目解析、错因模式和学习策略引用。
+4. `tool_observation`：KT 诊断、RAG 检索、Memory 召回的标准化摘要。
+5. `trace_reference`：本轮决策与更新来源的审计引用。
+
+Context Governance 按优先级和预算选择资产。KT/DGEKT facts 不参与预算裁剪；当前题目、当前作答和当前学习事件优先保留；无关、低置信度、过期或超预算的 RAG / Memory 会变为 `omitted` 或 `clipped`，仅保留在专家可见的 Trace 中。最终 `ResponseContextPackage` 只包含 selected evidence 和 authority boundary，供未来真实 LLM / response generator 使用。
+
+### 推荐、Trace 与恢复
+
+推荐器从 `concept_states`、KT diagnosis、`recent_events[-10:]` 与 `recommendation_history[-10:]` 中读取信息，组合薄弱知识点匹配、遗忘风险、预测风险、难度适配、近期重复度和学生偏好等分数因子。最近做过或刚推荐过的题会被降低新颖度，避免短时间内重复推荐。
+
+每轮完成后，系统会保存两份不同用途的数据：
+
+- `learning_progress` 保存下一轮需要继续使用的学习快照。
+- `teaching_traces` 保存精简审计记录，包括 intent、progress version、推荐依据和 governance 引用；它用于恢复、排查和 dashboard 展示，不重新计算 mastery。
+
+进程重启后，新的 learning loop 会从同一 SQLite 文件恢复 `KTLearningProgress`；同一学生的概念状态、推荐历史和近期作答仍然可用。Provider 不可用时，local fallback 继续提供本地内容、Mock KT、本地 RAG 和本地 Memory，不让外部依赖故障中断核心学习路径。
+
 ## V1 范围
 
 V1 优先服务一个学生、一个数学学习场景、一条可审计学习闭环。
