@@ -13,10 +13,7 @@ from urllib.parse import unquote, urlparse
 from ..core.config import MathTutorSettings, get_settings
 from ..memory.store import (
     StudentMemory,
-    apply_memory_control,
-    apply_memory_delete,
     memory_dedupe_key,
-    memory_freshness,
 )
 from ..schemas.learning import KTLearningProgress
 from ..schemas.readiness import TrialFeedbackCreate, TrialFeedbackRecord

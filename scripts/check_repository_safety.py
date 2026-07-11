@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend.app.importing.dataset_safety import (
+from backend.app.importing.dataset_safety import (  # noqa: E402
     find_banned_tracked_paths,
     tracked_paths_from_git,
 )

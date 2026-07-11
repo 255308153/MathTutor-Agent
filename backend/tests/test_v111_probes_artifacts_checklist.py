@@ -10,7 +10,6 @@ from backend.app.main import create_app
 from backend.app.provider_health import build_provider_health
 from backend.app.readiness.gate import build_trial_readiness_report
 from backend.app.readiness.probes import run_canary_probes
-from backend.app.schemas.readiness import TrialFeedbackCreate
 from backend.app.storage.sqlite_store import SqliteLearningStore
 
 

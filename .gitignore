@@ -79,3 +79,9 @@ checkpoints/
 
 outputs/
 logs/
+
+# Licensed datasets - keep local only
+XES3G5M/
+
+# Personal job materials — keep local only
+docs/简历草稿*.md
