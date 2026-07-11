@@ -20,112 +20,62 @@ V1 的一句话定位：
 一个基于可解释知识追踪、RAG 和长期学习记忆的数学个人教师 Agent。
 ```
 
-## 项目目标与实现细节
+## 系统模块与架构
 
-### 项目真正要解决什么
-
-MathTutor Agent 的目标不是把数学题直接交给大模型回答，而是构建一条受控的学习闭环：系统先确认学生当前在做哪一道题、是否答对、过去哪些知识点表现薄弱，再把相关题解、学习偏好和教学策略组装为有限上下文，最后生成讲解或下一步练习建议。
-
-这条闭环的核心是把“学习事实”和“教学表达”分开：
-
-- **学习事实**：服务端判题结果、知识点掌握度、遗忘风险、预测概率、错题和待复习任务，由 `KTStateEngine`、`KTLearningProgress` 和 progress store 维护。
-- **教学证据**：RAG 引用、学生偏好、有效教学策略、工具 observation，只能影响讲解方式、提示节奏和推荐理由。
-- **Agent 编排**：Runtime 根据本轮 intent 选择能力和工具；Context Governance 只负责选择、裁剪和审计上下文，不能改写学习事实。
-
-因此，RAG 告诉系统“可以怎样解释”，Memory 告诉系统“这个学生更适合怎样解释”，KT/DGEKT 告诉系统“学生当前到底学会了什么”。三者不能互相越权。
-
-### 一轮学习请求如何运行
-
-所有请求从 `POST /api/events` 进入。事件至少包含 `student_id`、`session_id`、`type`、`message` 和 `payload`；`type` 可以是 `chat_message`、`answer_submitted`、`hint_requested` 等。
+MathTutor Agent 的核心不是“让大模型直接解题”，而是把学习过程拆成可替换、可审计且有权限边界的模块：**KT 生产学习事实，RAG 提供教学证据，Memory 提供个性化策略，Agent Runtime 负责按需编排，Context Governance 负责控制哪些信息能进入回复。**
 
 ```text
-POST /api/events
-        |
-MathTutorAgentRuntime
-        |
-LearningTurnContext：确定 intent、读取当前 progress 快照
-        |
-MathTutorLearningLoop
-        |
-load_context -> diagnose -> assemble_context -> plan -> generate_response -> update_memory
-        |
-保存学习进度 + TeachingTrace + 返回学生回复与推荐题
+LearningEvent / Chat / Answer
+             |
+   Agent Runtime：意图路由、能力选择、工具挂载
+             |
+    +--------+---------+----------------+
+    |                  |                |
+KT / DGEKT Facts   RAG Evidence    Student Memory
+学习状态唯一来源    题目与概念证据     偏好与有效策略
+    |                  |                |
+    +--------- LearningContextLayer ----+
+                         |
+      Context Governance：排序、裁剪、脱敏、审计
+                         |
+       Planner / Response -> TeachingTrace / Provider Health
 ```
 
-`MathTutorAgentRuntime` 把一轮请求分类为 `answer_submission`、`next_step_advice` 或 `general_chat`；Capability Registry 决定本轮是答题诊断、学习规划还是概念讲解。随后 Tool Registry 按意图挂载 KT、RAG、Memory 三类只读 observation：答题时优先保留 KT/DGEKT 和当前题目，概念讲解不会强行挂载答题诊断工具。
+### 1. Agent 思考链路：按需调用，而非每轮全量调用
 
-### 学生做过的题怎样记录
+这里的“思考链路”是系统可观察的决策过程，不暴露模型内部推理。`MathTutorAgentRuntime` 以 `LearningTurnContext` 保存单轮学生、会话、当前事件与学习快照，并按 **Observe -> Route -> Retrieve / Diagnose -> Assemble -> Decide -> Act -> Trace** 组织一次教学回合。
 
-系统以 `student_id` 为主键保存一份 `KTLearningProgress` 快照。默认使用 SQLite，路径为 `data/local/mathtutor.sqlite`；测试或临时演示可切换为内存 store。
+Runtime 先区分答题提交、下一步学习建议和泛化问答等意图，再由 Capability Registry 与 Tool Registry 决定是否需要 KT、RAG 或 Memory：例如“下一步练什么”优先诊断学习状态，“当前题怎么做”优先读取题目与教学证据，闲聊不应触发重型诊断。工具以结构化 observation 返回，并在 TeachingTrace 中留下调用、证据与决策依据，避免“所有请求都检索所有数据”的上下文污染。
 
-```text
-learning_progress
-  student_id
-  payload_json -> KTLearningProgress
-  updated_at
+### 2. 知识追踪与 SAFKT 融合：学习事实的权威层
 
-teaching_traces
-  trace_id / student_id / session_id / event_type
-  payload_json -> 本轮审计摘要与推荐依据
-```
+知识追踪模块把学生的作答历史归纳为知识点掌握度、遗忘风险、预测风险、错因与复习线索，供诊断和练习推荐使用。确定性判题、Progress Store 与 `KTStateEngine` 共同构成事实层：只有它们可以写入学习状态。
 
-`KTLearningProgress` 中与“学生以前做过什么”直接相关的字段如下：
+**当前实现**使用可本地运行的 `MockKTStateEngine`，并提供显式配置的 `DGEKTStateEngine` 适配器。**SAFKT 是后续融合方向**：以 DGEKT 为底座，引入题干语义、知识点图关系与题目难度特征，输出携带模型版本、置信度与归因信息的教学状态。无论底层模型如何演进，RAG、Memory、Context Governance 和 LLM 都只能读取 KT/DGEKT 事实，不能覆盖掌握度或预测结果。
 
-| 字段 | 内容 | 当前保留策略 | 用途 |
-| --- | --- | --- | --- |
-| `recent_events` | 最近的学习事件；答题事件含 `question_id`、提交答案、服务端补写的 `is_correct`、知识点等 | 最近 30 条 | 近期历史、重复提交检测、模型输入 / 归因 |
-| `concept_states` | 每个知识点的 `mastery`、`forgetting_risk`、`recent_accuracy`、`evidence_count` | 持续累积 | KT 诊断、难度适配、练习规划 |
-| `error_records` | 错题、提交答案、标准答案、错因模式 | 最近 30 条 | 错因讲解与审计 |
-| `review_queue` | 待复习题及加入原因 | 最近 30 条 | 后续复习规划 |
-| `recommendation_history` | 已推荐题、分数和推荐理由 | 最近 30 条 | 避免短期重复推荐 |
-| `pending_question` | 当前推荐、等待作答的题目 | 单条 | 未传 `question_id` 时辅助定位当前题 |
-| `teaching_trace_ids` | 关联的 Trace ID | 最近 50 条 | 连续学习审计 |
+### 3. RAG 教学证据模块：题目对齐，而不是泛化检索
 
-这不是一张无限增长的、逐题规范化答题明细表。当前实现保存最近事件和知识点聚合状态，足够支撑默认 demo 的连续学习、错题复习、重复提交保护和风险推荐；长期全量作答档案仍是后续数据层演进方向。
+RAG 模块围绕 canonical `question_id` 与 `concept_id` 组织概念说明、题目解析、常见错因和教学策略，使解释能对齐当前题目与知识点，而不是把相似文本硬拼进答案。它负责回答“怎样解释更有依据”，不负责判断“学生是否已经学会”。
 
-### 答题提交时状态怎样变化
+**当前实现**提供本地、可离线运行的教学 RAG 与可选 Provider 适配器；当引用缺失、映射不完整或检索结果不可信时，系统生成 `evidence_gap` 并降级，不伪造 citation。**后续方向**是 Hybrid GraphRAG：结合稠密检索、关键词检索和教学知识图谱，通过融合、重排与关系扩展提升复杂追问下的召回完整性与抗串题能力。
 
-当事件类型是 `answer_submitted` 时，服务端不会信任前端传入的“是否正确”或知识点字段，而是按 `question_id` 从教学内容仓库读取标准答案并重新判题。判题成功后，系统将以下字段写回本轮 `LearningEvent.payload`：
+### 4. 学生记忆与个性化模块：影响策略，不改写能力
 
-```json
-{
-  "question_id": "q_frac_001",
-  "answer": "1/6",
-  "is_correct": false,
-  "correct_answer": "3/4",
-  "concept_id": "c_fraction_addition",
-  "concept_name": "异分母分数加法",
-  "difficulty": 0.35,
-  "mistake_patterns": ["common_denominator_missing"]
-}
-```
+Memory 模块沉淀学生偏好、重复错因、有效教学策略与学习反思，并按学生、会话、题目、知识点、新鲜度和置信度进行召回。它帮助 Planner 选择提示颗粒度、讲解风格和复习节奏，让跨会话辅导连续而不过度依赖单轮聊天记录。
 
-随后 `KTStateEngine.update_from_event(...)` 会把事件加入 `recent_events`，更新对应 `ConceptState`。默认 `MockKTStateEngine` 中，答对会提升 mastery、降低 forgetting risk；答错会降低 mastery、提高 forgetting risk，并写入 `error_records` 与 `review_queue`。真实 DGEKT 模式只在显式配置 checkpoint、数据集和 Q-matrix 后启用；它同样只读取历史事件并输出 KT facts，RAG 与 Memory 不会覆盖这些结果。
+当前提供本地持久化实现与 opt-in Mem0 Adapter，并支持记忆启用、停用和删除等生命周期控制。被停用的记忆不会进入学生可见回复，被删除的记忆不会再被检索或组装；Memory 只能调整教学策略，不能写入 mastery、weak concepts 或 prediction probability。
 
-对于相同的 `question_id`、答案和已判题结果，系统会检查最近 20 条答题事件并识别为重复提交；重复请求仍可返回诊断和建议，但不会再次更新 mastery、证据计数或长期记忆。
+### 5. Context Governance：教学 Agent 的 Evidence Firewall
 
-### 上下文如何组装，Agent 实际看到了什么
+`LearningContextLayer` 将当前任务、KT 诊断、RAG 引用、Memory 与工具 observation 统一为 context assets。V1.10 的 Context Governance 再按“**KT/DGEKT facts > 当前任务 > 工具快照 > 相关 Memory / RAG**”执行优先级、预算、裁剪与脱敏策略，并记录 selected、clipped、omitted 的原因。
 
-学习循环先读取 progress、召回相关 Memory、检索 RAG，再由 `LearningContextLayer` 组装五类 context asset：
+最终对回复层只暴露 selected-only `ResponseContextPackage`。这条边界隔离低置信度证据、过期记忆和外部 Provider 的原始 payload，也保证上下文治理只能编排与审计，不能改写 KT/DGEKT、RAG 或 Memory 的原始状态。
 
-1. `task_state`：本轮事件、当前题、进度版本和待作答题。
-2. `student_memory`：学习偏好、重复错因、有效策略和反思。
-3. `knowledge_resource`：概念说明、题目解析、错因模式和学习策略引用。
-4. `tool_observation`：KT 诊断、RAG 检索、Memory 召回的标准化摘要。
-5. `trace_reference`：本轮决策与更新来源的审计引用。
+### 6. 可观测性、Fallback 与试用边界
 
-Context Governance 按优先级和预算选择资产。KT/DGEKT facts 不参与预算裁剪；当前题目、当前作答和当前学习事件优先保留；无关、低置信度、过期或超预算的 RAG / Memory 会变为 `omitted` 或 `clipped`，仅保留在专家可见的 Trace 中。最终 `ResponseContextPackage` 只包含 selected evidence 和 authority boundary，供未来真实 LLM / response generator 使用。
+`TeachingTrace` 记录每回合的意图、工具调用、学习诊断、推荐依据与治理决策；Provider Health 与 Readiness Gate 统一呈现本地 fallback、可选真实 Provider 和缺失配置的状态。默认路径始终可用本地内容、Mock KT、本地 RAG 与本地 Memory 演示核心学习闭环。
 
-### 推荐、Trace 与恢复
-
-推荐器从 `concept_states`、KT diagnosis、`recent_events[-10:]` 与 `recommendation_history[-10:]` 中读取信息，组合薄弱知识点匹配、遗忘风险、预测风险、难度适配、近期重复度和学生偏好等分数因子。最近做过或刚推荐过的题会被降低新颖度，避免短时间内重复推荐。
-
-每轮完成后，系统会保存两份不同用途的数据：
-
-- `learning_progress` 保存下一轮需要继续使用的学习快照。
-- `teaching_traces` 保存精简审计记录，包括 intent、progress version、推荐依据和 governance 引用；它用于恢复、排查和 dashboard 展示，不重新计算 mastery。
-
-进程重启后，新的 learning loop 会从同一 SQLite 文件恢复 `KTLearningProgress`；同一学生的概念状态、推荐历史和近期作答仍然可用。Provider 不可用时，local fallback 继续提供本地内容、Mock KT、本地 RAG 和本地 Memory，不让外部依赖故障中断核心学习路径。
+当前 V1.11 将“能运行”和“可进入内部试用”分开处理：默认 fallback 可运行，但真实 Provider、模型 artifact 与 canary 验证未完成时会显式标记为 `not_ready` 或 `degraded`，不会把降级运行误报为试用就绪。
 
 ## V1 范围
 
