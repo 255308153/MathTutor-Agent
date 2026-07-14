@@ -283,8 +283,8 @@ class MathTutorLearningLoop:
                             "source": item.get("source"),
                             "concept_id": item.get("concept_id"),
                             "question_id": item.get("question_id"),
-                            "assist2017_question_id": item.get("assist2017_question_id"),
-                            "assist2017_concept_id": item.get("assist2017_concept_id"),
+                            "xes3g5m_question_id": item.get("xes3g5m_question_id"),
+                            "xes3g5m_concept_id": item.get("xes3g5m_concept_id"),
                             "coverage": item.get("coverage"),
                         }
                         for item in state.rag_context
@@ -318,7 +318,7 @@ class MathTutorLearningLoop:
                 category="unsupported_dgekt_target",
                 stage="diagnose",
                 message=f"DGEKT 目标题不受支持：{exc}",
-                actionable_hint="检查 target question 是否在 ASSIST2017 Q-matrix 范围内。",
+                actionable_hint="检查 target question 是否在 XES3G5M KC routes 范围内。",
                 severity="warning",
                 recoverable=True,
             )
@@ -331,7 +331,7 @@ class MathTutorLearningLoop:
                 category="missing_mapping",
                 stage="diagnose",
                 message=f"DGEKT 映射失败：{exc}",
-                actionable_hint="补齐 canonical mapping，或修正事件中的 ASSIST2017 question/concept id。",
+                actionable_hint="补齐 canonical mapping，或修正事件中的 XES3G5M question/concept id。",
                 severity="warning",
                 recoverable=True,
             )
@@ -349,7 +349,7 @@ class MathTutorLearningLoop:
                     category="scorer_failure",
                     stage="diagnose",
                     message=f"解释证据 scorer 失败：{exc}",
-                    actionable_hint="检查 DGEKT attribution scorer 输入、Q-matrix 和 checkpoint 配置。",
+                    actionable_hint="检查 DGEKT attribution scorer 输入、KC routes 和 checkpoint 配置。",
                     severity="warning",
                     recoverable=True,
                 )
@@ -1283,24 +1283,24 @@ class MathTutorLearningLoop:
                 or self.content.content_availability(grade.question),
                 "content_provenance": self._question_provenance(grade.question),
                 "canonical_mapping": grade.question.get("canonical_mapping"),
-                "q_matrix_reference": grade.question.get("q_matrix_reference"),
+                "kc_routes_reference": grade.question.get("kc_routes_reference"),
             }
         )
         explicit_assist_question_id = state.learning_event.payload.get(
-            "assist2017_question_id"
+            "xes3g5m_question_id"
         ) or state.learning_event.payload.get("dgekt_question_id")
-        grade_assist_question_id = grade.question.get("assist2017_question_id") or grade.question.get(
+        grade_assist_question_id = grade.question.get("xes3g5m_question_id") or grade.question.get(
             "dgekt_question_id"
         )
         mapping_matches_payload = (
             explicit_assist_question_id is None
             or str(explicit_assist_question_id) == str(grade_assist_question_id)
         )
-        for key in ("assist2017_question_id", "dgekt_question_id"):
+        for key in ("xes3g5m_question_id", "dgekt_question_id"):
             if key in grade.question and key not in state.learning_event.payload:
                 state.learning_event.payload[key] = grade.question[key]
         if mapping_matches_payload:
-            for key in ("assist2017_concept_id", "dgekt_concept_id"):
+            for key in ("xes3g5m_concept_id", "dgekt_concept_id"):
                 if key in grade.question and key not in state.learning_event.payload:
                     state.learning_event.payload[key] = grade.question[key]
 
@@ -1317,8 +1317,8 @@ class MathTutorLearningLoop:
         payload["content_availability"] = availability
         payload["content_provenance"] = self._question_provenance(question)
         payload["canonical_mapping"] = canonical
-        payload["q_matrix_reference"] = question.get("q_matrix_reference") or canonical.get(
-            "q_matrix_reference"
+        payload["kc_routes_reference"] = question.get("kc_routes_reference") or canonical.get(
+            "kc_routes_reference"
         )
 
     def _record_partial_content_gap_if_needed(
@@ -1363,16 +1363,16 @@ class MathTutorLearningLoop:
         return {
             "canonical_question_id": question.get("question_id") or canonical.get("question_id"),
             "canonical_concept_id": question.get("concept_id") or canonical.get("concept_id"),
-            "assist2017_question_id": question.get("assist2017_question_id")
-            or canonical.get("assist2017_question_id"),
-            "assist2017_concept_id": question.get("assist2017_concept_id")
-            or canonical.get("assist2017_concept_id"),
+            "xes3g5m_question_id": question.get("xes3g5m_question_id")
+            or canonical.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": question.get("xes3g5m_concept_id")
+            or canonical.get("xes3g5m_concept_id"),
             "missing_fields": list(availability.get("missing_fields", [])),
             "missing_reason_codes": list(availability.get("missing_reason_codes", [])),
             "content_availability": availability,
             "provenance": provenance,
-            "q_matrix_reference": question.get("q_matrix_reference")
-            or canonical.get("q_matrix_reference"),
+            "kc_routes_reference": question.get("kc_routes_reference")
+            or canonical.get("kc_routes_reference"),
         }
 
     def _question_provenance(self, question: dict[str, Any]) -> dict[str, Any]:
@@ -1394,12 +1394,12 @@ class MathTutorLearningLoop:
             or canonical.get("question_id"),
             "canonical_concept_id": payload.get("concept_id")
             or canonical.get("concept_id"),
-            "assist2017_question_id": payload.get("assist2017_question_id")
-            or canonical.get("assist2017_question_id"),
-            "assist2017_concept_id": payload.get("assist2017_concept_id")
-            or canonical.get("assist2017_concept_id"),
-            "q_matrix_reference": payload.get("q_matrix_reference")
-            or canonical.get("q_matrix_reference"),
+            "xes3g5m_question_id": payload.get("xes3g5m_question_id")
+            or canonical.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": payload.get("xes3g5m_concept_id")
+            or canonical.get("xes3g5m_concept_id"),
+            "kc_routes_reference": payload.get("kc_routes_reference")
+            or canonical.get("kc_routes_reference"),
             "content_availability": payload.get("content_availability"),
             "provenance": payload.get("content_provenance"),
         }
@@ -1467,12 +1467,12 @@ class MathTutorLearningLoop:
             "concept_id": question.get("concept_id"),
             "concept_name": question.get("concept_name"),
             "teaching_type": question.get("teaching_type"),
-            "assist2017_question_id": question.get("assist2017_question_id")
-            or canonical.get("assist2017_question_id"),
-            "assist2017_concept_id": question.get("assist2017_concept_id")
-            or canonical.get("assist2017_concept_id"),
-            "q_matrix_reference": question.get("q_matrix_reference")
-            or canonical.get("q_matrix_reference"),
+            "xes3g5m_question_id": question.get("xes3g5m_question_id")
+            or canonical.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": question.get("xes3g5m_concept_id")
+            or canonical.get("xes3g5m_concept_id"),
+            "kc_routes_reference": question.get("kc_routes_reference")
+            or canonical.get("kc_routes_reference"),
             "mapping_source": (
                 question.get("provenance", {}).get("mapping_source")
                 or canonical.get("source")

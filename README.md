@@ -13,6 +13,8 @@
 |------|------|
 | [系统总设计.md](./重构思考/系统总设计.md) | 页面模块、状态同步、产品边界 |
 | [思考链路.md](./重构思考/思考链路.md) | 意图路由、按需工具调用、DAG / Trace |
+| [记忆模块.md](./重构思考/记忆模块.md) | 学生记忆模型、读写边界、与 RAG/KT 分工 |
+| [RAG模块.md](./重构思考/RAG模块.md) | RAG 目标态：XES3G5M 语料、检索、编排与验收 |
 | [简历修改版_MathTutor_Agent.md](./重构思考/简历修改版_MathTutor_Agent.md) | 各模块技术设计口径与亮点拆解 |
 
 ---
@@ -216,7 +218,7 @@ Observe -> Route -> Retrieve / Diagnose -> Assemble -> Decide -> Act -> Trace
 
 | 层次 | 设计 |
 |------|------|
-| **当前** | `MockKTStateEngine` 本地可跑；`DGEKTStateEngine` 适配器显式 opt-in（checkpoint / 数据 / Q-matrix） |
+| **当前** | `MockKTStateEngine` 本地可跑；`DGEKTStateEngine` 适配器显式 opt-in（checkpoint / 数据 / KC routes） |
 | **后续** | 以 DGEKT 为底座融合题干语义、知识点图、难度特征的 SAFKT；输出带 model version、confidence、attribution、calibration 的 `TeachingState` |
 
 **边界：** RAG、Memory、Context Governance、LLM **只能读** KT facts，不能覆盖 mastery 或 prediction。Offline attribution 只解释预测，不覆盖预测事实。
@@ -227,11 +229,13 @@ Observe -> Route -> Retrieve / Diagnose -> Assemble -> Decide -> Act -> Trace
 
 **设计目标：** **题目对齐**的检索，而不是泛化相似文本硬塞进回答；负责「怎样解释更有依据」，不负责「学生是否已学会」。
 
+完整目标态见 **[重构思考/RAG模块.md](./重构思考/RAG模块.md)**（数据底座 **XES3G5M**）。
+
 **资源组织：**
 
-- 以 canonical `question_id` / `concept_id` 对齐。
+- 以 XES3G5M 的 `question_id` / KC（`concept_id` / `kc_routes`）对齐，不与旧题库题号混用。
 - 文档类型：concept note、question explanation、mistake pattern、learning strategy。
-- 携带 coverage、provenance、ASSIST2017 mapping 等元数据。
+- 携带 coverage、provenance 等元数据。
 
 **检索与缺口治理：**
 
@@ -243,8 +247,9 @@ Observe -> Route -> Retrieve / Diagnose -> Assemble -> Decide -> Act -> Trace
 
 | 层次 | 设计 |
 |------|------|
-| **当前** | 本地教学 RAG + 可选 VikingDB / OpenViking adapter |
-| **后续** | Hybrid GraphRAG：稠密 + 关键词 + 教学知识图谱，RRF 融合、重排、多跳扩展与 metadata filter |
+| **当前** | 本地教学 RAG + 可选 VikingDB / OpenViking adapter（demo / 既有 fixture 路径） |
+| **目标态** | XES3G5M 语料 + Hybrid（BM25 + dense + metadata filter） |
+| **终局** | Hybrid GraphRAG：稠密 + 关键词 + 教学知识图谱，RRF 融合、重排、多跳扩展 |
 
 ---
 

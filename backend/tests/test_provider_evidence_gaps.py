@@ -306,7 +306,7 @@ def _viking_adapter(
     return VikingKnowledgeRAGAdapter(
         provider_name="openviking",
         provider_mode="live_provider",
-        collection="assist2017-smoke",
+        collection="xes3g5m-smoke",
         client=client,
         fallback=fallback,
     )

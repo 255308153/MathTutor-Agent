@@ -18,12 +18,12 @@ from backend.app.storage.progress_store import InMemoryProgressStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPORTED_CONTENT = ROOT / "data" / "imported" / "assist2017_fixture" / "content_import.json"
-IMPORTED_RAG = ROOT / "data" / "imported" / "assist2017_fixture" / "rag_documents.json"
-SMOKE_DATASET = ROOT / "data" / "imported" / "assist2017_fixture" / "smoke_dataset.json"
+IMPORTED_CONTENT = ROOT / "data" / "imported" / "xes3g5m_fixture" / "content_import.json"
+IMPORTED_RAG = ROOT / "data" / "imported" / "xes3g5m_fixture" / "rag_documents.json"
+SMOKE_DATASET = ROOT / "data" / "imported" / "xes3g5m_fixture" / "smoke_dataset.json"
 
 
-def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
+def test_xes3g5m_fixture_smoke_recommend_answer_trace_alignment(
     monkeypatch,
 ) -> None:
     repository, client = _imported_client(monkeypatch)
@@ -31,14 +31,14 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
     recommend_step, answer_step = smoke["steps"]
     target_question_id = smoke["canonical_question_id"]
     target_concept_id = smoke["canonical_concept_id"]
-    target_assist_question_id = smoke["assist2017_question_id"]
-    target_assist_concept_id = smoke["assist2017_concept_id"]
+    target_assist_question_id = smoke["xes3g5m_question_id"]
+    target_assist_concept_id = smoke["xes3g5m_concept_id"]
 
     recommendation_response = client.post(
         "/api/events",
         json={
-            "session_id": "session-assist2017-smoke-001",
-            "student_id": "student-assist2017-smoke-001",
+            "session_id": "session-xes3g5m-smoke-001",
+            "student_id": "student-xes3g5m-smoke-001",
             "type": recommend_step["event_type"],
             "message": recommend_step["message"],
             "payload": recommend_step["payload"],
@@ -53,10 +53,10 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
 
     assert recommended_question["question_id"] == target_question_id
     assert recommended_question["concept_id"] == target_concept_id
-    assert recommended_question["assist2017_question_id"] == target_assist_question_id
-    assert recommended_question["assist2017_concept_id"] == target_assist_concept_id
+    assert recommended_question["xes3g5m_question_id"] == target_assist_question_id
+    assert recommended_question["xes3g5m_concept_id"] == target_assist_concept_id
     assert recommended_question["content_availability"]["status"] == "available"
-    assert f"ASSIST2017 question {target_assist_question_id}" in recommended_question["reason"]
+    assert f"XES3G5M question {target_assist_question_id}" in recommended_question["reason"]
     assert "参考：" in recommendation["response"]
     assert any(
         source["concept_id"] == target_concept_id
@@ -75,8 +75,8 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
     answer_response = client.post(
         "/api/events",
         json={
-            "session_id": "session-assist2017-smoke-001",
-            "student_id": "student-assist2017-smoke-001",
+            "session_id": "session-xes3g5m-smoke-001",
+            "student_id": "student-xes3g5m-smoke-001",
             "type": answer_step["event_type"],
             "message": answer_step["message"],
             "payload": answer_step["payload"],
@@ -102,11 +102,11 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
     assert answer["state_summary"]["weak_concepts"][0]["concept_id"] == target_concept_id
     assert target_content["canonical_question_id"] == target_question_id
     assert target_content["canonical_concept_id"] == target_concept_id
-    assert target_content["assist2017_question_id"] == target_assist_question_id
-    assert target_content["assist2017_concept_id"] == target_assist_concept_id
+    assert target_content["xes3g5m_question_id"] == target_assist_question_id
+    assert target_content["xes3g5m_concept_id"] == target_assist_concept_id
     assert target_content["content_availability"]["status"] == "available"
-    assert target_content["provenance"]["source_row_id"] == "assist2017-fixture-row-1"
-    assert load_trace["metadata"]["grading_source"] == "assist2017_content_import"
+    assert target_content["provenance"]["source_row_id"] == "xes3g5m-fixture-row-1"
+    assert load_trace["metadata"]["grading_source"] == "xes3g5m_content_import"
     assert load_trace["metadata"]["is_correct"] is False
 
     assert diagnose_trace["metadata"]["kt_engine"] == "mock"
@@ -150,7 +150,7 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
     assert any(
         target["question_id"] == target_question_id
         and target["concept_id"] == target_concept_id
-        and target["assist2017_question_id"] == target_assist_question_id
+        and target["xes3g5m_question_id"] == target_assist_question_id
         for target in plan_trace["metadata"]["selected_canonical_targets"]
     )
     assert f"question:{target_question_id}" in plan_trace["evidence_refs"]
@@ -163,7 +163,7 @@ def test_assist2017_fixture_smoke_recommend_answer_trace_alignment(
     )
 
 
-def test_assist2017_smoke_surfaces_partial_and_missing_evidence(
+def test_xes3g5m_smoke_surfaces_partial_and_missing_evidence(
     monkeypatch,
 ) -> None:
     _repository, client = _imported_client(monkeypatch, rag=NoEvidenceRAG())
@@ -171,12 +171,12 @@ def test_assist2017_smoke_surfaces_partial_and_missing_evidence(
     response = client.post(
         "/api/events",
         json={
-            "session_id": "session-assist2017-gap-smoke-001",
-            "student_id": "student-assist2017-gap-smoke-001",
+            "session_id": "session-xes3g5m-gap-smoke-001",
+            "student_id": "student-xes3g5m-gap-smoke-001",
             "type": "answer_submitted",
             "message": "提交一题内容不完整且缺少 RAG evidence 的 fixture 题",
             "payload": {
-                "question_id": "q_assist2017_000005",
+                "question_id": "q_xes3g5m_000005",
                 "answer": "7",
             },
         },
@@ -193,9 +193,9 @@ def test_assist2017_smoke_surfaces_partial_and_missing_evidence(
     assert body["state_summary"]["progress_version"] == 1
     assert expert["rag_sources"] == []
     assert expert["assembled_context"]["normalized_context"]["knowledge_resource"] == []
-    assert target_content["canonical_question_id"] == "q_assist2017_000005"
-    assert target_content["canonical_concept_id"] == "c_assist2017_0003"
-    assert target_content["assist2017_question_id"] == 5
+    assert target_content["canonical_question_id"] == "q_xes3g5m_000005"
+    assert target_content["canonical_concept_id"] == "c_xes3g5m_0003"
+    assert target_content["xes3g5m_question_id"] == 5
     assert target_content["content_availability"]["status"] == "partial"
     assert target_content["content_availability"]["missing_fields"] == ["explanation"]
     assert any(record["code"] == "partial_teaching_content" for record in expert["error_records"])

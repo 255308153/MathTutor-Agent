@@ -47,7 +47,7 @@ class ConceptState(BaseModel):
 class KTLearningProgress(BaseModel):
     student_id: str
     subject: str = "math"
-    dataset: str = "assist2017"
+    dataset: str = "xes3g5m"
     current_session_id: str = ""
     concept_states: list[ConceptState] = Field(default_factory=list)
     recent_events: list[LearningEvent] = Field(default_factory=list)
@@ -72,8 +72,8 @@ class KTDiagnosis(BaseModel):
 class AttributionEvidence(BaseModel):
     target_question_id: str
     target_concept_id: str | None = None
-    target_assist2017_question_id: int | None = None
-    target_assist2017_concept_id: int | None = None
+    target_xes3g5m_question_id: int | None = None
+    target_xes3g5m_concept_id: int | None = None
     prediction_probability: float | None = None
     evidence_status: str | None = None
     evidence_source: str | None = None
@@ -150,8 +150,8 @@ class MathTutorState(BaseModel):
                         "source": item.get("source"),
                         "concept_id": item.get("concept_id"),
                         "question_id": item.get("question_id"),
-                        "assist2017_question_id": item.get("assist2017_question_id"),
-                        "assist2017_concept_id": item.get("assist2017_concept_id"),
+                        "xes3g5m_question_id": item.get("xes3g5m_question_id"),
+                        "xes3g5m_concept_id": item.get("xes3g5m_concept_id"),
                         "canonical_mapping": item.get("canonical_mapping"),
                         "provenance": item.get("provenance"),
                         "coverage": item.get("coverage"),

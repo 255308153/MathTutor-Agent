@@ -43,24 +43,24 @@ class FakeDGEKTModel:
 def write_dgekt_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     checkpoint = tmp_path / "save2017model.pkl"
     checkpoint.write_bytes(b"not-a-real-checkpoint")
-    q_matrix = tmp_path / "2017.csv"
-    q_matrix.write_text(
+    kc_routes = tmp_path / "2017.csv"
+    kc_routes.write_text(
         "\n".join("1,0" if index % 2 == 0 else "0,1" for index in range(30)),
         encoding="utf-8",
     )
-    dataset_dir = tmp_path / "assist2017"
+    dataset_dir = tmp_path / "xes3g5m"
     dataset_dir.mkdir()
-    (dataset_dir / "assist2017_pid_train.csv").write_text("train\n", encoding="utf-8")
-    (dataset_dir / "assist2017_pid_test.csv").write_text("test\n", encoding="utf-8")
-    return checkpoint, dataset_dir, q_matrix
+    (dataset_dir / "xes3g5m_pid_train.csv").write_text("train\n", encoding="utf-8")
+    (dataset_dir / "xes3g5m_pid_test.csv").write_text("test\n", encoding="utf-8")
+    return checkpoint, dataset_dir, kc_routes
 
 
 def write_dgekt_fraction_fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     rows = ["1,0" if index % 2 == 0 else "0,1" for index in range(30)]
     rows[2] = "0,1"
-    q_matrix.write_text("\n".join(rows), encoding="utf-8")
-    return checkpoint, dataset_dir, q_matrix
+    kc_routes.write_text("\n".join(rows), encoding="utf-8")
+    return checkpoint, dataset_dir, kc_routes
 
 
 def patch_fake_dgekt_runtime(monkeypatch: pytest.MonkeyPatch, checkpoint: Path) -> None:
@@ -70,7 +70,7 @@ def patch_fake_dgekt_runtime(monkeypatch: pytest.MonkeyPatch, checkpoint: Path) 
             device=device,
             metadata={
                 "engine_name": "dgekt",
-                "dataset": "assist2017",
+                "dataset": "xes3g5m",
                 "checkpoint_path": str(checkpoint),
                 "epoch": 26,
                 "auc": 0.7866464407565317,
@@ -115,44 +115,44 @@ def test_dgekt_engine_requires_checkpoint_path() -> None:
 def test_dgekt_validation_reports_missing_dataset_files(tmp_path: Path) -> None:
     checkpoint = tmp_path / "save2017model.pkl"
     checkpoint.write_bytes(b"not-a-real-checkpoint")
-    q_matrix = tmp_path / "2017.csv"
-    q_matrix.write_text("1,0,1\n", encoding="utf-8")
-    dataset_dir = tmp_path / "assist2017"
+    kc_routes = tmp_path / "2017.csv"
+    kc_routes.write_text("1,0,1\n", encoding="utf-8")
+    dataset_dir = tmp_path / "xes3g5m"
     dataset_dir.mkdir()
 
-    with pytest.raises(DGEKTConfigurationError, match="assist2017_pid_train.csv"):
+    with pytest.raises(DGEKTConfigurationError, match="xes3g5m_pid_train.csv"):
         DGEKTStateEngine.validate_configuration(
-            dataset="assist2017",
+            dataset="xes3g5m",
             checkpoint_path=str(checkpoint),
             dataset_dir=str(dataset_dir),
-            q_matrix_path=str(q_matrix),
+            kc_routes_path=str(kc_routes),
         )
 
 
 def test_dgekt_validation_accepts_required_local_files(tmp_path: Path) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
 
     paths = DGEKTStateEngine.validate_configuration(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
 
     assert paths.checkpoint_path == checkpoint
     assert paths.dataset_dir == dataset_dir
-    assert paths.q_matrix_path == q_matrix
+    assert paths.kc_routes_path == kc_routes
 
 
 def test_dgekt_checkpoint_validation_requires_expected_keys(tmp_path: Path) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
 
     engine = object.__new__(DGEKTStateEngine)
     engine.paths = DGEKTStateEngine.validate_configuration(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
 
     with pytest.raises(DGEKTCheckpointError, match="model_state_dict"):
@@ -163,13 +163,13 @@ def test_dgekt_engine_matches_kt_contract_shape(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(student_id="student-dgekt-contract")
     event = LearningEvent(
@@ -177,19 +177,19 @@ def test_dgekt_engine_matches_kt_contract_shape(
         student_id="student-dgekt-contract",
         type="answer_submitted",
         message="答案是 1/2",
-        payload={"question_id": "assist2017:1", "is_correct": True},
+        payload={"question_id": "xes3g5m:1", "is_correct": True},
     )
 
     dgekt_updated = engine.update_from_event(progress, event)
-    dgekt_diagnosis = engine.diagnose(dgekt_updated, target_question_id="assist2017:2")
-    dgekt_evidence = engine.explain_prediction(dgekt_updated, target_question_id="assist2017:2")
+    dgekt_diagnosis = engine.diagnose(dgekt_updated, target_question_id="xes3g5m:2")
+    dgekt_evidence = engine.explain_prediction(dgekt_updated, target_question_id="xes3g5m:2")
 
     mock_progress = KTLearningProgress(student_id="student-mock-contract")
     mock_updated = MockKTStateEngine().update_from_event(mock_progress, event)
-    mock_diagnosis = MockKTStateEngine().diagnose(mock_updated, target_question_id="assist2017:2")
+    mock_diagnosis = MockKTStateEngine().diagnose(mock_updated, target_question_id="xes3g5m:2")
     mock_evidence = MockKTStateEngine().explain_prediction(
         mock_updated,
-        target_question_id="assist2017:2",
+        target_question_id="xes3g5m:2",
     )
 
     for diagnosis in (dgekt_diagnosis, mock_diagnosis):
@@ -200,7 +200,7 @@ def test_dgekt_engine_matches_kt_contract_shape(
 
     for evidence in (dgekt_evidence, mock_evidence):
         assert isinstance(evidence, AttributionEvidence)
-        assert evidence.target_question_id == "assist2017:2"
+        assert evidence.target_question_id == "xes3g5m:2"
         assert isinstance(evidence.top_paths, list)
         assert isinstance(evidence.key_history, list)
         assert isinstance(evidence.weak_concepts, list)
@@ -212,15 +212,15 @@ def test_dgekt_engine_matches_kt_contract_shape(
     assert dgekt_evidence.top_paths[0]["engine"] == "dgekt"
     assert dgekt_evidence.top_paths[0]["partial_evidence"] is True
     assert dgekt_evidence.top_paths[0]["evidence_status"] == "partial"
-    assert dgekt_evidence.top_paths[0]["history_assist2017_question_id"] == 1
-    assert dgekt_evidence.top_paths[0]["target_assist2017_question_id"] == 2
+    assert dgekt_evidence.top_paths[0]["history_xes3g5m_question_id"] == 1
+    assert dgekt_evidence.top_paths[0]["target_xes3g5m_question_id"] == 2
     assert "concept_relation_strength" in dgekt_evidence.top_paths[0]
     assert "path_weight" in dgekt_evidence.top_paths[0]
     assert dgekt_evidence.top_paths[0]["path_strength"] == dgekt_evidence.top_paths[0]["path_weight"]
     assert "relation_strength" in dgekt_evidence.top_paths[0]
-    assert dgekt_evidence.top_paths[0]["relation_source"] == "q_matrix_recent_history_proxy"
-    assert dgekt_evidence.key_history[0]["assist2017_question_id"] == 1
-    assert "ASSIST2017 Q1" in dgekt_evidence.key_history[0]["readable_summary"]
+    assert dgekt_evidence.top_paths[0]["relation_source"] == "kc_routes_recent_history_proxy"
+    assert dgekt_evidence.key_history[0]["xes3g5m_question_id"] == 1
+    assert "XES3G5M Q1" in dgekt_evidence.key_history[0]["readable_summary"]
     assert dgekt_evidence.prediction_probability == 0.2
     assert dgekt_diagnosis.prediction_probability == 0.2
 
@@ -229,13 +229,13 @@ def test_dgekt_online_scorer_evidence_shape_and_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(
         student_id="student-dgekt-scorer",
@@ -248,59 +248,59 @@ def test_dgekt_online_scorer_evidence_shape_and_provenance(
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
                     "concept_name": "异分母分数加法",
-                    "assist2017_question_id": 1,
+                    "xes3g5m_question_id": 1,
                     "is_correct": False,
                 },
             )
         ],
     )
 
-    evidence = engine.explain_prediction(progress, target_question_id="assist2017:3")
+    evidence = engine.explain_prediction(progress, target_question_id="xes3g5m:3")
     top_path = evidence.top_paths[0]
 
     assert evidence.scorer["name"] == "dgekt_online_graph_proxy_scorer"
-    assert evidence.scorer["relation_source"] == "q_matrix_recent_history_proxy"
+    assert evidence.scorer["relation_source"] == "kc_routes_recent_history_proxy"
     assert evidence.provenance["offline_path_scorer_available"] is False
-    assert evidence.raw_model_target["assist2017_question_id"] == 3
-    assert evidence.canonical_mapping["q_matrix_reference"]["concept_columns"] == [1]
-    assert evidence.mapped_teaching_content["mapping_status"] == "q_matrix_only"
+    assert evidence.raw_model_target["xes3g5m_question_id"] == 3
+    assert evidence.canonical_mapping["kc_routes_reference"]["concept_columns"] == [1]
+    assert evidence.mapped_teaching_content["mapping_status"] == "kc_routes_only"
     assert evidence.partial_evidence is True
     assert "offline DGEKT explainability path scorer" in evidence.partial_evidence_reason
     assert top_path["scorer_name"] == "dgekt_online_graph_proxy_scorer"
     assert top_path["path_strength"] == top_path["path_weight"]
     assert top_path["relation_strength"] == 1.0
-    assert top_path["relation_source"] == "q_matrix_recent_history_proxy"
+    assert top_path["relation_source"] == "kc_routes_recent_history_proxy"
     assert top_path["weak_concept_hit"] is True
     assert top_path["weak_concept_evidence"][0]["concept_id"] == "c_fraction_addition"
     assert top_path["partial_evidence"] is True
     assert "offline DGEKT explainability path scorer" in top_path["partial_evidence_reason"]
-    assert "ASSIST2017 Q1" in evidence.key_history[0]["readable_summary"]
+    assert "XES3G5M Q1" in evidence.key_history[0]["readable_summary"]
 
 
 def test_dgekt_online_scorer_marks_no_history_partial_reason(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
 
     evidence = engine.explain_prediction(
         KTLearningProgress(student_id="student-dgekt-no-history"),
-        target_question_id="assist2017:1",
+        target_question_id="xes3g5m:1",
     )
 
     assert evidence.partial_evidence is True
     assert evidence.evidence_status == "partial"
-    assert evidence.partial_evidence_reason == "No graded ASSIST2017 answer history is available."
+    assert evidence.partial_evidence_reason == "No graded XES3G5M answer history is available."
     assert evidence.scorer["name"] == "dgekt_online_graph_proxy_scorer"
     assert evidence.top_paths[0]["partial_evidence_reason"] == (
-        "No graded ASSIST2017 answer history is available."
+        "No graded XES3G5M answer history is available."
     )
     assert evidence.top_paths[0]["path_strength"] == 0.0
     assert evidence.key_history == []
@@ -310,14 +310,14 @@ def test_dgekt_offline_evidence_hit_returns_complete_attribution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
-        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        checkpoint_id="dgekt-xes3g5m-fixture-epoch26",
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
         offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
     )
     progress = KTLearningProgress(
@@ -331,8 +331,8 @@ def test_dgekt_offline_evidence_hit_returns_complete_attribution(
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
                     "concept_name": "异分母分数加法",
-                    "assist2017_question_id": 3,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 3,
+                    "xes3g5m_concept_id": 2,
                     "is_correct": False,
                 },
             )
@@ -364,14 +364,14 @@ def test_dgekt_offline_target_gap_keeps_online_partial_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
-        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        checkpoint_id="dgekt-xes3g5m-fixture-epoch26",
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
         offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
     )
     progress = KTLearningProgress(
@@ -385,15 +385,15 @@ def test_dgekt_offline_target_gap_keeps_online_partial_fallback(
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
                     "concept_name": "异分母分数加法",
-                    "assist2017_question_id": 3,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 3,
+                    "xes3g5m_concept_id": 2,
                     "is_correct": False,
                 },
             )
         ],
     )
 
-    evidence = engine.explain_prediction(progress, target_question_id="assist2017:4")
+    evidence = engine.explain_prediction(progress, target_question_id="xes3g5m:4")
 
     assert evidence.evidence_status == "unavailable"
     assert evidence.partial_evidence is True
@@ -408,13 +408,13 @@ def test_dgekt_explicit_unsupported_target_fails_with_typed_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(
         student_id="student-dgekt-unsupported-target",
@@ -425,7 +425,7 @@ def test_dgekt_explicit_unsupported_target_fails_with_typed_error(
                 type="answer_submitted",
                 payload={
                     "question_id": "q_frac_001",
-                    "assist2017_question_id": 1,
+                    "xes3g5m_question_id": 1,
                     "is_correct": True,
                 },
             )
@@ -433,20 +433,20 @@ def test_dgekt_explicit_unsupported_target_fails_with_typed_error(
     )
 
     with pytest.raises(DGEKTUnsupportedTargetError, match="out of range"):
-        engine.diagnose(progress, target_question_id="assist2017:9999")
+        engine.diagnose(progress, target_question_id="xes3g5m:9999")
 
 
 def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(
         student_id="student-dgekt-input",
@@ -457,7 +457,7 @@ def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
                 type="answer_submitted",
                 payload={
                     "question_id": "q_frac_001",
-                    "assist2017_question_id": 1,
+                    "xes3g5m_question_id": 1,
                     "is_correct": True,
                 },
             ),
@@ -467,8 +467,8 @@ def test_dgekt_builds_one_hot_sequence_from_recent_answer_history(
                 type="answer_submitted",
                 payload={
                     "question_id": "q_frac_002",
-                    "assist2017_question_id": "assist2017:2",
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": "xes3g5m:2",
+                    "xes3g5m_concept_id": 2,
                     "is_correct": False,
                 },
             ),
@@ -490,13 +490,13 @@ def test_dgekt_mapping_missing_question_id_fails_clearly(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(
         student_id="student-dgekt-missing",
@@ -518,13 +518,13 @@ def test_dgekt_mapping_inconsistent_concept_fails_clearly(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(
         student_id="student-dgekt-concept",
@@ -534,15 +534,15 @@ def test_dgekt_mapping_inconsistent_concept_fails_clearly(
                 student_id="student-dgekt-concept",
                 type="answer_submitted",
                 payload={
-                    "assist2017_question_id": 1,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 1,
+                    "xes3g5m_concept_id": 2,
                     "is_correct": True,
                 },
             )
         ],
     )
 
-    with pytest.raises(Exception, match="inconsistent with Q-matrix"):
+    with pytest.raises(Exception, match="inconsistent with KC routes"):
         engine.build_inference_input(progress)
 
 
@@ -554,13 +554,13 @@ def test_api_answer_submission_can_use_dgekt_engine(
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     monkeypatch.setattr(
         events_api,
@@ -582,7 +582,7 @@ def test_api_answer_submission_can_use_dgekt_engine(
             "payload": {
                 "question_id": "q_frac_001",
                 "answer": "1/6",
-                "assist2017_question_id": 1,
+                "xes3g5m_question_id": 1,
             },
         },
     )
@@ -598,12 +598,12 @@ def test_api_answer_submission_can_use_dgekt_engine(
     assert attribution["top_paths"][0]["partial_evidence"] is True
     assert attribution["top_paths"][0]["evidence_status"] == "partial"
     assert attribution["top_paths"][0]["path_strength"] == attribution["top_paths"][0]["path_weight"]
-    assert attribution["top_paths"][0]["relation_source"] == "q_matrix_recent_history_proxy"
+    assert attribution["top_paths"][0]["relation_source"] == "kc_routes_recent_history_proxy"
     assert attribution["top_paths"][0]["weak_concept_hit"] is True
-    assert attribution["key_history"][0]["assist2017_question_id"] == 1
-    assert "ASSIST2017 Q1" in attribution["key_history"][0]["readable_summary"]
+    assert attribution["key_history"][0]["xes3g5m_question_id"] == 1
+    assert "XES3G5M Q1" in attribution["key_history"][0]["readable_summary"]
     attribution_chain = diagnose_event["metadata"]["attribution_chain"]
-    assert attribution_chain["raw_model_target"]["assist2017_question_id"] == 1
+    assert attribution_chain["raw_model_target"]["xes3g5m_question_id"] == 1
     assert attribution_chain["mapped_teaching_content"]["question_id"] == "q_frac_001"
     assert (
         attribution_chain["attribution_evidence"]["scorer"]["name"]
@@ -626,13 +626,13 @@ def test_dgekt_prediction_facts_influence_recommendation_reason(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     progress = KTLearningProgress(
         student_id="student-dgekt-recommend",
@@ -645,7 +645,7 @@ def test_dgekt_prediction_facts_influence_recommendation_reason(
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
                     "concept_name": "异分母分数加法",
-                    "assist2017_question_id": 1,
+                    "xes3g5m_question_id": 1,
                     "is_correct": False,
                 },
             )
@@ -668,7 +668,7 @@ def test_dgekt_prediction_facts_influence_recommendation_reason(
     assert "DGEKT 预测答对概率偏低" in recommendations[0]["reason"]
 
 
-def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
+def test_dgekt_dashboard_smoke_flow_uses_demo_xes3g5m_mapping(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -676,13 +676,13 @@ def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     monkeypatch.setattr(
         events_api,
@@ -708,7 +708,7 @@ def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
     ).json()
     first_question = next_step["recommended_questions"][0]
 
-    assert isinstance(first_question["assist2017_question_id"], int)
+    assert isinstance(first_question["xes3g5m_question_id"], int)
 
     submitted = client.post(
         "/api/events",
@@ -720,7 +720,7 @@ def test_dgekt_dashboard_smoke_flow_uses_demo_assist2017_mapping(
             "payload": {
                 "question_id": first_question["question_id"],
                 "answer": "__wrong_demo_answer__",
-                "assist2017_question_id": first_question["assist2017_question_id"],
+                "xes3g5m_question_id": first_question["xes3g5m_question_id"],
             },
         },
     )
@@ -748,13 +748,13 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     session_id = "session-v13-dgekt-e2e"
     student_id = "student-v13-dgekt-e2e"
@@ -818,10 +818,10 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
 
     assert mapped_question["question_id"] == "q_frac_001"
     assert mapped_question["concept_id"] == canonical_concept_id
-    assert mapped_question["assist2017_question_id"] == 3
-    assert mapped_question["assist2017_concept_id"] == 2
-    assert mapped_question["canonical_mapping"]["q_matrix_reference"]
-    assert "对齐 ASSIST2017 question 3" in mapped_question["reason"]
+    assert mapped_question["xes3g5m_question_id"] == 3
+    assert mapped_question["xes3g5m_concept_id"] == 2
+    assert mapped_question["canonical_mapping"]["kc_routes_reference"]
+    assert "对齐 XES3G5M question 3" in mapped_question["reason"]
 
     answer_response = client.post(
         "/api/events",
@@ -872,14 +872,14 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
 
     assert any(source["concept_id"] == canonical_concept_id for source in rag_sources)
     assert any(source["question_id"] == "q_frac_001" for source in rag_sources)
-    assert any(source["assist2017_question_id"] == 3 for source in rag_sources)
+    assert any(source["xes3g5m_question_id"] == 3 for source in rag_sources)
     assert mistake["concept"]["concept_id"] == canonical_concept_id
     assert any("常见错因" in pattern for pattern in mistake["mistake_patterns"])
 
     assert attribution["prediction_probability"] == 0.2
     assert attribution["target_concept_id"] == canonical_concept_id
-    assert attribution["target_assist2017_question_id"] == 3
-    assert attribution["target_assist2017_concept_id"] == 2
+    assert attribution["target_xes3g5m_question_id"] == 3
+    assert attribution["target_xes3g5m_concept_id"] == 2
     assert attribution["mapped_teaching_content"]["question_id"] == "q_frac_001"
     assert attribution["key_history"][0]["concept_id"] == canonical_concept_id
     assert attribution["top_paths"][0]["weak_concept_hit"] is True
@@ -888,7 +888,7 @@ def test_v13_dgekt_e2e_smoke_keeps_one_canonical_concept_across_learning_path(
     )
 
     attribution_chain = stages["diagnose"]["metadata"]["attribution_chain"]
-    assert attribution_chain["raw_model_target"]["assist2017_question_id"] == 3
+    assert attribution_chain["raw_model_target"]["xes3g5m_question_id"] == 3
     assert attribution_chain["mapped_teaching_content"]["concept_id"] == canonical_concept_id
     assert attribution_chain["attribution_evidence"]["weak_concept_hit_count"] == 1
     assert plan_metadata["mistake_diagnosis"]["concept"]["concept_id"] == canonical_concept_id
@@ -921,14 +921,14 @@ def test_v16_offline_evidence_flows_from_recommendation_to_answer_trace(
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
-        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        checkpoint_id="dgekt-xes3g5m-fixture-epoch26",
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
         offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
     )
     session_id = "session-v16-dgekt-offline-e2e"
@@ -994,7 +994,7 @@ def test_v16_offline_evidence_flows_from_recommendation_to_answer_trace(
     recommended_question = recommendation_response.json()["recommended_questions"][0]
     assert recommended_question["question_id"] == canonical_question_id
     assert recommended_question["concept_id"] == canonical_concept_id
-    assert recommended_question["assist2017_question_id"] == 3
+    assert recommended_question["xes3g5m_question_id"] == 3
 
     answer_response = client.post(
         "/api/events",
@@ -1038,8 +1038,8 @@ def test_v16_offline_evidence_flows_from_recommendation_to_answer_trace(
     assert attribution["prediction_probability"] == kt_diagnosis["prediction_probability"]
     assert attribution["target_question_id"] == canonical_question_id
     assert attribution["target_concept_id"] == canonical_concept_id
-    assert attribution["target_assist2017_question_id"] == 3
-    assert attribution["target_assist2017_concept_id"] == 2
+    assert attribution["target_xes3g5m_question_id"] == 3
+    assert attribution["target_xes3g5m_concept_id"] == 2
     assert attribution["raw_model_target"]["sample_id"] == "fixture-s1-t2-q3"
     assert attribution["raw_model_target"]["canonical_question_id"] == canonical_question_id
     assert attribution["mapped_teaching_content"]["question_id"] == canonical_question_id
@@ -1057,7 +1057,7 @@ def test_v16_offline_evidence_flows_from_recommendation_to_answer_trace(
 
     assert any(source["question_id"] == canonical_question_id for source in rag_sources)
     assert any(source["concept_id"] == canonical_concept_id for source in rag_sources)
-    assert any(source["assist2017_question_id"] == 3 for source in rag_sources)
+    assert any(source["xes3g5m_question_id"] == 3 for source in rag_sources)
     assert any(
         asset["question_id"] == canonical_question_id
         for asset in assembled["normalized_context"]["knowledge_resource"]
@@ -1097,14 +1097,14 @@ def test_v16_next_step_target_uses_same_offline_evidence_adapter(
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
-        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        checkpoint_id="dgekt-xes3g5m-fixture-epoch26",
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
         offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
     )
     student_id = "student-dgekt-offline-fixture"
@@ -1121,8 +1121,8 @@ def test_v16_next_step_target_uses_same_offline_evidence_adapter(
                         "question_id": "q_frac_001",
                         "concept_id": "c_fraction_addition",
                         "concept_name": "异分母分数加法",
-                        "assist2017_question_id": 3,
-                        "assist2017_concept_id": 2,
+                        "xes3g5m_question_id": 3,
+                        "xes3g5m_concept_id": 2,
                         "is_correct": False,
                     },
                 )
@@ -1180,14 +1180,14 @@ def test_v16_offline_evidence_gap_reaches_api_trace_without_overwriting_kt_facts
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
-        checkpoint_id="dgekt-assist2017-fixture-epoch26",
+        checkpoint_id="dgekt-xes3g5m-fixture-epoch26",
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
         offline_evidence_dir=str(tmp_path / "missing-offline-evidence"),
     )
     monkeypatch.setattr(
@@ -1247,13 +1247,13 @@ def test_dgekt_mapping_error_returns_readable_api_error(
     from backend.app.api import events as events_api
     from backend.app.main import create_app
 
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     monkeypatch.setattr(
         events_api,
@@ -1275,8 +1275,8 @@ def test_dgekt_mapping_error_returns_readable_api_error(
             "payload": {
                 "question_id": "q_mem_001",
                 "answer": "42",
-                "assist2017_question_id": 1,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": 1,
+                "xes3g5m_concept_id": 2,
             },
         },
     )
@@ -1288,7 +1288,7 @@ def test_dgekt_mapping_error_returns_readable_api_error(
     assert error_record["category"] == "missing_mapping"
     assert error_record["code"] == "missing_mapping"
     assert "DGEKT 映射失败" in error_record["message"]
-    assert "inconsistent with Q-matrix" in error_record["message"]
+    assert "inconsistent with KC routes" in error_record["message"]
     assert diagnose_event["metadata"]["failure_stage"] == "diagnose"
     assert diagnose_event["metadata"]["error_records"][0]["category"] == "missing_mapping"
     assert body["teaching_trace_summary"]["expert_evidence"]["error_records"][0]["category"] == (
@@ -1310,19 +1310,19 @@ def test_dgekt_real_checkpoint_smoke() -> None:
     dataset_dir = os.getenv(
         "MATHTUTOR_DGEKT_DATASET_DIR",
         "/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/"
-        "DGEKT原版-自注意力机制-master_副本/Dataset/assist2017",
+        "DGEKT原版-自注意力机制-master_副本/Dataset/xes3g5m",
     )
-    q_matrix = os.getenv(
+    kc_routes = os.getenv(
         "MATHTUTOR_DGEKT_Q_MATRIX_PATH",
         "/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/"
         "DGEKT原版-自注意力机制-master_副本/Dataset/H/2017.csv",
     )
 
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=checkpoint,
         dataset_dir=dataset_dir,
-        q_matrix_path=q_matrix,
+        kc_routes_path=kc_routes,
     )
 
     assert engine.diagnostics["epoch"] == 26

@@ -1,0 +1,127 @@
+{
+  "concepts": [
+    {
+      "xes3g5m_concept_id": 1,
+      "concept_id": "c_xes3g5m_0001",
+      "concept_name": "乘法口诀事实",
+      "source_provenance": {
+        "confidence": "derived",
+        "notes": "source_row_id=xes3g5m-fixture-row-1",
+        "source": "xes3g5m_source.fixture.csv"
+      },
+      "teaching_type": "memory"
+    },
+    {
+      "xes3g5m_concept_id": 2,
+      "concept_id": "c_xes3g5m_0002",
+      "concept_name": "异分母分数加法",
+      "source_provenance": {
+        "confidence": "derived",
+        "notes": "source_row_id=xes3g5m-fixture-row-3",
+        "source": "xes3g5m_source.fixture.csv"
+      },
+      "teaching_type": "procedure"
+    },
+    {
+      "xes3g5m_concept_id": 3,
+      "concept_id": "c_xes3g5m_0003",
+      "concept_name": "一元一次方程",
+      "source_provenance": {
+        "confidence": "derived",
+        "notes": "source_row_id=xes3g5m-fixture-row-5",
+        "source": "xes3g5m_source.fixture.csv"
+      },
+      "teaching_type": "procedure"
+    }
+  ],
+  "dataset": "xes3g5m",
+  "generated_at": "2026-07-09T00:00:00+00:00",
+  "kc_routes": {
+    "column_base": 1,
+    "concept_count": 4,
+    "question_count": 6,
+    "row_base": 1,
+    "source_path": "data/mapping/xes3g5m_kc_routes.fixture.csv"
+  },
+  "questions": [
+    {
+      "xes3g5m_concept_id": 1,
+      "xes3g5m_question_id": 1,
+      "concept_id": "c_xes3g5m_0001",
+      "concept_name": "乘法口诀事实",
+      "kc_routes_reference": {
+        "concept_column_indices": [
+          1
+        ],
+        "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+        "row_index": 1
+      },
+      "question_id": "q_xes3g5m_000001",
+      "rag_doc_ids": [
+        "rag_xes3g5m_c0001_concept_note",
+        "rag_xes3g5m_q000001_question_explanation",
+        "rag_xes3g5m_q000001_mistake_pattern",
+        "rag_xes3g5m_c0001_learning_strategy"
+      ],
+      "source_provenance": {
+        "confidence": "derived",
+        "notes": "source_row_id=xes3g5m-fixture-row-1",
+        "source": "xes3g5m_source.fixture.csv"
+      },
+      "teaching_type": "memory"
+    },
+    {
+      "xes3g5m_concept_id": 2,
+      "xes3g5m_question_id": 3,
+      "concept_id": "c_xes3g5m_0002",
+      "concept_name": "异分母分数加法",
+      "kc_routes_reference": {
+        "concept_column_indices": [
+          2
+        ],
+        "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+        "row_index": 3
+      },
+      "question_id": "q_xes3g5m_000003",
+      "rag_doc_ids": [
+        "rag_xes3g5m_c0002_concept_note",
+        "rag_xes3g5m_q000003_question_explanation",
+        "rag_xes3g5m_q000003_mistake_pattern",
+        "rag_xes3g5m_c0002_learning_strategy"
+      ],
+      "source_provenance": {
+        "confidence": "derived",
+        "notes": "source_row_id=xes3g5m-fixture-row-3",
+        "source": "xes3g5m_source.fixture.csv"
+      },
+      "teaching_type": "procedure"
+    },
+    {
+      "xes3g5m_concept_id": 3,
+      "xes3g5m_question_id": 5,
+      "concept_id": "c_xes3g5m_0003",
+      "concept_name": "一元一次方程",
+      "kc_routes_reference": {
+        "concept_column_indices": [
+          3
+        ],
+        "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+        "row_index": 5
+      },
+      "question_id": "q_xes3g5m_000005",
+      "rag_doc_ids": [
+        "rag_xes3g5m_c0003_concept_note",
+        "rag_xes3g5m_q000005_question_explanation",
+        "rag_xes3g5m_q000005_mistake_pattern",
+        "rag_xes3g5m_c0003_learning_strategy"
+      ],
+      "source_provenance": {
+        "confidence": "derived",
+        "notes": "source_row_id=xes3g5m-fixture-row-5",
+        "source": "xes3g5m_source.fixture.csv"
+      },
+      "teaching_type": "procedure"
+    }
+  ],
+  "schema_version": "xes3g5m-canonical-mapping/v1"
+}

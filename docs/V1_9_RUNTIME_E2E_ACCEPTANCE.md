@@ -20,7 +20,7 @@ V1.9 是数学 Agent Runtime 与可观测学习编排的架构补强版，不等
 - KT 默认仍为 mock，本地 demo 不读取真实 DGEKT checkpoint。
 - RAG 默认仍为 demo/local fallback，空 RAG smoke 不访问 VikingDB 或 OpenViking。
 - 学生记忆默认仍为本地 in-memory store，Mem0 live provider 必须显式 opt-in。
-- 完整 ASSISTments2017 数据、真实 DGEKT checkpoint、generated vector index、provider cache、raw dataset、模型文件和生成构建产物不得进入 tracked 文件。
+- 完整 XES3G5M 数据、真实 DGEKT checkpoint、generated vector index、provider cache、raw dataset、模型文件和生成构建产物不得进入 tracked 文件。
 
 Runtime 与 Provider Health 语义保持一致：provider mode 只允许 `local_fallback`、`fake_provider`、`live_provider`；readiness/status 只允许 `healthy`、`degraded`、`unavailable`、`not_configured`。这些状态只用于诊断和运营可见性，不能写 memory、progress、context、RAG、TeachingTrace 或 KT state。
 
@@ -58,4 +58,4 @@ V1.10 仍负责上下文治理增强，包括 context budget、证据优先级�
 
 V1.11 仍负责生产可用性增强，包括 provider health 运营化、真实 provider 连续验证、ready/not-ready 运维诊断、真实内容和真实 provider 的内部试用 gate。
 
-V1.9 的完成标准是架构闭环、默认安全、可观测、可测试；不是把 Mem0、VikingDB/OpenViking、真实 DGEKT checkpoint 或完整 ASSISTments2017 变成默认依赖。
+V1.9 的完成标准是架构闭环、默认安全、可观测、可测试；不是把 Mem0、VikingDB/OpenViking、真实 DGEKT checkpoint 或完整 XES3G5M 变成默认依赖。

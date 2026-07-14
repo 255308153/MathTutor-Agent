@@ -824,8 +824,8 @@ def _compact_rag_source(source: dict[str, Any]) -> dict[str, Any]:
             "source": source.get("source"),
             "concept_id": source.get("concept_id"),
             "question_id": source.get("question_id"),
-            "assist2017_question_id": source.get("assist2017_question_id"),
-            "assist2017_concept_id": source.get("assist2017_concept_id"),
+            "xes3g5m_question_id": source.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": source.get("xes3g5m_concept_id"),
             "coverage": source.get("coverage"),
         }
     )
@@ -903,7 +903,7 @@ def _is_sensitive_key(key: str) -> bool:
         "checkpoint_path",
         "model_path",
         "dataset_dir",
-        "q_matrix_path",
+        "kc_routes_path",
         "local_path",
     }:
         return True

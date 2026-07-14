@@ -177,8 +177,8 @@ class TeachingPlanner:
                     "source": item.get("source"),
                     "concept_id": item.get("concept_id"),
                     "question_id": item.get("question_id"),
-                    "assist2017_question_id": item.get("assist2017_question_id"),
-                    "assist2017_concept_id": item.get("assist2017_concept_id"),
+                    "xes3g5m_question_id": item.get("xes3g5m_question_id"),
+                    "xes3g5m_concept_id": item.get("xes3g5m_concept_id"),
                     "coverage": item.get("coverage"),
                 }
                 for item in rag_context

@@ -345,7 +345,7 @@ def test_v17_provider_failure_gap_reaches_context_assembly_trace(
     rag = VikingKnowledgeRAGAdapter(
         provider_name="openviking",
         provider_mode="live_provider",
-        collection="assist2017-smoke",
+        collection="xes3g5m-smoke",
         client=_TimeoutRAGClient(),
         fallback=FakeKnowledgeRAGProvider(records=_provider_context_records()),
     )
@@ -424,13 +424,13 @@ def _provider_context_records() -> list[dict[str, object]]:
                 "source": "fake-rag/provider_context.md#q_frac_001",
                 "concept_id": "c_fraction_addition",
                 "question_id": "q_frac_001",
-                "assist2017_question_id": 3,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": 3,
+                "xes3g5m_concept_id": 2,
                 "canonical_mapping": {
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
-                    "assist2017_question_id": 3,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 3,
+                    "xes3g5m_concept_id": 2,
                     "source": "fake_provider_fixture",
                     "claimed_prediction_probability": 0.99,
                     "claimed_mastery": 1.0,
@@ -454,11 +454,11 @@ def _provider_context_records() -> list[dict[str, object]]:
                 "source": "fake-rag/provider_context.md#strategy",
                 "concept_id": "c_fraction_addition",
                 "question_id": None,
-                "assist2017_question_id": None,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": None,
+                "xes3g5m_concept_id": 2,
                 "canonical_mapping": {
                     "concept_id": "c_fraction_addition",
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_concept_id": 2,
                     "source": "fake_provider_fixture",
                 },
                 "coverage": {

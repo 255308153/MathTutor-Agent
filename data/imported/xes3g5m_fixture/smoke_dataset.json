@@ -1,0 +1,207 @@
+{
+  "dataset": "xes3g5m",
+  "learning_paths": [
+    {
+      "xes3g5m_concept_id": 1,
+      "xes3g5m_question_id": 1,
+      "canonical_concept_id": "c_xes3g5m_0001",
+      "canonical_question_id": "q_xes3g5m_000001",
+      "description": "推荐到答题到 TeachingTrace 的 XES3G5M fixture smoke。",
+      "path_id": "smoke_q_xes3g5m_000001",
+      "steps": [
+        {
+          "event_type": "chat_message",
+          "expected": {
+            "canonical_concept_id": "c_xes3g5m_0001",
+            "recommended_question_id": "q_xes3g5m_000001"
+          },
+          "message": "我下一步应该练什么？",
+          "payload": {
+            "preferred_concept_id": "c_xes3g5m_0001"
+          }
+        },
+        {
+          "event_type": "answer_submitted",
+          "expected": {
+            "canonical_concept_id": "c_xes3g5m_0001",
+            "is_correct": false,
+            "kt_facts_authoritative": true
+          },
+          "message": "提交一条 fixture 答案",
+          "payload": {
+            "answer": "__wrong_fixture_answer__",
+            "question_id": "q_xes3g5m_000001"
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "coverage_summary": {
+      "content": {
+        "complete_question_count": 2,
+        "missing_teaching_content_count": 1,
+        "partial_question_count": 1,
+        "question_count": 3
+      },
+      "mapping": {
+        "mapped_concept_count": 3,
+        "mapped_question_count": 3,
+        "unmapped_concept_count": 1,
+        "unmapped_question_count": 3
+      },
+      "kc_routes": {
+        "concept_count": 4,
+        "mismatch_count": 0,
+        "question_count": 6
+      },
+      "rag": {
+        "doc_type_counts": {
+          "concept_note": 3,
+          "learning_strategy": 3,
+          "mistake_pattern": 3,
+          "question_explanation": 2
+        },
+        "document_count": 11,
+        "missing_rag_doc_count": 1
+      },
+      "validation": {
+        "error_count": 0,
+        "gap_counts": {
+          "missing_concept_mapping": 1,
+          "missing_question_mapping": 3,
+          "missing_rag_doc": 1,
+          "missing_teaching_content": 1
+        },
+        "warning_count": 6
+      }
+    },
+    "dataset": "xes3g5m",
+    "generated_at": "2026-07-09T00:00:00+00:00",
+    "row_counts": {
+      "content_questions": 3,
+      "kc_routes_concepts": 4,
+      "kc_routes_questions": 6,
+      "rag_documents": 11,
+      "source_rows": 3,
+      "valid_source_rows": 3
+    },
+    "schema_version": "xes3g5m-import-build/v1",
+    "source_paths": {
+      "kc_routes": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+      "source_rows": "data/import/xes3g5m_source.fixture.csv"
+    },
+    "validation_errors": [
+      {
+        "xes3g5m_concept_id": null,
+        "xes3g5m_question_id": 2,
+        "canonical_concept_id": null,
+        "canonical_question_id": "q_xes3g5m_000002",
+        "category": "missing_question_mapping",
+        "message": "KC routes row 2 has no imported source question.",
+        "provenance": {
+          "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+          "kc_routes_row": 2
+        },
+        "reason_code": "kc_routes_row_without_source_question",
+        "severity": "warning",
+        "source_ref": "data/mapping/xes3g5m_kc_routes.fixture.csv:row:2"
+      },
+      {
+        "xes3g5m_concept_id": null,
+        "xes3g5m_question_id": 4,
+        "canonical_concept_id": null,
+        "canonical_question_id": "q_xes3g5m_000004",
+        "category": "missing_question_mapping",
+        "message": "KC routes row 4 has no imported source question.",
+        "provenance": {
+          "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+          "kc_routes_row": 4
+        },
+        "reason_code": "kc_routes_row_without_source_question",
+        "severity": "warning",
+        "source_ref": "data/mapping/xes3g5m_kc_routes.fixture.csv:row:4"
+      },
+      {
+        "xes3g5m_concept_id": null,
+        "xes3g5m_question_id": 6,
+        "canonical_concept_id": null,
+        "canonical_question_id": "q_xes3g5m_000006",
+        "category": "missing_question_mapping",
+        "message": "KC routes row 6 has no imported source question.",
+        "provenance": {
+          "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv",
+          "kc_routes_row": 6
+        },
+        "reason_code": "kc_routes_row_without_source_question",
+        "severity": "warning",
+        "source_ref": "data/mapping/xes3g5m_kc_routes.fixture.csv:row:6"
+      },
+      {
+        "xes3g5m_concept_id": 4,
+        "xes3g5m_question_id": null,
+        "canonical_concept_id": "c_xes3g5m_0004",
+        "canonical_question_id": null,
+        "category": "missing_concept_mapping",
+        "message": "KC routes concept column 4 has no imported concept metadata.",
+        "provenance": {
+          "kc_routes_concept_column": 4,
+          "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv"
+        },
+        "reason_code": "kc_routes_concept_without_source_concept",
+        "severity": "warning",
+        "source_ref": "data/mapping/xes3g5m_kc_routes.fixture.csv:column:4"
+      },
+      {
+        "xes3g5m_concept_id": 3,
+        "xes3g5m_question_id": 5,
+        "canonical_concept_id": "c_xes3g5m_0003",
+        "canonical_question_id": "q_xes3g5m_000005",
+        "category": "missing_teaching_content",
+        "message": "q_xes3g5m_000005 缺少解析，请补齐 XES3G5M 教学内容。",
+        "provenance": {
+          "content_availability": {
+            "fallback_message": "q_xes3g5m_000005 缺少解析，请补齐 XES3G5M 教学内容。",
+            "has_answer": true,
+            "has_concept_metadata": true,
+            "has_explanation": false,
+            "has_stem": true,
+            "missing_fields": [
+              "explanation"
+            ],
+            "missing_reason_codes": [
+              "missing_explanation"
+            ],
+            "status": "partial"
+          },
+          "missing_fields": [
+            "explanation"
+          ],
+          "missing_reason_codes": [
+            "missing_explanation"
+          ],
+          "source_row_id": "xes3g5m-fixture-row-5"
+        },
+        "reason_code": "essential_teaching_field_missing",
+        "severity": "warning",
+        "source_ref": "data/import/xes3g5m_source.fixture.csv:row:4"
+      },
+      {
+        "xes3g5m_concept_id": 3,
+        "xes3g5m_question_id": 5,
+        "canonical_concept_id": "c_xes3g5m_0003",
+        "canonical_question_id": "q_xes3g5m_000005",
+        "category": "missing_rag_doc",
+        "message": "Expected RAG document rag_xes3g5m_q000005_question_explanation was not generated.",
+        "provenance": {
+          "doc_id": "rag_xes3g5m_q000005_question_explanation",
+          "source_row_id": "xes3g5m-fixture-row-5"
+        },
+        "reason_code": "expected_rag_doc_not_generated",
+        "severity": "warning",
+        "source_ref": "data/import/xes3g5m_source.fixture.csv:row:4"
+      }
+    ]
+  },
+  "schema_version": "xes3g5m-smoke-dataset/v1"
+}

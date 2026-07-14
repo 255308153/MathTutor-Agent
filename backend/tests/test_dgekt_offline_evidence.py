@@ -15,8 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "data" / "dgekt" / "offline_evidence_fixture"
 
 CHECKPOINT_PROVENANCE = {
-    "dataset": "assist2017",
-    "checkpoint_id": "dgekt-assist2017-fixture-epoch26",
+    "dataset": "xes3g5m",
+    "checkpoint_id": "dgekt-xes3g5m-fixture-epoch26",
     "epoch": 26,
     "auc": 0.7866464407565317,
     "acc": 0.728796544573157,
@@ -27,13 +27,13 @@ def test_offline_evidence_fixture_returns_complete_payload() -> None:
     adapter = DGEKTOfflineEvidenceAdapter(FIXTURE_DIR)
 
     evidence = adapter.explain_prediction(
-        dataset="assist2017",
+        dataset="xes3g5m",
         student_id="student-dgekt-offline-fixture",
         target_question_id="q_frac_001",
-        target_assist2017_question_id=3,
-        target_assist2017_concept_id=2,
+        target_xes3g5m_question_id=3,
+        target_xes3g5m_concept_id=2,
         prediction_probability=0.2,
-        authoritative_weak_concepts=[{"concept_id": "c_assist2017_0002", "mastery": 0.2}],
+        authoritative_weak_concepts=[{"concept_id": "c_xes3g5m_0002", "mastery": 0.2}],
         checkpoint_provenance=CHECKPOINT_PROVENANCE,
     )
 
@@ -47,7 +47,7 @@ def test_offline_evidence_fixture_returns_complete_payload() -> None:
     assert evidence.raw_model_target["canonical_question_id"] == "q_frac_001"
     assert evidence.mapped_teaching_content["question_id"] == "q_frac_001"
     assert evidence.mapped_teaching_content["concept_id"] == "c_fraction_addition"
-    assert evidence.canonical_mapping["assist2017_question_id"] == 3
+    assert evidence.canonical_mapping["xes3g5m_question_id"] == 3
 
     top_path = evidence.top_paths[0]
     assert top_path["path_id"] == "path-fixture-history-q3"
@@ -59,7 +59,7 @@ def test_offline_evidence_fixture_returns_complete_payload() -> None:
     assert top_path["graph_relation_strength"] == 0.88
     assert top_path["relation_strength"] == 0.91
 
-    assert evidence.key_history[0]["assist2017_question_id"] == 3
+    assert evidence.key_history[0]["xes3g5m_question_id"] == 3
     assert evidence.key_history[0]["is_correct"] is False
     assert evidence.weak_concepts[0]["concept_id"] == "c_fraction_addition"
     assert evidence.path_ablation[0]["impact"] == 0.16
@@ -156,11 +156,11 @@ def test_offline_evidence_reports_target_not_found_gap() -> None:
     adapter = DGEKTOfflineEvidenceAdapter(FIXTURE_DIR)
 
     evidence = adapter.explain_prediction(
-        dataset="assist2017",
+        dataset="xes3g5m",
         student_id="student-dgekt-offline-fixture",
         target_question_id="q_eq_001",
-        target_assist2017_question_id=5,
-        target_assist2017_concept_id=3,
+        target_xes3g5m_question_id=5,
+        target_xes3g5m_concept_id=3,
         prediction_probability=0.2,
         authoritative_weak_concepts=[],
         checkpoint_provenance=CHECKPOINT_PROVENANCE,
@@ -174,11 +174,11 @@ def test_offline_evidence_does_not_reuse_other_student_case() -> None:
     adapter = DGEKTOfflineEvidenceAdapter(FIXTURE_DIR)
 
     evidence = adapter.explain_prediction(
-        dataset="assist2017",
+        dataset="xes3g5m",
         student_id="another-student",
         target_question_id="q_frac_001",
-        target_assist2017_question_id=3,
-        target_assist2017_concept_id=2,
+        target_xes3g5m_question_id=3,
+        target_xes3g5m_concept_id=2,
         prediction_probability=0.2,
         authoritative_weak_concepts=[],
         checkpoint_provenance=CHECKPOINT_PROVENANCE,
@@ -192,11 +192,11 @@ def test_offline_evidence_reports_checkpoint_provenance_mismatch() -> None:
     adapter = DGEKTOfflineEvidenceAdapter(FIXTURE_DIR)
 
     evidence = adapter.explain_prediction(
-        dataset="assist2017",
+        dataset="xes3g5m",
         student_id="student-dgekt-offline-fixture",
         target_question_id="q_frac_001",
-        target_assist2017_question_id=3,
-        target_assist2017_concept_id=2,
+        target_xes3g5m_question_id=3,
+        target_xes3g5m_concept_id=2,
         prediction_probability=0.2,
         authoritative_weak_concepts=[],
         checkpoint_provenance=CHECKPOINT_PROVENANCE | {"checkpoint_id": "other-checkpoint"},
@@ -211,11 +211,11 @@ def test_offline_evidence_reports_non_numeric_checkpoint_metric_mismatch() -> No
     adapter = DGEKTOfflineEvidenceAdapter(FIXTURE_DIR)
 
     evidence = adapter.explain_prediction(
-        dataset="assist2017",
+        dataset="xes3g5m",
         student_id="student-dgekt-offline-fixture",
         target_question_id="q_frac_001",
-        target_assist2017_question_id=3,
-        target_assist2017_concept_id=2,
+        target_xes3g5m_question_id=3,
+        target_xes3g5m_concept_id=2,
         prediction_probability=0.2,
         authoritative_weak_concepts=[],
         checkpoint_provenance=CHECKPOINT_PROVENANCE | {"auc": "unknown"},
@@ -272,9 +272,9 @@ def test_dgekt_real_offline_evidence_outputs_smoke() -> None:
     evidence = adapter.explain_prediction(
         dataset=case.dataset,
         student_id=case.student_id or "",
-        target_question_id=case.canonical_question_id or f"assist2017:{case.target_question_id}",
-        target_assist2017_question_id=case.target_question_id,
-        target_assist2017_concept_id=case.target_concept_id,
+        target_question_id=case.canonical_question_id or f"xes3g5m:{case.target_question_id}",
+        target_xes3g5m_question_id=case.target_question_id,
+        target_xes3g5m_concept_id=case.target_concept_id,
         prediction_probability=case.prediction_probability,
         authoritative_weak_concepts=[],
         checkpoint_provenance=checkpoint_provenance,
@@ -289,11 +289,11 @@ def test_dgekt_real_offline_evidence_outputs_smoke() -> None:
 
 def _complete_evidence(artifact_dir: Path):
     return DGEKTOfflineEvidenceAdapter(artifact_dir).explain_prediction(
-        dataset="assist2017",
+        dataset="xes3g5m",
         student_id="student-dgekt-offline-fixture",
         target_question_id="q_frac_001",
-        target_assist2017_question_id=3,
-        target_assist2017_concept_id=2,
+        target_xes3g5m_question_id=3,
+        target_xes3g5m_concept_id=2,
         prediction_probability=0.2,
         authoritative_weak_concepts=[],
         checkpoint_provenance=CHECKPOINT_PROVENANCE,

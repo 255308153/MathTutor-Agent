@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_MAPPING_PATH = PROJECT_ROOT / "data" / "mapping" / "assist2017_canonical_mapping.fixture.json"
-SCHEMA_VERSION = "assist2017-canonical-mapping/v1"
+DEFAULT_MAPPING_PATH = PROJECT_ROOT / "data" / "mapping" / "xes3g5m_canonical_mapping.fixture.json"
+SCHEMA_VERSION = "xes3g5m-canonical-mapping/v1"
 
 
 class MappingProvenance(BaseModel):
@@ -20,8 +20,8 @@ class MappingProvenance(BaseModel):
     notes: str | None = None
 
 
-class QMatrixReference(BaseModel):
-    q_matrix_path: str
+class KCRoutesReference(BaseModel):
+    kc_routes_path: str
     row_index: int = Field(ge=1)
     concept_column_indices: list[int] = Field(min_length=1)
 
@@ -29,12 +29,12 @@ class QMatrixReference(BaseModel):
     @classmethod
     def concept_columns_are_positive(cls, value: list[int]) -> list[int]:
         if any(column < 1 for column in value):
-            raise ValueError("Q-matrix concept columns are 1-based and must be positive.")
+            raise ValueError("KC routes concept columns are 1-based and must be positive.")
         return value
 
 
 class CanonicalConceptMapping(BaseModel):
-    assist2017_concept_id: int = Field(ge=1)
+    xes3g5m_concept_id: int = Field(ge=1)
     concept_id: str = Field(min_length=1)
     concept_name: str = Field(min_length=1)
     teaching_type: str = Field(min_length=1)
@@ -42,18 +42,18 @@ class CanonicalConceptMapping(BaseModel):
 
 
 class CanonicalQuestionMapping(BaseModel):
-    assist2017_question_id: int = Field(ge=1)
+    xes3g5m_question_id: int = Field(ge=1)
     question_id: str = Field(min_length=1)
     concept_id: str = Field(min_length=1)
     concept_name: str = Field(min_length=1)
     teaching_type: str = Field(min_length=1)
-    q_matrix_reference: QMatrixReference
+    kc_routes_reference: KCRoutesReference
     source_provenance: MappingProvenance
-    assist2017_concept_id: int | None = Field(default=None, ge=1)
+    xes3g5m_concept_id: int | None = Field(default=None, ge=1)
     rag_doc_ids: list[str] = Field(default_factory=list)
 
 
-class QMatrixArtifactSummary(BaseModel):
+class KCRoutesArtifactSummary(BaseModel):
     source_path: str
     row_base: Literal[1] = 1
     column_base: Literal[1] = 1
@@ -64,26 +64,26 @@ class QMatrixArtifactSummary(BaseModel):
 class CanonicalMappingArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["assist2017-canonical-mapping/v1"] = SCHEMA_VERSION
-    dataset: Literal["assist2017"] = "assist2017"
+    schema_version: Literal["xes3g5m-canonical-mapping/v1"] = SCHEMA_VERSION
+    dataset: Literal["xes3g5m"] = "xes3g5m"
     generated_at: str
-    q_matrix: QMatrixArtifactSummary
+    kc_routes: KCRoutesArtifactSummary
     concepts: list[CanonicalConceptMapping]
     questions: list[CanonicalQuestionMapping]
 
     @model_validator(mode="after")
     def validate_unique_and_aligned(self) -> CanonicalMappingArtifact:
-        concept_ids = [concept.assist2017_concept_id for concept in self.concepts]
+        concept_ids = [concept.xes3g5m_concept_id for concept in self.concepts]
         if len(concept_ids) != len(set(concept_ids)):
-            raise ValueError("Duplicate assist2017_concept_id in canonical mapping.")
+            raise ValueError("Duplicate xes3g5m_concept_id in canonical mapping.")
 
         local_concept_ids = [concept.concept_id for concept in self.concepts]
         if len(local_concept_ids) != len(set(local_concept_ids)):
             raise ValueError("Duplicate local concept_id in canonical mapping.")
 
-        question_ids = [question.assist2017_question_id for question in self.questions]
+        question_ids = [question.xes3g5m_question_id for question in self.questions]
         if len(question_ids) != len(set(question_ids)):
-            raise ValueError("Duplicate assist2017_question_id in canonical mapping.")
+            raise ValueError("Duplicate xes3g5m_question_id in canonical mapping.")
 
         local_question_ids = [question.question_id for question in self.questions]
         if len(local_question_ids) != len(set(local_question_ids)):
@@ -97,16 +97,16 @@ class CanonicalMappingArtifact(BaseModel):
                     f"Question {question.question_id} references unknown concept_id "
                     f"{question.concept_id}."
                 )
-            if question.assist2017_concept_id is not None:
-                if question.assist2017_concept_id != concept.assist2017_concept_id:
+            if question.xes3g5m_concept_id is not None:
+                if question.xes3g5m_concept_id != concept.xes3g5m_concept_id:
                     raise ValueError(
                         f"Question {question.question_id} concept mapping is inconsistent "
                         "with the concept table."
                     )
-                if question.assist2017_concept_id not in question.q_matrix_reference.concept_column_indices:
+                if question.xes3g5m_concept_id not in question.kc_routes_reference.concept_column_indices:
                     raise ValueError(
                         f"Question {question.question_id} concept mapping is not present in "
-                        "its Q-matrix row."
+                        "its KC routes row."
                     )
         return self
 
@@ -145,11 +145,11 @@ class CanonicalMappingRepository:
         self.artifact = artifact
         self._questions_by_local_id = {question.question_id: question for question in artifact.questions}
         self._questions_by_assist_id = {
-            question.assist2017_question_id: question for question in artifact.questions
+            question.xes3g5m_question_id: question for question in artifact.questions
         }
         self._concepts_by_local_id = {concept.concept_id: concept for concept in artifact.concepts}
         self._concepts_by_assist_id = {
-            concept.assist2017_concept_id: concept for concept in artifact.concepts
+            concept.xes3g5m_concept_id: concept for concept in artifact.concepts
         }
 
     @classmethod
@@ -159,29 +159,29 @@ class CanonicalMappingRepository:
     def get_by_mathtutor_question_id(self, question_id: str) -> CanonicalQuestionMapping | None:
         return self._questions_by_local_id.get(question_id)
 
-    def get_by_assist2017_question_id(
-        self, assist2017_question_id: int
+    def get_by_xes3g5m_question_id(
+        self, xes3g5m_question_id: int
     ) -> CanonicalQuestionMapping | None:
-        return self._questions_by_assist_id.get(assist2017_question_id)
+        return self._questions_by_assist_id.get(xes3g5m_question_id)
 
     def concept_for_mathtutor_concept_id(self, concept_id: str) -> CanonicalConceptMapping | None:
         return self._concepts_by_local_id.get(concept_id)
 
-    def concept_for_assist2017_concept_id(
-        self, assist2017_concept_id: int
+    def concept_for_xes3g5m_concept_id(
+        self, xes3g5m_concept_id: int
     ) -> CanonicalConceptMapping | None:
-        return self._concepts_by_assist_id.get(assist2017_concept_id)
+        return self._concepts_by_assist_id.get(xes3g5m_concept_id)
 
     def coverage(
         self,
         *,
-        q_matrix_path: str | Path | None = None,
+        kc_routes_path: str | Path | None = None,
         teaching_content: dict[str, Any] | None = None,
         rag_docs: list[dict[str, Any]] | None = None,
     ) -> MappingCoverageDiagnostics:
         return coverage_diagnostics(
             self.artifact,
-            q_matrix_path=q_matrix_path,
+            kc_routes_path=kc_routes_path,
             teaching_content=teaching_content,
             rag_docs=rag_docs,
         )
@@ -194,14 +194,14 @@ def load_mapping_artifact(path: str | Path = DEFAULT_MAPPING_PATH) -> CanonicalM
 
 def build_mapping_artifact(
     *,
-    q_matrix_path: str | Path,
+    kc_routes_path: str | Path,
     metadata_path: str | Path,
     teaching_content_path: str | Path | None = None,
     rag_docs_path: str | Path | None = None,
     output_path: str | Path | None = None,
     generated_at: str | None = None,
 ) -> CanonicalMappingArtifact:
-    q_rows = read_q_matrix(q_matrix_path)
+    q_rows = read_kc_routes(kc_routes_path)
     metadata = json.loads(_resolve_project_path(metadata_path).read_text(encoding="utf-8"))
     teaching_content = _load_json_object(teaching_content_path) if teaching_content_path else None
     rag_docs = _load_json_list(rag_docs_path) if rag_docs_path else None
@@ -210,31 +210,31 @@ def build_mapping_artifact(
         CanonicalConceptMapping.model_validate(concept)
         for concept in metadata.get("concepts", [])
     ]
-    concepts_by_assist_id = {concept.assist2017_concept_id: concept for concept in concepts}
+    concepts_by_assist_id = {concept.xes3g5m_concept_id: concept for concept in concepts}
 
     questions: list[CanonicalQuestionMapping] = []
     for question in metadata.get("questions", []):
-        assist_question_id = int(question["assist2017_question_id"])
+        assist_question_id = int(question["xes3g5m_question_id"])
         if assist_question_id < 1 or assist_question_id > len(q_rows):
             raise ValueError(
-                f"Question {assist_question_id} is outside Q-matrix row range 1..{len(q_rows)}."
+                f"Question {assist_question_id} is outside KC routes row range 1..{len(q_rows)}."
             )
         concept_columns = q_rows[assist_question_id - 1]
-        assist_concept_id = int(question["assist2017_concept_id"])
+        assist_concept_id = int(question["xes3g5m_concept_id"])
         if assist_concept_id not in concept_columns:
             raise ValueError(
-                f"Question {assist_question_id} declares assist2017_concept_id "
-                f"{assist_concept_id}, but Q-matrix row has {concept_columns}."
+                f"Question {assist_question_id} declares xes3g5m_concept_id "
+                f"{assist_concept_id}, but KC routes row has {concept_columns}."
             )
         if assist_concept_id not in concepts_by_assist_id:
             raise ValueError(
-                f"Question {assist_question_id} declares unknown assist2017_concept_id "
+                f"Question {assist_question_id} declares unknown xes3g5m_concept_id "
                 f"{assist_concept_id}."
             )
 
         enriched = dict(question)
-        enriched["q_matrix_reference"] = {
-            "q_matrix_path": _display_path(q_matrix_path),
+        enriched["kc_routes_reference"] = {
+            "kc_routes_path": _display_path(kc_routes_path),
             "row_index": assist_question_id,
             "concept_column_indices": concept_columns,
         }
@@ -242,8 +242,8 @@ def build_mapping_artifact(
 
     artifact = CanonicalMappingArtifact(
         generated_at=generated_at or datetime.now(UTC).isoformat(),
-        q_matrix=QMatrixArtifactSummary(
-            source_path=_display_path(q_matrix_path),
+        kc_routes=KCRoutesArtifactSummary(
+            source_path=_display_path(kc_routes_path),
             question_count=len(q_rows),
             concept_count=max((max(row) for row in q_rows if row), default=0),
         ),
@@ -261,7 +261,7 @@ def build_mapping_artifact(
 
     if teaching_content is not None or rag_docs is not None:
         # Validate the optional local context eagerly so import failures are reproducible.
-        coverage_diagnostics(artifact, q_matrix_path=q_matrix_path, teaching_content=teaching_content, rag_docs=rag_docs)
+        coverage_diagnostics(artifact, kc_routes_path=kc_routes_path, teaching_content=teaching_content, rag_docs=rag_docs)
 
     return artifact
 
@@ -269,16 +269,16 @@ def build_mapping_artifact(
 def coverage_diagnostics(
     artifact: CanonicalMappingArtifact,
     *,
-    q_matrix_path: str | Path | None = None,
+    kc_routes_path: str | Path | None = None,
     teaching_content: dict[str, Any] | None = None,
     rag_docs: list[dict[str, Any]] | None = None,
 ) -> MappingCoverageDiagnostics:
-    q_rows = read_q_matrix(q_matrix_path or artifact.q_matrix.source_path)
-    q_matrix_questions = set(range(1, len(q_rows) + 1))
-    q_matrix_concepts = {concept_id for row in q_rows for concept_id in row}
+    q_rows = read_kc_routes(kc_routes_path or artifact.kc_routes.source_path)
+    kc_routes_questions = set(range(1, len(q_rows) + 1))
+    kc_routes_concepts = {concept_id for row in q_rows for concept_id in row}
 
-    mapped_questions = {question.assist2017_question_id for question in artifact.questions}
-    mapped_concepts = {concept.assist2017_concept_id for concept in artifact.concepts}
+    mapped_questions = {question.xes3g5m_question_id for question in artifact.questions}
+    mapped_concepts = {concept.xes3g5m_concept_id for concept in artifact.concepts}
 
     local_question_ids = _local_question_ids(teaching_content)
     rag_doc_ids = _rag_doc_ids(rag_docs)
@@ -299,14 +299,14 @@ def coverage_diagnostics(
     return MappingCoverageDiagnostics(
         mapped_questions=sorted(mapped_questions),
         mapped_concepts=sorted(mapped_concepts),
-        missing_questions=sorted(q_matrix_questions - mapped_questions),
-        missing_concepts=sorted(q_matrix_concepts - mapped_concepts),
+        missing_questions=sorted(kc_routes_questions - mapped_questions),
+        missing_concepts=sorted(kc_routes_concepts - mapped_concepts),
         missing_teaching_content=missing_teaching_content,
         missing_rag_docs=missing_rag_docs,
     )
 
 
-def read_q_matrix(path: str | Path) -> list[list[int]]:
+def read_kc_routes(path: str | Path) -> list[list[int]]:
     rows: list[list[int]] = []
     with _resolve_project_path(path).open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.reader(file)
@@ -320,7 +320,7 @@ def read_q_matrix(path: str | Path) -> list[list[int]]:
                     continue
                 if value != "1":
                     raise ValueError(
-                        f"Q-matrix only supports 0/1 incidence values; got {value!r} "
+                        f"KC routes only supports 0/1 incidence values; got {value!r} "
                         f"at row {row_number}, column {column_index}."
                     )
                 active_columns.append(column_index)

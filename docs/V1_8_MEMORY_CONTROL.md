@@ -114,7 +114,7 @@ Context 和 KT 边界：
 - provider credentials、API keys、tokens、secrets、`.env`。
 - raw provider payload、provider caches、SDK debug dumps。
 - generated vector indexes、Chroma / FAISS / provider index 产物。
-- raw datasets、full ASSISTments2017 train/test、full generated artifacts。
+- raw datasets、full XES3G5M train/test、full generated artifacts。
 - checkpoints 和模型文件：`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`。
 - `dist/`、`build/`、`node_modules/`、缓存目录和临时产物。
 

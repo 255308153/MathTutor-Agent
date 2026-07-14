@@ -84,11 +84,11 @@ def test_recommender_returns_canonical_teaching_content_payload() -> None:
     assert question["teaching_type"] == "memory"
     assert "standard_answer" not in question
     assert question["content_availability"]["status"] == "available"
-    assert question["provenance"]["mapping_source"] == "assist2017_curated_metadata.fixture.json"
-    assert question["canonical_mapping"]["assist2017_question_id"] == 1
-    assert question["canonical_mapping"]["assist2017_concept_id"] == 1
-    assert question["canonical_mapping"]["q_matrix_reference"]["concept_column_indices"] == [1]
-    assert "映射知识点" in question["reason"] or "ASSIST2017 question" in question["reason"]
+    assert question["provenance"]["mapping_source"] == "xes3g5m_curated_metadata.fixture.json"
+    assert question["canonical_mapping"]["xes3g5m_question_id"] == 1
+    assert question["canonical_mapping"]["xes3g5m_concept_id"] == 1
+    assert question["canonical_mapping"]["kc_routes_reference"]["concept_column_indices"] == [1]
+    assert "映射知识点" in question["reason"] or "XES3G5M question" in question["reason"]
 
 
 def test_recommender_surfaces_missing_teaching_content() -> None:

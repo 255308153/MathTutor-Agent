@@ -16,8 +16,8 @@ class RAGDocument(BaseModel):
     source: str
     concept_id: str | None = None
     question_id: str | None = None
-    assist2017_question_id: int | None = None
-    assist2017_concept_id: int | None = None
+    xes3g5m_question_id: int | None = None
+    xes3g5m_concept_id: int | None = None
     canonical_mapping: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
     coverage: dict[str, Any] = Field(default_factory=dict)
@@ -32,8 +32,8 @@ class RAGSearchResult(BaseModel):
     source: str
     concept_id: str | None = None
     question_id: str | None = None
-    assist2017_question_id: int | None = None
-    assist2017_concept_id: int | None = None
+    xes3g5m_question_id: int | None = None
+    xes3g5m_concept_id: int | None = None
     canonical_mapping: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
     coverage: dict[str, Any] = Field(default_factory=dict)

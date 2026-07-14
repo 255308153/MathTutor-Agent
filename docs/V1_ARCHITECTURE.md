@@ -163,7 +163,7 @@ MathTutor Agent V1
 ├─ Knowledge Q&A Loop
 ├─ Mem0 风格学生记忆
 ├─ VikingDB adapter / Chroma fallback RAG 检索
-├─ ASSISTments2017 数学数据子集
+├─ XES3G5M 数学数据子集
 ├─ TeachingContentMap
 ├─ MockKTStateEngine + DGEKTStateEngine 接口预留
 ├─ Risk-prioritized Mastery Path
@@ -239,13 +239,13 @@ Context can assemble evidence, not decide learning facts.
 - 缺少学生记忆或 RAG 资源时，LearningContextLayer 记录 evidence gap，而不是伪造 asset 或覆盖 KT facts。
 - LLM 只负责自然语言表达和轻量交互，不负责核心诊断事实。
 
-### 4.1 V1.5 ASSISTments2017 数据生产线
+### 4.1 V1.5 XES3G5M 数据生产线
 
-V1.5 把 ASSISTments2017 从“demo 映射 fixture”推进为可重复构建、可诊断、可 smoke 的 imported artifact 生产线。它不改变 Agent runtime 的核心事实边界，也不默认启用 full data。
+V1.5 把 XES3G5M 从“demo 映射 fixture”推进为可重复构建、可诊断、可 smoke 的 imported artifact 生产线。它不改变 Agent runtime 的核心事实边界，也不默认启用 full data。
 
 ```text
-本地 ASSISTments2017 source rows + Q-matrix
--> build_assist2017_artifacts CLI
+本地 XES3G5M source rows + KC routes
+-> build_xes3g5m_artifacts CLI
 -> canonical_mapping.json
 -> content_import.json
 -> rag_documents.json
@@ -259,31 +259,31 @@ V1.5 把 ASSISTments2017 从“demo 映射 fixture”推进为可重复构建、
 | 层级 | 说明 | 默认性 |
 | --- | --- | --- |
 | demo | `data/content/demo_teaching_content.json`、`data/rag/demo_knowledge.json` 和 mapping fixture，供本地默认运行。 | 默认启用。 |
-| imported fixture / smoke | `data/imported/assist2017_fixture/*.json`，用小样本验证 V1.5 artifact contract 和学习路径一致性。 | 仅测试或显式配置启用。 |
-| full | 本地完整 ASSISTments2017 source rows / Q-matrix 构建出的 artifact。 | 必须显式传路径，输出到 Git 外部或 ignored 目录。 |
+| imported fixture / smoke | `data/imported/xes3g5m_fixture/*.json`，用小样本验证 V1.5 artifact contract 和学习路径一致性。 | 仅测试或显式配置启用。 |
+| full | 本地完整 XES3G5M source rows / KC routes 构建出的 artifact。 | 必须显式传路径，输出到 Git 外部或 ignored 目录。 |
 
 Artifact contract：
 
-- `canonical_mapping.json`：stable canonical question/concept id、ASSISTments2017 id、Q-matrix reference 和 RAG doc ids。
+- `canonical_mapping.json`：stable canonical question/concept id、XES3G5M id、KC routes reference 和 RAG doc ids。
 - `content_import.json`：题干、标准答案、解析、难度、错因、teaching type、provenance、`content_availability`。`ImportedTeachingContentRepository` 只从这里读取 imported 教学内容。
-- `rag_documents.json`：四类 RAG 文档 `concept_note`、`question_explanation`、`mistake_pattern`、`learning_strategy`，并携带 canonical mapping、ASSISTments2017 metadata、coverage 和 provenance。
-- `coverage_report.json`：mapping/content/RAG/Q-matrix 的覆盖率与 gap 诊断。
+- `rag_documents.json`：四类 RAG 文档 `concept_note`、`question_explanation`、`mistake_pattern`、`learning_strategy`，并携带 canonical mapping、XES3G5M metadata、coverage 和 provenance。
+- `coverage_report.json`：mapping/content/RAG/KC routes 的覆盖率与 gap 诊断。
 - `smoke_dataset.json`：固定学习路径，证明同一 canonical question/concept 能跨推荐、答题、KT facts、RAG citation、LearningContextLayer 和 TeachingTrace 追踪。
 
 Coverage gap category：
 
 | category | 含义 | 系统行为 |
 | --- | --- | --- |
-| `missing_question_mapping` | Q-matrix row 没有 source question。 | 进入 coverage 诊断；不伪造题目。 |
-| `missing_concept_mapping` | Q-matrix concept 没有 source concept metadata。 | 进入 coverage 诊断；不伪造知识点语义。 |
-| `q_matrix_mismatch` | source row question/concept 与 Q-matrix 不一致。 | error 级问题，默认构建失败。 |
+| `missing_question_mapping` | KC routes row 没有 source question。 | 进入 coverage 诊断；不伪造题目。 |
+| `missing_concept_mapping` | KC routes concept 没有 source concept metadata。 | 进入 coverage 诊断；不伪造知识点语义。 |
+| `kc_routes_mismatch` | source row question/concept 与 KC routes 不一致。 | error 级问题，默认构建失败。 |
 | `missing_teaching_content` | 题干、标准答案或解析缺失。 | runtime 通过 `content_availability` / evidence gap 暴露，不能静默生成标准答案。 |
 | `missing_rag_doc` | 期望的 RAG doc 未生成或未导入。 | RAG / Context 记录 gap，不伪造 knowledge_resource。 |
 
 安全与 provider 边界：
 
-- 默认 `MATHTUTOR_CONTENT_SOURCE=demo`、`MATHTUTOR_RAG_SOURCE=demo`、`MATHTUTOR_KT_ENGINE=mock`，不读取 full ASSISTments2017、checkpoint、Mem0、VikingDB 或 OpenViking。
-- full data 只能通过 `--dataset-mode full --source-rows ... --q-matrix ...` 或等价显式配置启用。
+- 默认 `MATHTUTOR_CONTENT_SOURCE=demo`、`MATHTUTOR_RAG_SOURCE=demo`、`MATHTUTOR_KT_ENGINE=mock`，不读取 full XES3G5M、checkpoint、Mem0、VikingDB 或 OpenViking。
+- full data 只能通过 `--dataset-mode full --source-rows ... --kc-routes ...` 或等价显式配置启用。
 - raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、build output 和 full generated artifact 不进入 Git。
 - DGEKT 继续 opt-in；V1.6 只在显式配置 offline evidence artifact 时读取 DGEKT explainability 输出，默认 demo/mock 不加载 checkpoint 或 full outputs。
 
@@ -542,7 +542,7 @@ reflect_and_update_memory 只能写 memory_updates
 KTLearningProgress
 ├─ student_id
 ├─ subject = math
-├─ dataset = assist2017
+├─ dataset = xes3g5m
 ├─ current_session_id
 ├─ concept_states
 ├─ recent_events
@@ -586,7 +586,7 @@ design     设计/综合型：开放策略、综合应用
 
 ```text
 KT concept_id
-来自 ASSISTments / Q-matrix，用于知识追踪计算。
+来自 ASSISTments / KC routes，用于知识追踪计算。
 
 teaching_type
 来自人工标注或规则映射，用于决定教学方式。
@@ -701,14 +701,14 @@ MockKTStateEngine
 用于 V1 demo 和前端联调。
 
 DGEKTStateEngine
-读取真实模型、Q-matrix、序列数据、解释信号。
+读取真实模型、KC routes、序列数据、解释信号。
 
 V1.6 起，DGEKTStateEngine 在显式启用 DGEKT 时通过同一个 `explain_prediction` seam 输出 attribution evidence：
 
-- `raw_model_target`：DGEKT 使用的 ASSIST2017 question / concept target。
+- `raw_model_target`：DGEKT 使用的 XES3G5M question / concept target。
 - `mapped_teaching_content`：映射回 MathTutor question / concept / teaching_type 的教学内容引用。
 - `key_history`：最近进入 one-hot 序列的已判题历史。
-- `top_paths`：优先来自 offline `attribution_paths.csv`；未配置或未命中时只可退回 recent history + Q-matrix 的 partial proxy path。
+- `top_paths`：优先来自 offline `attribution_paths.csv`；未配置或未命中时只可退回 recent history + KC routes 的 partial proxy path。
 - `path_ablation`：offline `path_ablation.csv` 中删除关键 path 后的 prediction 变化。
 - `evidence_status` / `evidence_source`：区分 `complete/offline`、`partial`、`unavailable` 和 `invalid`。
 - `evidence_gaps`：记录 missing artifact、缺列、malformed row、numeric 解析失败、target 未命中、checkpoint provenance mismatch 或 canonical mapping mismatch。
@@ -939,8 +939,8 @@ chunk_id
 doc_type: concept_note | question_explanation | mistake_pattern | learning_strategy
 concept_id
 question_id
-assist2017_question_id
-assist2017_concept_id
+xes3g5m_question_id
+xes3g5m_concept_id
 canonical_mapping
 provenance
 coverage
@@ -949,7 +949,7 @@ source
 updated_at
 ```
 
-`canonical_mapping` 保存 MathTutor question/concept 到 ASSIST2017 question/concept 和 Q-matrix 的对齐摘要；`coverage` 标记 `question`、`concept`、`global`、`unmapped_question` 或 `unmapped_concept`，用于可见化 RAG 缺口。
+`canonical_mapping` 保存 MathTutor question/concept 到 XES3G5M question/concept 和 KC routes 的对齐摘要；`coverage` 标记 `question`、`concept`、`global`、`unmapped_question` 或 `unmapped_concept`，用于可见化 RAG 缺口。
 
 ### V1.3 Evidence Gap Model
 
@@ -991,7 +991,7 @@ next-step advice
 
 - `KTDiagnosis.weak_concepts` / `forgetting_risks`。
 - 推荐题的 `concept_id`、`reason`、`canonical_mapping` 和 `selected_canonical_targets`。
-- RAG citation 的 `concept_id` / `question_id` / ASSIST2017 metadata。
+- RAG citation 的 `concept_id` / `question_id` / XES3G5M metadata。
 - `mistake_diagnosis.concept`。
 - `AttributionEvidence.key_history`、`top_paths.weak_concept_evidence` 和 `diagnose.attribution_chain`。
 - `assembled_context.normalized_context.knowledge_resource` 与 evidence gaps。
@@ -1019,13 +1019,13 @@ RAG 强化标准：
 ```text
 分类型索引
 canonical metadata 过滤
-引用溯源到 question / concept / ASSIST2017 id
+引用溯源到 question / concept / XES3G5M id
 进入规划节点
 ```
 
 ## 18. TeachingContentMap
 
-ASSISTments2017 作为交互序列和知识追踪数据底座，但需要额外构建教学内容映射。
+XES3G5M 作为交互序列和知识追踪数据底座，但需要额外构建教学内容映射。
 
 ```text
 TeachingContentMap
@@ -1039,9 +1039,9 @@ TeachingContentMap
 ├─ mistake_patterns
 ├─ teaching_type
 ├─ canonical_mapping
-│  ├─ assist2017_question_id
-│  ├─ assist2017_concept_id
-│  ├─ q_matrix_reference
+│  ├─ xes3g5m_question_id
+│  ├─ xes3g5m_concept_id
+│  ├─ kc_routes_reference
 │  └─ source
 ├─ provenance
 ├─ content_availability
@@ -1051,7 +1051,7 @@ TeachingContentMap
 V1 策略：
 
 ```text
-KT 数据：ASSISTments2017 全量或子集
+KT 数据：XES3G5M 全量或子集
 教学展示数据：精选 20-50 题人工补全
 RAG 知识库：围绕这些题和知识点建设
 ```
@@ -1294,7 +1294,7 @@ TeachingTrace 基础记录
 ### Milestone 2：数据与内容
 
 ```text
-ASSISTments2017 子集整理
+XES3G5M 子集整理
 TeachingContentMap
 ConceptTeachingTypeMap
 20-50 道演示题
@@ -1364,7 +1364,7 @@ Weak concept / forgetting risk 映射
 
 ### 内部正式试用约束
 
-内部正式试用不得早于 **V1.8**。V1.5 是真实 ASSISTments2017 内容底座和 artifact 生产线，V1.6 / V1.7 仍属于技术验证与专家试用阶段；只有 V1.8 同时满足模型证据、长期记忆、生产级检索、持久化状态、可解释 trace 和反馈闭环后，才允许邀请真实内部学习者连续使用。
+内部正式试用不得早于 **V1.8**。V1.5 是真实 XES3G5M 内容底座和 artifact 生产线，V1.6 / V1.7 仍属于技术验证与专家试用阶段；只有 V1.8 同时满足模型证据、长期记忆、生产级检索、持久化状态、可解释 trace 和反馈闭环后，才允许邀请真实内部学习者连续使用。
 
 ```text
 V1.5: 真实数据内容底座，开发 / 研究验证。
@@ -1389,7 +1389,7 @@ V1.8 必须满足：
 
 ```text
 1. 学科先锁数学，不做泛学科。
-2. 数据集先锁 ASSISTments2017 / 本地 DGEKT 数据。
+2. 数据集先锁 XES3G5M / 本地 DGEKT 数据。
 3. Agent 主线是个人下一步学习决策。
 4. RAG、Memory、KT 都必须进入规划，不做装饰。
 5. LLM 不负责核心评分、掌握度或推荐排序。

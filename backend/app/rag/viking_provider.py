@@ -228,8 +228,8 @@ class VikingKnowledgeRAGAdapter:
             _first_value(
                 payload,
                 raw,
-                "assist2017_question_id",
-                "assistments2017_question_id",
+                "xes3g5m_question_id",
+                "xes3g5m_question_id",
                 "assist_question_id",
             )
         )
@@ -237,8 +237,8 @@ class VikingKnowledgeRAGAdapter:
             _first_value(
                 payload,
                 raw,
-                "assist2017_concept_id",
-                "assistments2017_concept_id",
+                "xes3g5m_concept_id",
+                "xes3g5m_concept_id",
                 "assist_concept_id",
             )
         )
@@ -248,9 +248,9 @@ class VikingKnowledgeRAGAdapter:
         if concept_id:
             canonical_mapping.setdefault("concept_id", concept_id)
         if assist_question_id is not None:
-            canonical_mapping.setdefault("assist2017_question_id", assist_question_id)
+            canonical_mapping.setdefault("xes3g5m_question_id", assist_question_id)
         if assist_concept_id is not None:
-            canonical_mapping.setdefault("assist2017_concept_id", assist_concept_id)
+            canonical_mapping.setdefault("xes3g5m_concept_id", assist_concept_id)
 
         coverage = _dict_value(_first_value(payload, raw, "coverage"))
         coverage.setdefault("coverage_type", "question" if question_id else "concept" if concept_id else "global")
@@ -282,8 +282,8 @@ class VikingKnowledgeRAGAdapter:
             source=source,
             concept_id=concept_id,
             question_id=question_id,
-            assist2017_question_id=assist_question_id,
-            assist2017_concept_id=assist_concept_id,
+            xes3g5m_question_id=assist_question_id,
+            xes3g5m_concept_id=assist_concept_id,
             canonical_mapping=canonical_mapping,
             provenance=provenance,
             coverage=coverage,
@@ -396,14 +396,14 @@ def normalize_rag_metadata_filters(filters: dict[str, Any]) -> dict[str, Any]:
     for target, aliases in {
         "question_id": ("question_id", "canonical_question_id", "mathtutor_question_id"),
         "concept_id": ("concept_id", "canonical_concept_id", "mathtutor_concept_id"),
-        "assist2017_question_id": (
-            "assist2017_question_id",
-            "assistments2017_question_id",
+        "xes3g5m_question_id": (
+            "xes3g5m_question_id",
+            "xes3g5m_question_id",
             "assist_question_id",
         ),
-        "assist2017_concept_id": (
-            "assist2017_concept_id",
-            "assistments2017_concept_id",
+        "xes3g5m_concept_id": (
+            "xes3g5m_concept_id",
+            "xes3g5m_concept_id",
             "assist_concept_id",
         ),
     }.items():
@@ -429,9 +429,9 @@ def matches_rag_metadata_filter(
         return False
     if not _same_optional(result.concept_id, filters.get("concept_id")):
         return False
-    if not _same_optional(result.assist2017_question_id, filters.get("assist2017_question_id")):
+    if not _same_optional(result.xes3g5m_question_id, filters.get("xes3g5m_question_id")):
         return False
-    if not _same_optional(result.assist2017_concept_id, filters.get("assist2017_concept_id")):
+    if not _same_optional(result.xes3g5m_concept_id, filters.get("xes3g5m_concept_id")):
         return False
     return True
 

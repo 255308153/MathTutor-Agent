@@ -57,8 +57,8 @@ data/import/*.pkl
 data/import/*.pt
 data/import/*.pth
 data/imported/*
-!data/imported/assist2017_fixture/
-!data/imported/assist2017_fixture/*.json
+!data/imported/xes3g5m_fixture/
+!data/imported/xes3g5m_fixture/*.json
 data/imported/**/*.pkl
 data/imported/**/*.pt
 data/imported/**/*.pth
@@ -82,6 +82,15 @@ logs/
 
 # Licensed datasets - keep local only
 XES3G5M/
+
+# External SAFKT experiment workspace - keep local only
+SAFKT/
+
+# External model clones (machine-local symlinks / private repo)
+third_party/LDGEKT-explainability-sync
+third_party/safkt
+third_party/**
+!third_party/README.md
 
 # Personal job materials — keep local only
 docs/简历草稿*.md

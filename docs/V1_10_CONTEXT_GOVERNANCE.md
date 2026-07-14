@@ -24,7 +24,7 @@ V1.10 为数学自学平台的每轮学习 turn 增加 Runtime Context Governanc
 
 ## 版本边界
 
-V1.10 是 Runtime Context Governance 与条件工具挂载版本：每轮明确记录看什么、裁什么、挂什么，以及未来 response / LLM 可消费的脱敏 context package。它不要求真实 DGEKT checkpoint、Mem0、VikingDB、OpenViking、真实 LLM 或完整 ASSISTments2017 数据。
+V1.10 是 Runtime Context Governance 与条件工具挂载版本：每轮明确记录看什么、裁什么、挂什么，以及未来 response / LLM 可消费的脱敏 context package。它不要求真实 DGEKT checkpoint、Mem0、VikingDB、OpenViking、真实 LLM 或完整 XES3G5M 数据。
 
 V1.11 才处理生产 readiness、真实 provider 连续验证和内部试用 gate。V1.10 的 provider readiness 仅影响 mounted/skipped/fallback 的只读审计，绝不写入学习状态。
 
@@ -78,7 +78,7 @@ python3 -m pytest backend/tests/test_v11_demo_flow.py -q
 
 ## #131 最终验收
 
-V1.10 保持默认 local fallback：不需要真实 DGEKT checkpoint、Mem0、VikingDB、OpenViking、真实 LLM 或完整 ASSISTments2017 数据。RAG、Memory、provider readiness、tool mount 与 Context Governance 均只读，不会覆盖 KT/DGEKT facts 或写入 progress。
+V1.10 保持默认 local fallback：不需要真实 DGEKT checkpoint、Mem0、VikingDB、OpenViking、真实 LLM 或完整 XES3G5M 数据。RAG、Memory、provider readiness、tool mount 与 Context Governance 均只读，不会覆盖 KT/DGEKT facts 或写入 progress。
 
 ```bash
 python3 -m pytest backend/tests -q
