@@ -46,7 +46,7 @@ def create_app() -> FastAPI:
                     "stage": "diagnose",
                     "message": f"{detail}：{exc}",
                     "recoverable": True,
-                    "actionable_hint": "检查 canonical mapping、ASSIST2017 question/concept id 和 Q-matrix。",
+                    "actionable_hint": "检查 canonical mapping、XES3G5M question/concept id 和 KC routes。",
                 },
             },
         )
@@ -67,7 +67,7 @@ def create_app() -> FastAPI:
                     "stage": "startup",
                     "message": f"DGEKT 引擎不可用：{exc}",
                     "recoverable": True,
-                    "actionable_hint": "检查 DGEKT checkpoint、dataset_dir、Q-matrix 路径，或切回默认 mock 模式。",
+                    "actionable_hint": "检查 DGEKT checkpoint、dataset_dir、KC routes 路径，或切回默认 mock 模式。",
                 },
             },
         )

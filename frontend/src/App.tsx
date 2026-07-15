@@ -191,9 +191,9 @@ export default function App() {
       payload: {
         question_id: question.question_id,
         answer,
-        assist2017_question_id: question.assist2017_question_id,
+        xes3g5m_question_id: question.xes3g5m_question_id,
         dgekt_question_id: question.dgekt_question_id,
-        assist2017_concept_id: question.assist2017_concept_id,
+        xes3g5m_concept_id: question.xes3g5m_concept_id,
         dgekt_concept_id: question.dgekt_concept_id
       }
     });
@@ -1322,7 +1322,7 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <strong>Top path</strong>
             <span>
               {topPath
-                ? `${topPath.history_assist2017_question_id ?? topPath.history_question_id ?? "?"} -> ${topPath.target_assist2017_question_id ?? topPath.target_question_id ?? "?"}`
+                ? `${topPath.history_xes3g5m_question_id ?? topPath.history_question_id ?? "?"} -> ${topPath.target_xes3g5m_question_id ?? topPath.target_question_id ?? "?"}`
                 : "暂无"}
             </span>
           </p>
@@ -1338,7 +1338,7 @@ function TracePanel({ response }: { response: MathTutorEventResponse | null }) {
             <strong>Key history</strong>
             <span>
               {keyHistory
-                ? `${keyHistory.assist2017_question_id ?? keyHistory.question_id ?? "?"} · ${keyHistory.is_correct ? "正确" : "错误"}`
+                ? `${keyHistory.xes3g5m_question_id ?? keyHistory.question_id ?? "?"} · ${keyHistory.is_correct ? "正确" : "错误"}`
                 : "暂无"}
             </span>
           </p>
@@ -1836,8 +1836,8 @@ function ragSourceTarget(source: RagSource) {
   const parts = [
     source.question_id ? `题 ${source.question_id}` : "",
     source.concept_id ? `知识点 ${source.concept_id}` : "",
-    source.assist2017_question_id ? `ASSIST2017 Q${source.assist2017_question_id}` : "",
-    source.assist2017_concept_id ? `C${source.assist2017_concept_id}` : ""
+    source.xes3g5m_question_id ? `XES3G5M Q${source.xes3g5m_question_id}` : "",
+    source.xes3g5m_concept_id ? `C${source.xes3g5m_concept_id}` : ""
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "全局学习策略";
 }

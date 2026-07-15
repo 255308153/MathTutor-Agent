@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from backend.app.mapping.assist2017_mapping import (
+from backend.app.mapping.xes3g5m_mapping import (
     CanonicalMappingArtifact,
     CanonicalMappingRepository,
     build_mapping_artifact,
@@ -17,9 +17,9 @@ from backend.app.storage.content_repository import DemoTeachingContentRepository
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_Q_MATRIX = ROOT / "data" / "mapping" / "assist2017_q_matrix.fixture.csv"
-FIXTURE_METADATA = ROOT / "data" / "mapping" / "assist2017_curated_metadata.fixture.json"
-FIXTURE_ARTIFACT = ROOT / "data" / "mapping" / "assist2017_canonical_mapping.fixture.json"
+FIXTURE_Q_MATRIX = ROOT / "data" / "mapping" / "xes3g5m_kc_routes.fixture.csv"
+FIXTURE_METADATA = ROOT / "data" / "mapping" / "xes3g5m_curated_metadata.fixture.json"
+FIXTURE_ARTIFACT = ROOT / "data" / "mapping" / "xes3g5m_canonical_mapping.fixture.json"
 TEACHING_CONTENT = ROOT / "data" / "content" / "demo_teaching_content.json"
 RAG_DOCS = ROOT / "data" / "rag" / "demo_knowledge.json"
 
@@ -28,14 +28,14 @@ def test_canonical_mapping_schema_validates_required_fields() -> None:
     raw = json.loads(FIXTURE_ARTIFACT.read_text(encoding="utf-8"))
     artifact = CanonicalMappingArtifact.model_validate(raw)
 
-    assert artifact.schema_version == "assist2017-canonical-mapping/v1"
-    assert artifact.questions[0].assist2017_question_id == 1
+    assert artifact.schema_version == "xes3g5m-canonical-mapping/v1"
+    assert artifact.questions[0].xes3g5m_question_id == 1
     assert artifact.questions[0].concept_id == "c_multiplication_facts"
-    assert artifact.questions[0].q_matrix_reference.concept_column_indices == [1]
+    assert artifact.questions[0].kc_routes_reference.concept_column_indices == [1]
 
     broken = dict(raw)
     broken["questions"] = [dict(raw["questions"][0])]
-    broken["questions"][0].pop("q_matrix_reference")
+    broken["questions"][0].pop("kc_routes_reference")
     with pytest.raises(ValidationError):
         CanonicalMappingArtifact.model_validate(broken)
 
@@ -44,7 +44,7 @@ def test_build_mapping_artifact_from_fixture_inputs(tmp_path: Path) -> None:
     output_path = tmp_path / "mapping.json"
 
     artifact = build_mapping_artifact(
-        q_matrix_path=FIXTURE_Q_MATRIX,
+        kc_routes_path=FIXTURE_Q_MATRIX,
         metadata_path=FIXTURE_METADATA,
         teaching_content_path=TEACHING_CONTENT,
         rag_docs_path=RAG_DOCS,
@@ -53,20 +53,20 @@ def test_build_mapping_artifact_from_fixture_inputs(tmp_path: Path) -> None:
     )
 
     assert output_path.is_file()
-    assert artifact.q_matrix.question_count == 6
-    assert artifact.q_matrix.concept_count == 4
-    assert artifact.questions[2].assist2017_question_id == 3
-    assert artifact.questions[2].q_matrix_reference.concept_column_indices == [2]
+    assert artifact.kc_routes.question_count == 6
+    assert artifact.kc_routes.concept_count == 4
+    assert artifact.questions[2].xes3g5m_question_id == 3
+    assert artifact.questions[2].kc_routes_reference.concept_column_indices == [2]
 
 
-def test_q_matrix_alignment_rejects_inconsistent_curated_metadata(tmp_path: Path) -> None:
+def test_kc_routes_alignment_rejects_inconsistent_curated_metadata(tmp_path: Path) -> None:
     metadata = json.loads(FIXTURE_METADATA.read_text(encoding="utf-8"))
-    metadata["questions"][0]["assist2017_concept_id"] = 2
+    metadata["questions"][0]["xes3g5m_concept_id"] = 2
     metadata_path = tmp_path / "bad_metadata.json"
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Q-matrix row"):
-        build_mapping_artifact(q_matrix_path=FIXTURE_Q_MATRIX, metadata_path=metadata_path)
+    with pytest.raises(ValueError, match="KC routes row"):
+        build_mapping_artifact(kc_routes_path=FIXTURE_Q_MATRIX, metadata_path=metadata_path)
 
 
 def test_coverage_diagnostics_reports_counts_and_missing_items() -> None:
@@ -76,7 +76,7 @@ def test_coverage_diagnostics_reports_counts_and_missing_items() -> None:
 
     report = coverage_diagnostics(
         artifact,
-        q_matrix_path=FIXTURE_Q_MATRIX,
+        kc_routes_path=FIXTURE_Q_MATRIX,
         teaching_content=teaching_content,
         rag_docs=rag_docs,
     ).to_report()
@@ -94,10 +94,10 @@ def test_repository_queries_by_question_and_concept() -> None:
 
     question = repository.get_by_mathtutor_question_id("q_frac_001")
     assert question is not None
-    assert question.assist2017_question_id == 3
-    assert question.assist2017_concept_id == 2
+    assert question.xes3g5m_question_id == 3
+    assert question.xes3g5m_concept_id == 2
 
-    concept = repository.concept_for_assist2017_concept_id(2)
+    concept = repository.concept_for_xes3g5m_concept_id(2)
     assert concept is not None
     assert concept.concept_id == "c_fraction_addition"
 
@@ -108,11 +108,11 @@ def test_content_repository_uses_mapping_without_breaking_mock_mode() -> None:
     assert questions
     first_question = questions[0]
     assert first_question["question_id"] == "q_mem_001"
-    assert first_question["assist2017_question_id"] == 1
-    assert first_question["assist2017_concept_id"] == 1
+    assert first_question["xes3g5m_question_id"] == 1
+    assert first_question["xes3g5m_concept_id"] == 1
     assert first_question["teaching_type"] == "memory"
-    assert first_question["q_matrix_reference"]["concept_column_indices"] == [1]
+    assert first_question["kc_routes_reference"]["concept_column_indices"] == [1]
 
     unmapped_question = next(question for question in questions if question["question_id"] == "q_mem_003")
-    assert unmapped_question["assist2017_question_id"] == 3
-    assert "assist2017_concept_id" not in unmapped_question
+    assert unmapped_question["xes3g5m_question_id"] == 3
+    assert "xes3g5m_concept_id" not in unmapped_question

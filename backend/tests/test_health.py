@@ -26,8 +26,8 @@ from backend.app.storage.progress_store import InMemoryProgressStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPORTED_CONTENT = ROOT / "data" / "imported" / "assist2017_fixture" / "content_import.json"
-IMPORTED_RAG = ROOT / "data" / "imported" / "assist2017_fixture" / "rag_documents.json"
+IMPORTED_CONTENT = ROOT / "data" / "imported" / "xes3g5m_fixture" / "content_import.json"
+IMPORTED_RAG = ROOT / "data" / "imported" / "xes3g5m_fixture" / "rag_documents.json"
 DGEKT_OFFLINE_EVIDENCE_FIXTURE = ROOT / "data" / "dgekt" / "offline_evidence_fixture"
 
 
@@ -216,7 +216,7 @@ def test_provider_health_live_configuration_does_not_expose_secret_values() -> N
             rag_live_provider="vikingdb",
             vikingdb_api_key="viking-secret-value",
             rag_provider_endpoint="https://provider.example.test/search",
-            rag_provider_collection="assist2017-smoke",
+            rag_provider_collection="xes3g5m-smoke",
         )
     )
 
@@ -413,7 +413,7 @@ def test_provider_health_degraded_snapshot_does_not_block_default_learning_flow(
     assert body["state_summary"]["errors"] == []
 
 
-def test_provider_health_reports_dgekt_missing_checkpoint_dataset_and_q_matrix() -> None:
+def test_provider_health_reports_dgekt_missing_checkpoint_dataset_and_kc_routes() -> None:
     health = build_provider_health(MathTutorSettings(kt_engine="dgekt"))
 
     body = health.model_dump()
@@ -434,7 +434,7 @@ def test_provider_health_reports_dgekt_missing_checkpoint_dataset_and_q_matrix()
     assert "补齐 env 或切回默认 mock KT" in kt["actionable_hint"]
 
 
-def test_provider_health_reports_dgekt_missing_dataset_and_q_matrix_after_checkpoint(
+def test_provider_health_reports_dgekt_missing_dataset_and_kc_routes_after_checkpoint(
     tmp_path: Path,
 ) -> None:
     checkpoint = tmp_path / "checkpoint.fixture"
@@ -464,7 +464,7 @@ def test_provider_health_reports_dgekt_unavailable_paths_without_leaking_paths(
             kt_engine="dgekt",
             dgekt_checkpoint_path=str(tmp_path / "private-checkpoint.fixture"),
             dgekt_dataset_dir=str(tmp_path / "private-dataset"),
-            dgekt_q_matrix_path=str(tmp_path / "private-q-matrix.csv"),
+            dgekt_kc_routes_path=str(tmp_path / "private-kc-routes.csv"),
             dgekt_canonical_mapping_path=str(tmp_path / "private-mapping.json"),
             dgekt_offline_evidence_dir=str(tmp_path / "private-offline-evidence"),
         )
@@ -482,7 +482,7 @@ def test_provider_health_reports_dgekt_unavailable_paths_without_leaking_paths(
     serialized = json.dumps(body, ensure_ascii=False)
     assert "private-checkpoint" not in serialized
     assert "private-dataset" not in serialized
-    assert "private-q-matrix" not in serialized
+    assert "private-kc-routes" not in serialized
     assert "private-mapping" not in serialized
     assert "private-offline-evidence" not in serialized
 
@@ -490,14 +490,14 @@ def test_provider_health_reports_dgekt_unavailable_paths_without_leaking_paths(
 def test_provider_health_reports_dgekt_partial_offline_evidence_when_not_configured(
     tmp_path: Path,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = _write_dgekt_readiness_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = _write_dgekt_readiness_files(tmp_path)
 
     health = build_provider_health(
         MathTutorSettings(
             kt_engine="dgekt",
             dgekt_checkpoint_path=str(checkpoint),
             dgekt_dataset_dir=str(dataset_dir),
-            dgekt_q_matrix_path=str(q_matrix),
+            dgekt_kc_routes_path=str(kc_routes),
         )
     )
     kt = {item.component: item.model_dump() for item in health.components}["kt"]
@@ -514,14 +514,14 @@ def test_provider_health_reports_dgekt_partial_offline_evidence_when_not_configu
 
 
 def test_provider_health_reports_dgekt_complete_fixture_readiness(tmp_path: Path) -> None:
-    checkpoint, dataset_dir, q_matrix = _write_dgekt_readiness_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = _write_dgekt_readiness_files(tmp_path)
 
     health = build_provider_health(
         MathTutorSettings(
             kt_engine="dgekt",
             dgekt_checkpoint_path=str(checkpoint),
             dgekt_dataset_dir=str(dataset_dir),
-            dgekt_q_matrix_path=str(q_matrix),
+            dgekt_kc_routes_path=str(kc_routes),
             dgekt_offline_evidence_dir=str(DGEKT_OFFLINE_EVIDENCE_FIXTURE),
         )
     )
@@ -793,7 +793,7 @@ class _ReadonlyDGEKTProbe:
                 ],
                 "key_history": [
                     {
-                        "assist2017_question_id": 3,
+                        "xes3g5m_question_id": 3,
                         "is_correct": False,
                     }
                 ],
@@ -995,10 +995,10 @@ def _jsonable(value: Any) -> Any:
 def _write_dgekt_readiness_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     checkpoint = tmp_path / "checkpoint.fixture"
     checkpoint.write_text("not a real checkpoint", encoding="utf-8")
-    dataset_dir = tmp_path / "assist2017"
+    dataset_dir = tmp_path / "xes3g5m"
     dataset_dir.mkdir()
-    for filename in ("assist2017_pid_train.csv", "assist2017_pid_test.csv"):
+    for filename in ("xes3g5m_pid_train.csv", "xes3g5m_pid_test.csv"):
         (dataset_dir / filename).write_text("fixture\n", encoding="utf-8")
-    q_matrix = tmp_path / "q_matrix.csv"
-    q_matrix.write_text("1,0\n0,1\n", encoding="utf-8")
-    return checkpoint, dataset_dir, q_matrix
+    kc_routes = tmp_path / "kc_routes.csv"
+    kc_routes.write_text("1,0\n0,1\n", encoding="utf-8")
+    return checkpoint, dataset_dir, kc_routes

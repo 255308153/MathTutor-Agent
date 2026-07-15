@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from .core.config import MathTutorSettings, get_settings
-from .mapping.assist2017_mapping import DEFAULT_MAPPING_PATH
+from .mapping.xes3g5m_mapping import DEFAULT_MAPPING_PATH
 from .provider_gaps import PROVIDER_EVIDENCE_GAP_TYPES, RAW_PROVIDER_KEYS
 from .rag.knowledge_rag import RAG_PATH
 from .schemas.provider_health import (
@@ -19,7 +19,7 @@ from .storage.content_repository import CONTENT_PATH
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DGEKT_DATASET_FILES = ("assist2017_pid_train.csv", "assist2017_pid_test.csv")
+DGEKT_DATASET_FILES = ("xes3g5m_pid_train.csv", "xes3g5m_pid_test.csv")
 DGEKT_OFFLINE_EVIDENCE_FILES = (
     "diagnosis_cases.json",
     "attribution_paths.csv",
@@ -258,10 +258,10 @@ def _kt_health(settings: MathTutorSettings, checked_at: str) -> ProviderHealthCo
                     if not (dataset_dir / filename).is_file():
                         missing_artifacts.append(f"DGEKT dataset file {filename}")
 
-        if not settings.dgekt_q_matrix_path:
+        if not settings.dgekt_kc_routes_path:
             missing_fields.append("MATHTUTOR_DGEKT_Q_MATRIX_PATH")
-        elif not _resolve_project_path(settings.dgekt_q_matrix_path).is_file():
-            missing_artifacts.append("DGEKT Q-matrix file")
+        elif not _resolve_project_path(settings.dgekt_kc_routes_path).is_file():
+            missing_artifacts.append("DGEKT KC routes file")
 
         mapping_path = (
             _resolve_project_path(settings.dgekt_canonical_mapping_path)
@@ -679,7 +679,7 @@ def _dgekt_offline_evidence_gaps(
 
 def _dgekt_hint(*, status: ProviderHealthStatus, offline_status: str) -> str:
     if status == "healthy":
-        return "DGEKT 已显式启用，checkpoint、dataset、Q-matrix、canonical mapping 与 offline evidence 基础 artifact 均可诊断。"
+        return "DGEKT 已显式启用，checkpoint、dataset、KC routes、canonical mapping 与 offline evidence 基础 artifact 均可诊断。"
     if status == "degraded" and offline_status == "partial":
         return (
             "DGEKT 核心配置可诊断，但 offline evidence 未配置；当前只能视为 partial readiness，"
@@ -751,7 +751,7 @@ def _content_rag_provider(settings: MathTutorSettings) -> str:
     if settings.content_source == "demo" and settings.rag_source == "demo":
         return "demo_artifacts"
     paths = [settings.content_import_path, settings.rag_artifact_path]
-    if any("assist2017_fixture" in path for path in paths if path):
+    if any("xes3g5m_fixture" in path for path in paths if path):
         return "fixture_artifacts"
     if settings.content_source == "imported" or settings.rag_source == "imported":
         return "imported_artifacts"

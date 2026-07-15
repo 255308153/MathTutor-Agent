@@ -32,7 +32,7 @@ Provider Health 响应固定使用以下状态词：
 
 ## #99 基线覆盖
 
-默认本地运行不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、full ASSISTments2017 数据、generated vector index 或网络访问。默认 `local_fallback / mock / demo` 下，`/api/provider-health` 会展示以下组件均可运行：
+默认本地运行不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、full XES3G5M 数据、generated vector index 或网络访问。默认 `local_fallback / mock / demo` 下，`/api/provider-health` 会展示以下组件均可运行：
 
 | component | 默认 mode/provider | 状态 |
 | --- | --- | --- |
@@ -73,9 +73,9 @@ KT readiness 覆盖两种模式：
 | mode | provider | 状态 | 说明 |
 | --- | --- | --- | --- |
 | `mock` | `mock` | `healthy` | 默认 mock KT 可运行，KT facts 仍是权威学习事实。 |
-| `dgekt` | `dgekt` | `healthy` / `degraded` / `unavailable` / `not_configured` | 只有显式启用时检查 checkpoint、dataset、Q-matrix、canonical mapping 与 offline evidence readiness。 |
+| `dgekt` | `dgekt` | `healthy` / `degraded` / `unavailable` / `not_configured` | 只有显式启用时检查 checkpoint、dataset、KC routes、canonical mapping 与 offline evidence readiness。 |
 
-DGEKT readiness 只做只读配置与 artifact 存在性检查，不加载 checkpoint、不初始化 PyTorch runtime、不访问模型文件内容。输出不会包含本地 checkpoint 路径、dataset 路径、Q-matrix 路径或 offline evidence 目录，只报告缺少的 env 名或 artifact 类别。
+DGEKT readiness 只做只读配置与 artifact 存在性检查，不加载 checkpoint、不初始化 PyTorch runtime、不访问模型文件内容。输出不会包含本地 checkpoint 路径、dataset 路径、KC routes 路径或 offline evidence 目录，只报告缺少的 env 名或 artifact 类别。
 
 关键状态：
 
@@ -152,7 +152,7 @@ Provider Health 输出不得泄露 credentials、authorization header、raw prov
 
 ## 使用与验收说明
 
-默认 local fallback / mock / demo content 可运行，只说明本地学习演示路径可用；它不等于 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、完整 ASSISTments2017 artifact 或 live provider 已准备好。若要验证 live provider，需要显式设置对应 mode、provider、endpoint、collection、checkpoint / dataset / Q-matrix / offline evidence 路径和 opt-in smoke 开关。
+默认 local fallback / mock / demo content 可运行，只说明本地学习演示路径可用；它不等于 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint、完整 XES3G5M artifact 或 live provider 已准备好。若要验证 live provider，需要显式设置对应 mode、provider、endpoint、collection、checkpoint / dataset / KC routes / offline evidence 路径和 opt-in smoke 开关。
 
 Provider Health 是诊断与运营可见性，不是学习事实来源。学习事实仍由 KT / DGEKT、服务端判题、RAG citation、Memory 和 LearningContextLayer 各自的边界控制：
 

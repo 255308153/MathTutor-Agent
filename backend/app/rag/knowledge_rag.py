@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..core.config import MathTutorSettings, get_settings
-from ..importing.assist2017_artifacts import RAGDocumentArtifact
-from ..mapping.assist2017_mapping import CanonicalMappingRepository, DEFAULT_MAPPING_PATH
+from ..importing.xes3g5m_artifacts import RAGDocumentArtifact
+from ..mapping.xes3g5m_mapping import CanonicalMappingRepository, DEFAULT_MAPPING_PATH
 from .schema import RAGDocument, RAGSearchResult
 
 
@@ -94,11 +94,11 @@ class LocalKnowledgeRAG:
         question_id = filters.get("question_id")
         if question_id and document.question_id != question_id:
             return False
-        assist_question_id = filters.get("assist2017_question_id")
-        if assist_question_id and str(document.assist2017_question_id) != str(assist_question_id):
+        assist_question_id = filters.get("xes3g5m_question_id")
+        if assist_question_id and str(document.xes3g5m_question_id) != str(assist_question_id):
             return False
-        assist_concept_id = filters.get("assist2017_concept_id")
-        if assist_concept_id and str(document.assist2017_concept_id) != str(assist_concept_id):
+        assist_concept_id = filters.get("xes3g5m_concept_id")
+        if assist_concept_id and str(document.xes3g5m_concept_id) != str(assist_concept_id):
             return False
         return True
 
@@ -138,8 +138,8 @@ class LocalKnowledgeRAG:
             source=document.source,
             concept_id=document.concept_id,
             question_id=document.question_id,
-            assist2017_question_id=document.assist2017_question_id,
-            assist2017_concept_id=document.assist2017_concept_id,
+            xes3g5m_question_id=document.xes3g5m_question_id,
+            xes3g5m_concept_id=document.xes3g5m_concept_id,
             canonical_mapping=document.canonical_mapping,
             provenance=document.provenance,
             coverage=document.coverage,
@@ -155,40 +155,40 @@ class LocalKnowledgeRAG:
         if repository is not None and document.concept_id:
             concept_mapping = repository.concept_for_mathtutor_concept_id(document.concept_id)
 
-        assist_question_id = document.assist2017_question_id
-        assist_concept_id = document.assist2017_concept_id
+        assist_question_id = document.xes3g5m_question_id
+        assist_concept_id = document.xes3g5m_concept_id
         canonical_mapping: dict[str, Any] = dict(document.canonical_mapping)
         has_embedded_alignment = bool(
-            document.assist2017_question_id
-            or document.assist2017_concept_id
-            or canonical_mapping.get("assist2017_question_id")
-            or canonical_mapping.get("assist2017_concept_id")
+            document.xes3g5m_question_id
+            or document.xes3g5m_concept_id
+            or canonical_mapping.get("xes3g5m_question_id")
+            or canonical_mapping.get("xes3g5m_concept_id")
             or document.coverage.get("question_aligned")
             or document.coverage.get("concept_aligned")
         )
         if question_mapping is not None:
-            assist_question_id = question_mapping.assist2017_question_id
-            assist_concept_id = question_mapping.assist2017_concept_id
+            assist_question_id = question_mapping.xes3g5m_question_id
+            assist_concept_id = question_mapping.xes3g5m_concept_id
             canonical_mapping.update(
                 {
                     "question_id": question_mapping.question_id,
                     "concept_id": question_mapping.concept_id,
                     "concept_name": question_mapping.concept_name,
                     "teaching_type": question_mapping.teaching_type,
-                    "assist2017_question_id": question_mapping.assist2017_question_id,
-                    "assist2017_concept_id": question_mapping.assist2017_concept_id,
-                    "q_matrix_reference": question_mapping.q_matrix_reference.model_dump(),
+                    "xes3g5m_question_id": question_mapping.xes3g5m_question_id,
+                    "xes3g5m_concept_id": question_mapping.xes3g5m_concept_id,
+                    "kc_routes_reference": question_mapping.kc_routes_reference.model_dump(),
                     "source": question_mapping.source_provenance.source,
                 }
             )
         elif concept_mapping is not None:
-            assist_concept_id = concept_mapping.assist2017_concept_id
+            assist_concept_id = concept_mapping.xes3g5m_concept_id
             canonical_mapping.update(
                 {
                     "concept_id": concept_mapping.concept_id,
                     "concept_name": concept_mapping.concept_name,
                     "teaching_type": concept_mapping.teaching_type,
-                    "assist2017_concept_id": concept_mapping.assist2017_concept_id,
+                    "xes3g5m_concept_id": concept_mapping.xes3g5m_concept_id,
                     "source": concept_mapping.source_provenance.source,
                 }
             )
@@ -231,8 +231,8 @@ class LocalKnowledgeRAG:
 
         return document.model_copy(
             update={
-                "assist2017_question_id": assist_question_id,
-                "assist2017_concept_id": assist_concept_id,
+                "xes3g5m_question_id": assist_question_id,
+                "xes3g5m_concept_id": assist_concept_id,
                 "canonical_mapping": canonical_mapping,
                 "provenance": provenance,
                 "coverage": coverage,

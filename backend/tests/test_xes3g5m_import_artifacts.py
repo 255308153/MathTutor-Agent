@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.importing.assist2017_artifacts import (
+from backend.app.importing.xes3g5m_artifacts import (
     CONTENT_SCHEMA_VERSION,
     COVERAGE_SCHEMA_VERSION,
     RAG_SCHEMA_VERSION,
@@ -18,22 +18,22 @@ from backend.app.importing.assist2017_artifacts import (
     CoverageReportArtifact,
     RAGDocumentArtifact,
     SmokeDatasetArtifact,
-    build_assist2017_import_artifacts,
+    build_xes3g5m_import_artifacts,
 )
-from backend.app.mapping.assist2017_mapping import CanonicalMappingArtifact
+from backend.app.mapping.xes3g5m_mapping import CanonicalMappingArtifact
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE_ROWS = ROOT / "data" / "import" / "assist2017_source.fixture.csv"
-Q_MATRIX = ROOT / "data" / "mapping" / "assist2017_q_matrix.fixture.csv"
+SOURCE_ROWS = ROOT / "data" / "import" / "xes3g5m_source.fixture.csv"
+Q_MATRIX = ROOT / "data" / "mapping" / "xes3g5m_kc_routes.fixture.csv"
 
 
 def test_builds_v15_artifact_schemas_from_realistic_fixture(tmp_path: Path) -> None:
-    output_dir = tmp_path / "assist2017-artifacts"
+    output_dir = tmp_path / "xes3g5m-artifacts"
 
-    artifacts = build_assist2017_import_artifacts(
+    artifacts = build_xes3g5m_import_artifacts(
         source_rows_path=SOURCE_ROWS,
-        q_matrix_path=Q_MATRIX,
+        kc_routes_path=Q_MATRIX,
         output_dir=output_dir,
         generated_at="2026-07-09T00:00:00+00:00",
     )
@@ -54,9 +54,9 @@ def test_builds_v15_artifact_schemas_from_realistic_fixture(tmp_path: Path) -> N
     assert (output_dir / "coverage_report.json").is_file()
     assert (output_dir / "smoke_dataset.json").is_file()
     assert artifacts.content.metadata.row_counts["source_rows"] == 3
-    assert artifacts.content.metadata.row_counts["q_matrix_questions"] == 6
+    assert artifacts.content.metadata.row_counts["kc_routes_questions"] == 6
     assert artifacts.content.metadata.source_paths["source_rows"].endswith(
-        "data/import/assist2017_source.fixture.csv"
+        "data/import/xes3g5m_source.fixture.csv"
     )
     assert artifacts.content.metadata.coverage_summary["mapping"]["mapped_question_count"] == 3
 
@@ -69,21 +69,21 @@ def test_canonical_ids_are_stable_when_source_order_changes(tmp_path: Path) -> N
         writer.writeheader()
         writer.writerows(reversed(rows))
 
-    original = build_assist2017_import_artifacts(
+    original = build_xes3g5m_import_artifacts(
         source_rows_path=SOURCE_ROWS,
-        q_matrix_path=Q_MATRIX,
+        kc_routes_path=Q_MATRIX,
         generated_at="fixed",
     )
-    shuffled = build_assist2017_import_artifacts(
+    shuffled = build_xes3g5m_import_artifacts(
         source_rows_path=shuffled_source,
-        q_matrix_path=Q_MATRIX,
+        kc_routes_path=Q_MATRIX,
         generated_at="fixed",
     )
 
     assert [question.question_id for question in original.mapping.questions] == [
-        "q_assist2017_000001",
-        "q_assist2017_000003",
-        "q_assist2017_000005",
+        "q_xes3g5m_000001",
+        "q_xes3g5m_000003",
+        "q_xes3g5m_000005",
     ]
     assert [question.question_id for question in original.mapping.questions] == [
         question.question_id for question in shuffled.mapping.questions
@@ -93,10 +93,10 @@ def test_canonical_ids_are_stable_when_source_order_changes(tmp_path: Path) -> N
     ]
 
 
-def test_coverage_reports_mapping_content_rag_and_q_matrix_gaps() -> None:
-    artifacts = build_assist2017_import_artifacts(
+def test_coverage_reports_mapping_content_rag_and_kc_routes_gaps() -> None:
+    artifacts = build_xes3g5m_import_artifacts(
         source_rows_path=SOURCE_ROWS,
-        q_matrix_path=Q_MATRIX,
+        kc_routes_path=Q_MATRIX,
         generated_at="fixed",
     )
     summary = artifacts.coverage.summary
@@ -105,31 +105,31 @@ def test_coverage_reports_mapping_content_rag_and_q_matrix_gaps() -> None:
     assert summary["mapping"]["mapped_question_count"] == 3
     assert summary["mapping"]["unmapped_question_count"] == 3
     assert summary["mapping"]["unmapped_question_ids"] == [
-        "q_assist2017_000002",
-        "q_assist2017_000004",
-        "q_assist2017_000006",
+        "q_xes3g5m_000002",
+        "q_xes3g5m_000004",
+        "q_xes3g5m_000006",
     ]
     assert summary["mapping"]["unmapped_concept_count"] == 1
-    assert summary["mapping"]["unmapped_concept_ids"] == ["c_assist2017_0004"]
+    assert summary["mapping"]["unmapped_concept_ids"] == ["c_xes3g5m_0004"]
     assert summary["content"]["missing_teaching_content_count"] == 1
     assert summary["content"]["missing_teaching_content"][0]["canonical_question_id"] == (
-        "q_assist2017_000005"
+        "q_xes3g5m_000005"
     )
     assert summary["content"]["missing_teaching_content"][0]["missing_fields"] == [
         "explanation"
     ]
     assert summary["rag"]["missing_rag_doc_count"] == 1
     assert summary["rag"]["missing_rag_docs"][0]["doc_id"] == (
-        "rag_assist2017_q000005_question_explanation"
+        "rag_xes3g5m_q000005_question_explanation"
     )
-    assert summary["q_matrix"]["mismatch_count"] == 0
+    assert summary["kc_routes"]["mismatch_count"] == 0
     assert {
         gap.reason_code
         for gap in gaps
     }.issuperset(
         {
-            "q_matrix_row_without_source_question",
-            "q_matrix_concept_without_source_concept",
+            "kc_routes_row_without_source_question",
+            "kc_routes_concept_without_source_concept",
             "essential_teaching_field_missing",
             "expected_rag_doc_not_generated",
         }
@@ -137,12 +137,12 @@ def test_coverage_reports_mapping_content_rag_and_q_matrix_gaps() -> None:
     missing_content = next(
         gap for gap in gaps if gap.reason_code == "essential_teaching_field_missing"
     )
-    assert missing_content.canonical_question_id == "q_assist2017_000005"
+    assert missing_content.canonical_question_id == "q_xes3g5m_000005"
     assert missing_content.provenance["missing_fields"] == ["explanation"]
     assert missing_content.provenance["missing_reason_codes"] == ["missing_explanation"]
 
 
-def test_coverage_summary_keeps_mapping_content_rag_and_q_matrix_gap_details(
+def test_coverage_summary_keeps_mapping_content_rag_and_kc_routes_gap_details(
     tmp_path: Path,
 ) -> None:
     mismatched_source = tmp_path / "mismatched.csv"
@@ -153,36 +153,36 @@ def test_coverage_summary_keeps_mapping_content_rag_and_q_matrix_gap_details(
         encoding="utf-8",
     )
 
-    diagnostic = build_assist2017_import_artifacts(
+    diagnostic = build_xes3g5m_import_artifacts(
         source_rows_path=mismatched_source,
-        q_matrix_path=Q_MATRIX,
+        kc_routes_path=Q_MATRIX,
         generated_at="fixed",
         fail_on_errors=False,
     )
     summary = diagnostic.coverage.summary
 
     assert summary["mapping"]["mapped_question_ids"] == [
-        "q_assist2017_000001",
-        "q_assist2017_000005",
+        "q_xes3g5m_000001",
+        "q_xes3g5m_000005",
     ]
     assert summary["mapping"]["unmapped_question_ids"] == [
-        "q_assist2017_000002",
-        "q_assist2017_000003",
-        "q_assist2017_000004",
-        "q_assist2017_000006",
+        "q_xes3g5m_000002",
+        "q_xes3g5m_000003",
+        "q_xes3g5m_000004",
+        "q_xes3g5m_000006",
     ]
-    assert summary["q_matrix"]["mismatch_count"] == 1
-    assert summary["q_matrix"]["mismatches"][0]["reason_code"] == (
-        "concept_not_in_q_matrix_row"
+    assert summary["kc_routes"]["mismatch_count"] == 1
+    assert summary["kc_routes"]["mismatches"][0]["reason_code"] == (
+        "concept_not_in_kc_routes_row"
     )
-    assert summary["q_matrix"]["mismatches"][0]["canonical_question_id"] == (
-        "q_assist2017_000003"
+    assert summary["kc_routes"]["mismatches"][0]["canonical_question_id"] == (
+        "q_xes3g5m_000003"
     )
     assert summary["content"]["missing_teaching_content"][0]["source_ref"].endswith(
         "mismatched.csv:row:4"
     )
     assert summary["rag"]["missing_rag_docs"][0]["canonical_question_id"] == (
-        "q_assist2017_000005"
+        "q_xes3g5m_000005"
     )
 
 
@@ -193,10 +193,10 @@ def test_cli_writes_artifacts_and_prints_summary(tmp_path: Path) -> None:
         [
             sys.executable,
             "-m",
-            "backend.app.importing.build_assist2017_artifacts",
+            "backend.app.importing.build_xes3g5m_artifacts",
             "--source-rows",
             str(SOURCE_ROWS),
-            "--q-matrix",
+            "--kc-routes",
             str(Q_MATRIX),
             "--output-dir",
             str(output_dir),
@@ -231,10 +231,10 @@ def test_cli_failure_prints_validation_summary(tmp_path: Path) -> None:
         [
             sys.executable,
             "-m",
-            "backend.app.importing.build_assist2017_artifacts",
+            "backend.app.importing.build_xes3g5m_artifacts",
             "--source-rows",
             str(mismatched_source),
-            "--q-matrix",
+            "--kc-routes",
             str(Q_MATRIX),
             "--output-dir",
             str(output_dir),
@@ -250,7 +250,7 @@ def test_cli_failure_prints_validation_summary(tmp_path: Path) -> None:
     assert payload["status"] == "failed"
     assert payload["coverage_summary"]["validation"]["error_count"] == 1
     assert payload["coverage_summary"]["validation"]["gap_counts"] == {
-        "q_matrix_mismatch": 1
+        "kc_routes_mismatch": 1
     }
     assert payload["validation_errors"][0]["source_ref"].endswith("mismatched.csv:row:3")
 
@@ -259,9 +259,9 @@ def test_missing_file_and_malformed_row_fail_with_actionable_categories(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(Assist2017BuildError) as missing_file:
-        build_assist2017_import_artifacts(
+        build_xes3g5m_import_artifacts(
             source_rows_path=tmp_path / "missing.csv",
-            q_matrix_path=Q_MATRIX,
+            kc_routes_path=Q_MATRIX,
             generated_at="fixed",
         )
     assert missing_file.value.issues[0].category == "missing_file"
@@ -273,16 +273,16 @@ def test_missing_file_and_malformed_row_fail_with_actionable_categories(
         encoding="utf-8",
     )
     with pytest.raises(Assist2017BuildError) as malformed_row:
-        build_assist2017_import_artifacts(
+        build_xes3g5m_import_artifacts(
             source_rows_path=malformed,
-            q_matrix_path=Q_MATRIX,
+            kc_routes_path=Q_MATRIX,
             generated_at="fixed",
         )
     assert malformed_row.value.issues[0].category == "malformed_row"
     assert malformed_row.value.issues[0].reason_code == "invalid_source_row"
 
 
-def test_q_matrix_mismatch_fails_by_default_and_can_be_diagnosed(
+def test_kc_routes_mismatch_fails_by_default_and_can_be_diagnosed(
     tmp_path: Path,
 ) -> None:
     mismatched_source = tmp_path / "mismatched.csv"
@@ -294,19 +294,19 @@ def test_q_matrix_mismatch_fails_by_default_and_can_be_diagnosed(
     )
 
     with pytest.raises(Assist2017BuildError) as mismatch:
-        build_assist2017_import_artifacts(
+        build_xes3g5m_import_artifacts(
             source_rows_path=mismatched_source,
-            q_matrix_path=Q_MATRIX,
+            kc_routes_path=Q_MATRIX,
             generated_at="fixed",
         )
-    assert mismatch.value.issues[0].category == "q_matrix_mismatch"
-    assert mismatch.value.issues[0].reason_code == "concept_not_in_q_matrix_row"
+    assert mismatch.value.issues[0].category == "kc_routes_mismatch"
+    assert mismatch.value.issues[0].reason_code == "concept_not_in_kc_routes_row"
 
-    diagnostic = build_assist2017_import_artifacts(
+    diagnostic = build_xes3g5m_import_artifacts(
         source_rows_path=mismatched_source,
-        q_matrix_path=Q_MATRIX,
+        kc_routes_path=Q_MATRIX,
         generated_at="fixed",
         fail_on_errors=False,
     )
-    assert diagnostic.coverage.summary["q_matrix"]["mismatch_count"] == 1
-    assert any(gap.category == "q_matrix_mismatch" for gap in diagnostic.coverage.gaps)
+    assert diagnostic.coverage.summary["kc_routes"]["mismatch_count"] == 1
+    assert any(gap.category == "kc_routes_mismatch" for gap in diagnostic.coverage.gaps)

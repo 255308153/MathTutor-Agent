@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ..mapping.assist2017_mapping import (
+from ..mapping.xes3g5m_mapping import (
     CanonicalMappingRepository,
     DEFAULT_MAPPING_PATH,
 )
@@ -197,8 +197,8 @@ class DGEKTOfflineEvidenceAdapter:
         dataset: str,
         student_id: str,
         target_question_id: str,
-        target_assist2017_question_id: int,
-        target_assist2017_concept_id: int | None,
+        target_xes3g5m_question_id: int,
+        target_xes3g5m_concept_id: int | None,
         prediction_probability: float | None,
         authoritative_weak_concepts: list[dict[str, Any]],
         checkpoint_provenance: dict[str, Any],
@@ -209,8 +209,8 @@ class DGEKTOfflineEvidenceAdapter:
             return self._gap_evidence(
                 status=_status_for_load_gaps(self.load_gaps),
                 target_question_id=target_question_id,
-                target_assist2017_question_id=target_assist2017_question_id,
-                target_assist2017_concept_id=target_assist2017_concept_id,
+                target_xes3g5m_question_id=target_xes3g5m_question_id,
+                target_xes3g5m_concept_id=target_xes3g5m_concept_id,
                 prediction_probability=prediction_probability,
                 weak_concepts=authoritative_weak_concepts,
                 gaps=self.load_gaps,
@@ -221,8 +221,8 @@ class DGEKTOfflineEvidenceAdapter:
         match = self._find_case(
             dataset=dataset,
             student_id=student_id,
-            target_assist2017_question_id=target_assist2017_question_id,
-            target_assist2017_concept_id=target_assist2017_concept_id,
+            target_xes3g5m_question_id=target_xes3g5m_question_id,
+            target_xes3g5m_concept_id=target_xes3g5m_concept_id,
         )
         if match is None:
             gap = OfflineEvidenceGap(
@@ -231,8 +231,8 @@ class DGEKTOfflineEvidenceAdapter:
                 severity="warning",
                 message=(
                     "Offline DGEKT evidence artifact does not contain a matching target "
-                    f"for student={student_id}, question={target_assist2017_question_id}, "
-                    f"concept={target_assist2017_concept_id}."
+                    f"for student={student_id}, question={target_xes3g5m_question_id}, "
+                    f"concept={target_xes3g5m_concept_id}."
                 ),
                 actionable_hint=(
                     "确认 offline explainability 输出覆盖当前 sample/student/time step，"
@@ -241,15 +241,15 @@ class DGEKTOfflineEvidenceAdapter:
                 details={
                     "dataset": dataset,
                     "student_id": student_id,
-                    "target_assist2017_question_id": target_assist2017_question_id,
-                    "target_assist2017_concept_id": target_assist2017_concept_id,
+                    "target_xes3g5m_question_id": target_xes3g5m_question_id,
+                    "target_xes3g5m_concept_id": target_xes3g5m_concept_id,
                 },
             )
             return self._gap_evidence(
                 status="unavailable",
                 target_question_id=target_question_id,
-                target_assist2017_question_id=target_assist2017_question_id,
-                target_assist2017_concept_id=target_assist2017_concept_id,
+                target_xes3g5m_question_id=target_xes3g5m_question_id,
+                target_xes3g5m_concept_id=target_xes3g5m_concept_id,
                 prediction_probability=prediction_probability,
                 weak_concepts=authoritative_weak_concepts,
                 gaps=[gap],
@@ -262,16 +262,16 @@ class DGEKTOfflineEvidenceAdapter:
             *self._canonical_mapping_gaps(
                 match.case,
                 requested_target_question_id=target_question_id,
-                requested_target_assist2017_question_id=target_assist2017_question_id,
-                requested_target_assist2017_concept_id=target_assist2017_concept_id,
+                requested_target_xes3g5m_question_id=target_xes3g5m_question_id,
+                requested_target_xes3g5m_concept_id=target_xes3g5m_concept_id,
             ),
         ]
         if validation_gaps:
             return self._gap_evidence(
                 status="invalid",
                 target_question_id=target_question_id,
-                target_assist2017_question_id=target_assist2017_question_id,
-                target_assist2017_concept_id=target_assist2017_concept_id,
+                target_xes3g5m_question_id=target_xes3g5m_question_id,
+                target_xes3g5m_concept_id=target_xes3g5m_concept_id,
                 prediction_probability=prediction_probability,
                 weak_concepts=authoritative_weak_concepts,
                 gaps=validation_gaps,
@@ -289,8 +289,8 @@ class DGEKTOfflineEvidenceAdapter:
             return self._gap_evidence(
                 status="invalid",
                 target_question_id=target_question_id,
-                target_assist2017_question_id=target_assist2017_question_id,
-                target_assist2017_concept_id=target_assist2017_concept_id,
+                target_xes3g5m_question_id=target_xes3g5m_question_id,
+                target_xes3g5m_concept_id=target_xes3g5m_concept_id,
                 prediction_probability=prediction_probability,
                 weak_concepts=authoritative_weak_concepts,
                 gaps=normalized_gaps,
@@ -311,8 +311,8 @@ class DGEKTOfflineEvidenceAdapter:
         return AttributionEvidence(
             target_question_id=target_question_id,
             target_concept_id=mapped_content.get("concept_id") or match.case.canonical_concept_id,
-            target_assist2017_question_id=match.case.target_question_id,
-            target_assist2017_concept_id=match.case.target_concept_id,
+            target_xes3g5m_question_id=match.case.target_question_id,
+            target_xes3g5m_concept_id=match.case.target_concept_id,
             prediction_probability=probability,
             evidence_status="complete",
             evidence_source="offline",
@@ -329,7 +329,7 @@ class DGEKTOfflineEvidenceAdapter:
                 "canonical_concept_id": match.case.canonical_concept_id,
                 "checkpoint_id": match.case.checkpoint_id,
                 "matching_method": match.matching_method,
-                "model_vocabulary": "DGEKT ASSIST2017 question/concept ids",
+                "model_vocabulary": "DGEKT XES3G5M question/concept ids",
             },
             mapped_teaching_content=mapped_content,
             canonical_mapping=canonical_mapping,
@@ -491,7 +491,7 @@ class DGEKTOfflineEvidenceAdapter:
                         reason_code="diagnosis_case_missing_target_question",
                         severity="error",
                         message=f"Diagnosis case {sample_id} is missing target_question_id.",
-                        actionable_hint="写入 ASSISTments2017 target_question_id 后重新导出。",
+                        actionable_hint="写入 XES3G5M target_question_id 后重新导出。",
                         source_ref=f"{self.artifact_dir / 'diagnosis_cases.json'}:case:{index}",
                         sample_id=sample_id,
                     )
@@ -499,7 +499,7 @@ class DGEKTOfflineEvidenceAdapter:
                 continue
             cases[sample_id] = OfflineEvidenceCase(
                 sample_id=sample_id,
-                dataset=str(item.get("dataset") or payload.get("dataset") or "assist2017"),
+                dataset=str(item.get("dataset") or payload.get("dataset") or "xes3g5m"),
                 student_id=str(item["student_id"]) if item.get("student_id") is not None else None,
                 time_step=_optional_int(item.get("time_step")),
                 target_question_id=target_question_id,
@@ -566,18 +566,18 @@ class DGEKTOfflineEvidenceAdapter:
         *,
         dataset: str,
         student_id: str,
-        target_assist2017_question_id: int,
-        target_assist2017_concept_id: int | None,
+        target_xes3g5m_question_id: int,
+        target_xes3g5m_concept_id: int | None,
     ) -> OfflineEvidenceMatch | None:
         candidates = [
             case
             for case in self.cases.values()
             if case.dataset == dataset
-            and case.target_question_id == target_assist2017_question_id
+            and case.target_question_id == target_xes3g5m_question_id
             and (
-                target_assist2017_concept_id is None
+                target_xes3g5m_concept_id is None
                 or case.target_concept_id is None
-                or case.target_concept_id == target_assist2017_concept_id
+                or case.target_concept_id == target_xes3g5m_concept_id
             )
         ]
         exact = [case for case in candidates if case.student_id == student_id]
@@ -657,22 +657,22 @@ class DGEKTOfflineEvidenceAdapter:
         case: OfflineEvidenceCase,
         *,
         requested_target_question_id: str,
-        requested_target_assist2017_question_id: int,
-        requested_target_assist2017_concept_id: int | None,
+        requested_target_xes3g5m_question_id: int,
+        requested_target_xes3g5m_concept_id: int | None,
     ) -> list[OfflineEvidenceGap]:
         mismatches: dict[str, dict[str, Any]] = {}
-        if case.target_question_id != requested_target_assist2017_question_id:
+        if case.target_question_id != requested_target_xes3g5m_question_id:
             mismatches["target_question_id"] = {
-                "request": requested_target_assist2017_question_id,
+                "request": requested_target_xes3g5m_question_id,
                 "offline_evidence": case.target_question_id,
             }
         if (
-            requested_target_assist2017_concept_id is not None
+            requested_target_xes3g5m_concept_id is not None
             and case.target_concept_id is not None
-            and case.target_concept_id != requested_target_assist2017_concept_id
+            and case.target_concept_id != requested_target_xes3g5m_concept_id
         ):
             mismatches["target_concept_id"] = {
-                "request": requested_target_assist2017_concept_id,
+                "request": requested_target_xes3g5m_concept_id,
                 "offline_evidence": case.target_concept_id,
             }
         if requested_target_question_id.startswith("q_") and case.canonical_question_id:
@@ -682,7 +682,7 @@ class DGEKTOfflineEvidenceAdapter:
                     "offline_evidence": case.canonical_question_id,
                 }
         mapping = (
-            self.mapping_repository.get_by_assist2017_question_id(case.target_question_id)
+            self.mapping_repository.get_by_xes3g5m_question_id(case.target_question_id)
             if self.mapping_repository is not None
             else None
         )
@@ -699,11 +699,11 @@ class DGEKTOfflineEvidenceAdapter:
                 }
             if (
                 case.target_concept_id is not None
-                and mapping.assist2017_concept_id is not None
-                and mapping.assist2017_concept_id != case.target_concept_id
+                and mapping.xes3g5m_concept_id is not None
+                and mapping.xes3g5m_concept_id != case.target_concept_id
             ):
-                mismatches["mapping_repository_assist2017_concept_id"] = {
-                    "canonical_mapping": mapping.assist2017_concept_id,
+                mismatches["mapping_repository_xes3g5m_concept_id"] = {
+                    "canonical_mapping": mapping.xes3g5m_concept_id,
                     "offline_evidence": case.target_concept_id,
                 }
         if not mismatches:
@@ -718,7 +718,7 @@ class DGEKTOfflineEvidenceAdapter:
                     "question/concept mapping."
                 ),
                 actionable_hint=(
-                    "确认 offline scorer 使用的 ASSISTments2017 id 与当前 canonical mapping "
+                    "确认 offline scorer 使用的 XES3G5M id 与当前 canonical mapping "
                     "artifact 同源，避免解释指向错误教学内容。"
                 ),
                 sample_id=case.sample_id,
@@ -756,15 +756,15 @@ class DGEKTOfflineEvidenceAdapter:
                     "rank": parsed["path_rank"],
                     "path_type": row["path_type"],
                     "path_nodes": _parse_json_or_pipe(row.get("path_nodes")),
-                    "history_assist2017_question_id": parsed["history_question_id"],
+                    "history_xes3g5m_question_id": parsed["history_question_id"],
                     "history_question_id": _optional_str(row.get("history_canonical_question_id")),
                     "history_answer": row.get("history_answer"),
                     "history_position": parsed["history_position"],
-                    "history_assist2017_concept_id": parsed["history_concept_id"],
+                    "history_xes3g5m_concept_id": parsed["history_concept_id"],
                     "history_concept_id": _optional_str(row.get("history_canonical_concept_id")),
-                    "target_assist2017_question_id": parsed["target_question_id"],
+                    "target_xes3g5m_question_id": parsed["target_question_id"],
                     "target_question_id": _optional_str(row.get("canonical_question_id")),
-                    "target_assist2017_concept_id": parsed["target_concept_id"],
+                    "target_xes3g5m_concept_id": parsed["target_concept_id"],
                     "target_concept_id": _optional_str(row.get("canonical_concept_id")),
                     "relation_strength": parsed["relation_strength"],
                     "graph_relation_strength": parsed["graph_relation_strength"],
@@ -810,27 +810,27 @@ class DGEKTOfflineEvidenceAdapter:
             history.append(
                 {
                     "rank": parsed["history_rank"],
-                    "assist2017_question_id": parsed["history_question_id"],
+                    "xes3g5m_question_id": parsed["history_question_id"],
                     "question_id": _optional_str(row.get("history_canonical_question_id")),
-                    "assist2017_concept_id": parsed["history_concept_id"],
+                    "xes3g5m_concept_id": parsed["history_concept_id"],
                     "concept_id": _optional_str(row.get("history_canonical_concept_id")),
                     "answer": row.get("history_answer"),
                     "is_correct": _parse_bool(row.get("history_is_correct")),
                     "history_position": parsed["history_position"],
                     "influence_score": parsed["influence_score"],
-                    "target_assist2017_question_id": parsed["target_question_id"],
+                    "target_xes3g5m_question_id": parsed["target_question_id"],
                     "target_question_id": _optional_str(row.get("canonical_target_question_id")),
-                    "target_assist2017_concept_id": parsed["target_concept_id"],
+                    "target_xes3g5m_concept_id": parsed["target_concept_id"],
                     "target_concept_id": _optional_str(row.get("canonical_target_concept_id")),
                     "readable_summary": row.get("readable_summary")
                     or (
-                        f"ASSIST2017 Q{parsed['history_question_id']} | "
+                        f"XES3G5M Q{parsed['history_question_id']} | "
                         f"{'correct' if _parse_bool(row.get('history_is_correct')) else 'incorrect'}"
                     ),
                     "influence_source": "dgekt_offline_key_history",
                 }
             )
-        return sorted(history, key=lambda item: (item["rank"], item["assist2017_question_id"]))
+        return sorted(history, key=lambda item: (item["rank"], item["xes3g5m_question_id"]))
 
     def _weak_concepts(
         self,
@@ -856,7 +856,7 @@ class DGEKTOfflineEvidenceAdapter:
                 continue
             concepts.append(
                 {
-                    "assist2017_concept_id": parsed["weak_concept_id"],
+                    "xes3g5m_concept_id": parsed["weak_concept_id"],
                     "concept_id": _optional_str(row.get("weak_canonical_concept_id")),
                     "concept_name": row.get("concept_name"),
                     "mastery": parsed["mastery_score"],
@@ -866,7 +866,7 @@ class DGEKTOfflineEvidenceAdapter:
                     "evidence_source": row.get("evidence_source") or "dgekt_offline_weak_concepts",
                 }
             )
-        return sorted(concepts, key=lambda item: (item["assist2017_concept_id"], item["concept_id"] or ""))
+        return sorted(concepts, key=lambda item: (item["xes3g5m_concept_id"], item["concept_id"] or ""))
 
     def _path_ablation(
         self,
@@ -968,7 +968,7 @@ class DGEKTOfflineEvidenceAdapter:
         fallback: dict[str, Any] | None,
     ) -> dict[str, Any]:
         mapping = (
-            self.mapping_repository.get_by_assist2017_question_id(case.target_question_id)
+            self.mapping_repository.get_by_xes3g5m_question_id(case.target_question_id)
             if self.mapping_repository is not None
             else None
         )
@@ -978,8 +978,8 @@ class DGEKTOfflineEvidenceAdapter:
                 "concept_id": mapping.concept_id,
                 "concept_name": mapping.concept_name,
                 "teaching_type": mapping.teaching_type,
-                "assist2017_question_id": mapping.assist2017_question_id,
-                "assist2017_concept_id": mapping.assist2017_concept_id,
+                "xes3g5m_question_id": mapping.xes3g5m_question_id,
+                "xes3g5m_concept_id": mapping.xes3g5m_concept_id,
                 "mapping_status": "canonical_mapping_repository",
                 "relation_source": "dgekt_offline_explainability",
             }
@@ -987,8 +987,8 @@ class DGEKTOfflineEvidenceAdapter:
             **(fallback or {}),
             "question_id": (fallback or {}).get("question_id") or case.canonical_question_id,
             "concept_id": (fallback or {}).get("concept_id") or case.canonical_concept_id,
-            "assist2017_question_id": case.target_question_id,
-            "assist2017_concept_id": case.target_concept_id,
+            "xes3g5m_question_id": case.target_question_id,
+            "xes3g5m_concept_id": case.target_concept_id,
             "mapping_status": (fallback or {}).get("mapping_status") or "offline_case_metadata",
             "relation_source": "dgekt_offline_explainability",
         }
@@ -1000,7 +1000,7 @@ class DGEKTOfflineEvidenceAdapter:
         fallback: dict[str, Any] | None,
     ) -> dict[str, Any]:
         mapping = (
-            self.mapping_repository.get_by_assist2017_question_id(case.target_question_id)
+            self.mapping_repository.get_by_xes3g5m_question_id(case.target_question_id)
             if self.mapping_repository is not None
             else None
         )
@@ -1010,16 +1010,16 @@ class DGEKTOfflineEvidenceAdapter:
                 "concept_id": mapping.concept_id,
                 "concept_name": mapping.concept_name,
                 "teaching_type": mapping.teaching_type,
-                "assist2017_question_id": mapping.assist2017_question_id,
-                "assist2017_concept_id": mapping.assist2017_concept_id,
-                "q_matrix_reference": mapping.q_matrix_reference.model_dump(),
+                "xes3g5m_question_id": mapping.xes3g5m_question_id,
+                "xes3g5m_concept_id": mapping.xes3g5m_concept_id,
+                "kc_routes_reference": mapping.kc_routes_reference.model_dump(),
                 "source": mapping.source_provenance.source,
                 "mapping_status": "canonical_mapping_repository",
             }
         return {
             **(fallback or {}),
-            "assist2017_question_id": case.target_question_id,
-            "assist2017_concept_id": case.target_concept_id,
+            "xes3g5m_question_id": case.target_question_id,
+            "xes3g5m_concept_id": case.target_concept_id,
             "question_id": case.canonical_question_id,
             "concept_id": case.canonical_concept_id,
             "source": "offline_case_metadata",
@@ -1030,8 +1030,8 @@ class DGEKTOfflineEvidenceAdapter:
         *,
         status: str,
         target_question_id: str,
-        target_assist2017_question_id: int | None,
-        target_assist2017_concept_id: int | None,
+        target_xes3g5m_question_id: int | None,
+        target_xes3g5m_concept_id: int | None,
         prediction_probability: float | None,
         weak_concepts: list[dict[str, Any]],
         gaps: list[OfflineEvidenceGap],
@@ -1043,8 +1043,8 @@ class DGEKTOfflineEvidenceAdapter:
         return AttributionEvidence(
             target_question_id=target_question_id,
             target_concept_id=(fallback_mapped_teaching_content or {}).get("concept_id"),
-            target_assist2017_question_id=target_assist2017_question_id,
-            target_assist2017_concept_id=target_assist2017_concept_id,
+            target_xes3g5m_question_id=target_xes3g5m_question_id,
+            target_xes3g5m_concept_id=target_xes3g5m_concept_id,
             prediction_probability=prediction_probability,
             evidence_status=status,
             evidence_source="offline",
@@ -1052,11 +1052,11 @@ class DGEKTOfflineEvidenceAdapter:
             partial_evidence_reason=reason,
             raw_model_target={
                 "sample_id": sample_id,
-                "dataset": self.diagnosis_payload.get("dataset", "assist2017"),
-                "target_question_id": target_assist2017_question_id,
-                "target_concept_id": target_assist2017_concept_id,
+                "dataset": self.diagnosis_payload.get("dataset", "xes3g5m"),
+                "target_question_id": target_xes3g5m_question_id,
+                "target_concept_id": target_xes3g5m_concept_id,
                 "mapping_status": status,
-                "model_vocabulary": "DGEKT ASSIST2017 question/concept ids",
+                "model_vocabulary": "DGEKT XES3G5M question/concept ids",
             },
             mapped_teaching_content=fallback_mapped_teaching_content or {},
             canonical_mapping=fallback_canonical_mapping or {},
@@ -1093,7 +1093,7 @@ class DGEKTOfflineEvidenceAdapter:
             "name": self._scorer_name(),
             "version": self._scorer_version(),
             "engine": "dgekt",
-            "dataset": self.diagnosis_payload.get("dataset", "assist2017"),
+            "dataset": self.diagnosis_payload.get("dataset", "xes3g5m"),
             "evidence_status": evidence_status,
             "evidence_source": "offline",
             "partial_evidence": evidence_status != "complete",

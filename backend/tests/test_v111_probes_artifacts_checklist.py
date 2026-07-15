@@ -103,8 +103,8 @@ def test_artifact_readiness_distinguishes_demo_missing_and_fixture(tmp_path: Pat
     missing_art = {item.component: item for item in missing.artifact_summaries}
     assert missing_art["imported_content"].status in {"degraded", "not_ready"}
 
-    fixture_content = ROOT / "data" / "imported" / "assist2017_fixture" / "content_import.json"
-    fixture_rag = ROOT / "data" / "imported" / "assist2017_fixture" / "rag_documents.json"
+    fixture_content = ROOT / "data" / "imported" / "xes3g5m_fixture" / "content_import.json"
+    fixture_rag = ROOT / "data" / "imported" / "xes3g5m_fixture" / "rag_documents.json"
     configured = build_trial_readiness_report(
         settings=MathTutorSettings(
             content_source="imported",

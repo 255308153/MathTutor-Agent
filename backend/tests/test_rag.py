@@ -18,12 +18,12 @@ def test_rag_document_schema_accepts_canonical_metadata() -> None:
             "source": "demo-rag/question_solutions.md#q_frac_001",
             "concept_id": "c_fraction_addition",
             "question_id": "q_frac_001",
-            "assist2017_question_id": 3,
-            "assist2017_concept_id": 2,
+            "xes3g5m_question_id": 3,
+            "xes3g5m_concept_id": 2,
             "canonical_mapping": {
                 "question_id": "q_frac_001",
-                "assist2017_question_id": 3,
-                "q_matrix_reference": {"row_index": 3},
+                "xes3g5m_question_id": 3,
+                "kc_routes_reference": {"row_index": 3},
             },
             "provenance": {"mapping_source": "fixture"},
             "coverage": {"coverage_type": "question", "question_aligned": True},
@@ -31,7 +31,7 @@ def test_rag_document_schema_accepts_canonical_metadata() -> None:
         }
     )
 
-    assert document.assist2017_question_id == 3
+    assert document.xes3g5m_question_id == 3
     assert document.coverage["coverage_type"] == "question"
 
 
@@ -51,21 +51,21 @@ def test_local_rag_filters_by_doc_type_concept_and_returns_source() -> None:
     assert [result.doc_id for result in results] == ["rag_fraction_addition_mistake"]
     assert results[0].source == "demo-rag/fraction_mistakes.md"
     assert results[0].doc_type == "mistake_pattern"
-    assert results[0].assist2017_question_id == 3
-    assert results[0].assist2017_concept_id == 2
+    assert results[0].xes3g5m_question_id == 3
+    assert results[0].xes3g5m_concept_id == 2
     assert results[0].coverage["coverage_type"] == "question"
-    assert results[0].canonical_mapping["q_matrix_reference"]["concept_column_indices"] == [2]
+    assert results[0].canonical_mapping["kc_routes_reference"]["concept_column_indices"] == [2]
 
 
-def test_local_rag_filters_by_assist2017_ids() -> None:
+def test_local_rag_filters_by_xes3g5m_ids() -> None:
     rag = LocalKnowledgeRAG()
 
     results = rag.search(
         query="通分 题解",
         filters={
             "doc_type": "question_explanation",
-            "assist2017_question_id": 3,
-            "assist2017_concept_id": 2,
+            "xes3g5m_question_id": 3,
+            "xes3g5m_concept_id": 2,
         },
         limit=3,
     )
@@ -138,8 +138,8 @@ def test_answer_submission_rag_citation_matches_canonical_question_and_concept()
     question_sources = [source for source in sources if source["question_id"] == "q_frac_001"]
 
     assert question_sources
-    assert question_sources[0]["assist2017_question_id"] == 3
-    assert question_sources[0]["assist2017_concept_id"] == 2
+    assert question_sources[0]["xes3g5m_question_id"] == 3
+    assert question_sources[0]["xes3g5m_concept_id"] == 2
     assert question_sources[0]["coverage"]["question_aligned"] is True
     assert body["state_summary"]["weak_concepts"][0]["concept_id"] == "c_fraction_addition"
     assert all(
@@ -270,13 +270,13 @@ class AuthorityBaitKnowledgeRAG:
                 source="fake-vikingdb://authority-boundary/q_frac_001",
                 concept_id="c_fraction_addition",
                 question_id="q_frac_001",
-                assist2017_question_id=3,
-                assist2017_concept_id=2,
+                xes3g5m_question_id=3,
+                xes3g5m_concept_id=2,
                 canonical_mapping={
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
-                    "assist2017_question_id": 3,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 3,
+                    "xes3g5m_concept_id": 2,
                     "claimed_prediction_probability": 0.99,
                     "claimed_weak_concepts": [],
                 },

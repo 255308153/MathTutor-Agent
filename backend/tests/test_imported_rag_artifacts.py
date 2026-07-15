@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from backend.app.api import events as events_api
 from backend.app.core.config import MathTutorSettings
 from backend.app.graph.learning_loop import MathTutorLearningLoop
-from backend.app.importing.assist2017_artifacts import RAGDocumentArtifact
+from backend.app.importing.xes3g5m_artifacts import RAGDocumentArtifact
 from backend.app.main import create_app
 from backend.app.planning.recommender import RiskPrioritizedRecommender
 from backend.app.rag.knowledge_rag import (
@@ -22,8 +22,8 @@ from backend.app.storage.progress_store import InMemoryProgressStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPORTED_CONTENT = ROOT / "data" / "imported" / "assist2017_fixture" / "content_import.json"
-IMPORTED_RAG = ROOT / "data" / "imported" / "assist2017_fixture" / "rag_documents.json"
+IMPORTED_CONTENT = ROOT / "data" / "imported" / "xes3g5m_fixture" / "content_import.json"
+IMPORTED_RAG = ROOT / "data" / "imported" / "xes3g5m_fixture" / "rag_documents.json"
 
 
 def test_imported_rag_artifact_contains_four_doc_types_with_canonical_metadata() -> None:
@@ -33,7 +33,7 @@ def test_imported_rag_artifact_contains_four_doc_types_with_canonical_metadata()
     question_doc = next(
         document
         for document in artifact.documents
-        if document.doc_id == "rag_assist2017_q000003_question_explanation"
+        if document.doc_id == "rag_xes3g5m_q000003_question_explanation"
     )
 
     assert doc_types == {
@@ -43,11 +43,11 @@ def test_imported_rag_artifact_contains_four_doc_types_with_canonical_metadata()
         "learning_strategy",
     }
     assert artifact.metadata.row_counts["rag_documents"] == 11
-    assert question_doc.question_id == "q_assist2017_000003"
-    assert question_doc.concept_id == "c_assist2017_0002"
-    assert question_doc.assist2017_question_id == 3
-    assert question_doc.assist2017_concept_id == 2
-    assert question_doc.canonical_mapping["assist2017_question_id"] == 3
+    assert question_doc.question_id == "q_xes3g5m_000003"
+    assert question_doc.concept_id == "c_xes3g5m_0002"
+    assert question_doc.xes3g5m_question_id == 3
+    assert question_doc.xes3g5m_concept_id == 2
+    assert question_doc.canonical_mapping["xes3g5m_question_id"] == 3
     assert question_doc.coverage["question_aligned"] is True
 
 
@@ -58,23 +58,23 @@ def test_local_rag_reads_imported_artifact_with_existing_result_contract() -> No
         query="通分 题解",
         filters={
             "doc_type": "question_explanation",
-            "question_id": "q_assist2017_000003",
-            "concept_id": "c_assist2017_0002",
+            "question_id": "q_xes3g5m_000003",
+            "concept_id": "c_xes3g5m_0002",
         },
         limit=3,
     )
 
     assert [result.doc_id for result in results] == [
-        "rag_assist2017_q000003_question_explanation"
+        "rag_xes3g5m_q000003_question_explanation"
     ]
     assert isinstance(results[0], RAGSearchResult)
-    assert results[0].question_id == "q_assist2017_000003"
-    assert results[0].concept_id == "c_assist2017_0002"
-    assert results[0].assist2017_question_id == 3
-    assert results[0].assist2017_concept_id == 2
+    assert results[0].question_id == "q_xes3g5m_000003"
+    assert results[0].concept_id == "c_xes3g5m_0002"
+    assert results[0].xes3g5m_question_id == 3
+    assert results[0].xes3g5m_concept_id == 2
     assert results[0].coverage["coverage_type"] == "question"
     assert results[0].coverage["question_aligned"] is True
-    assert results[0].provenance["rag_source"] == "assist2017_import_builder"
+    assert results[0].provenance["rag_source"] == "xes3g5m_import_builder"
 
 
 def test_create_knowledge_rag_requires_explicit_imported_artifact_path() -> None:
@@ -113,7 +113,7 @@ def test_imported_rag_flows_to_recommendation_trace_and_context(
             "type": "answer_submitted",
             "message": "我故意答错导入题，验证 RAG 对齐",
             "payload": {
-                "question_id": "q_assist2017_000003",
+                "question_id": "q_xes3g5m_000003",
                 "answer": "1/6",
             },
         },
@@ -131,16 +131,16 @@ def test_imported_rag_flows_to_recommendation_trace_and_context(
     plan = expert["planner_decision"]
 
     assert rag_sources
-    assert all(source["question_id"] == "q_assist2017_000003" for source in rag_sources)
-    assert all(source["concept_id"] == "c_assist2017_0002" for source in rag_sources)
-    assert rag_sources[0]["assist2017_question_id"] == 3
-    assert rag_sources[0]["assist2017_concept_id"] == 2
+    assert all(source["question_id"] == "q_xes3g5m_000003" for source in rag_sources)
+    assert all(source["concept_id"] == "c_xes3g5m_0002" for source in rag_sources)
+    assert rag_sources[0]["xes3g5m_question_id"] == 3
+    assert rag_sources[0]["xes3g5m_concept_id"] == 2
     assert rag_sources[0]["coverage"]["question_aligned"] is True
     assert knowledge_assets
-    assert knowledge_assets[0]["question_id"] == "q_assist2017_000003"
-    assert knowledge_assets[0]["metadata"]["canonical_mapping"]["assist2017_question_id"] == 3
-    assert plan["evidence"]["rag_sources"][0]["question_id"] == "q_assist2017_000003"
-    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_assist2017_0002"
+    assert knowledge_assets[0]["question_id"] == "q_xes3g5m_000003"
+    assert knowledge_assets[0]["metadata"]["canonical_mapping"]["xes3g5m_question_id"] == 3
+    assert plan["evidence"]["rag_sources"][0]["question_id"] == "q_xes3g5m_000003"
+    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_xes3g5m_0002"
     assert "参考：" in body["response"]
 
 
@@ -169,7 +169,7 @@ def test_missing_question_rag_doc_reports_gap_without_adjacent_fallback(
             "type": "answer_submitted",
             "message": "验证缺失 RAG 不使用相邻 fallback",
             "payload": {
-                "question_id": "q_assist2017_000003",
+                "question_id": "q_xes3g5m_000003",
                 "answer": "1/6",
             },
         },
@@ -183,13 +183,13 @@ def test_missing_question_rag_doc_reports_gap_without_adjacent_fallback(
     assert fallback_rag.calls == [
         {
             "doc_types": ["question_explanation", "mistake_pattern", "learning_strategy"],
-            "question_id": "q_assist2017_000003",
-            "concept_id": "c_assist2017_0002",
+            "question_id": "q_xes3g5m_000003",
+            "concept_id": "c_xes3g5m_0002",
         }
     ]
     assert expert["rag_sources"] == []
     assert any(gap["gap_type"] == "missing_rag_citation" for gap in gaps)
-    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_assist2017_0002"
+    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_xes3g5m_0002"
 
 
 class QuestionStrictFallbackDetectingRAG:
@@ -213,9 +213,9 @@ class QuestionStrictFallbackDetectingRAG:
                 title="不应使用的相邻文档",
                 content="这个文档只有概念相近，不是当前题证据。",
                 source="test-only",
-                concept_id="c_assist2017_0002",
+                concept_id="c_xes3g5m_0002",
                 question_id=None,
-                assist2017_concept_id=2,
+                xes3g5m_concept_id=2,
                 score=1.0,
             )
         ]

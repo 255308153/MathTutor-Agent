@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..core.config import MathTutorSettings, get_settings
-from ..importing.assist2017_artifacts import ContentImportArtifact
-from ..mapping.assist2017_mapping import CanonicalMappingRepository, DEFAULT_MAPPING_PATH
+from ..importing.xes3g5m_artifacts import ContentImportArtifact
+from ..mapping.xes3g5m_mapping import CanonicalMappingRepository, DEFAULT_MAPPING_PATH
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -164,7 +164,7 @@ class DemoTeachingContentRepository(BaseTeachingContentRepository):
 
     def list_questions(self) -> list[dict[str, Any]]:
         return [
-            self._with_teaching_type(question, assist2017_question_id=index + 1)
+            self._with_teaching_type(question, xes3g5m_question_id=index + 1)
             for index, question in enumerate(self.content["questions"])
         ]
 
@@ -179,9 +179,9 @@ class DemoTeachingContentRepository(BaseTeachingContentRepository):
         return {
             "content_source": str(CONTENT_PATH.relative_to(PROJECT_ROOT)),
             "mapping_source": mapping_source,
-            "assist2017_question_id": question.get("assist2017_question_id"),
-            "assist2017_concept_id": question.get("assist2017_concept_id"),
-            "q_matrix_reference": question.get("q_matrix_reference"),
+            "xes3g5m_question_id": question.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": question.get("xes3g5m_concept_id"),
+            "kc_routes_reference": question.get("kc_routes_reference"),
             "answer_source": (
                 "demo_teaching_content.standard_answer"
                 if question.get("standard_answer") not in (None, "")
@@ -198,7 +198,7 @@ class DemoTeachingContentRepository(BaseTeachingContentRepository):
         self,
         question: dict[str, Any],
         *,
-        assist2017_question_id: int,
+        xes3g5m_question_id: int,
     ) -> dict[str, Any]:
         enriched = dict(question)
         enriched["teaching_type"] = self.teaching_type_for(question["concept_id"])
@@ -206,20 +206,20 @@ class DemoTeachingContentRepository(BaseTeachingContentRepository):
         if self.canonical_mapping is not None:
             canonical = self.canonical_mapping.get_by_mathtutor_question_id(question["question_id"])
         if canonical is not None:
-            enriched["assist2017_question_id"] = canonical.assist2017_question_id
-            if canonical.assist2017_concept_id is not None:
-                enriched["assist2017_concept_id"] = canonical.assist2017_concept_id
+            enriched["xes3g5m_question_id"] = canonical.xes3g5m_question_id
+            if canonical.xes3g5m_concept_id is not None:
+                enriched["xes3g5m_concept_id"] = canonical.xes3g5m_concept_id
             enriched["canonical_mapping_source"] = canonical.source_provenance.source
-            enriched["q_matrix_reference"] = canonical.q_matrix_reference.model_dump()
+            enriched["kc_routes_reference"] = canonical.kc_routes_reference.model_dump()
         else:
-            enriched.setdefault("assist2017_question_id", assist2017_question_id)
+            enriched.setdefault("xes3g5m_question_id", xes3g5m_question_id)
         enriched["content_availability"] = self.content_availability(enriched)
         enriched["provenance"] = self.provenance(enriched)
         return enriched
 
 
 class ImportedTeachingContentRepository(BaseTeachingContentRepository):
-    grading_source = "assist2017_content_import"
+    grading_source = "xes3g5m_content_import"
 
     def __init__(self, artifact_path: str | Path) -> None:
         self.artifact_path = Path(artifact_path)
@@ -255,10 +255,10 @@ class ImportedTeachingContentRepository(BaseTeachingContentRepository):
         question_provenance = dict(question.get("provenance", {}))
         return {
             "content_source": _display_path(path),
-            "mapping_source": question.get("canonical_mapping_source", "assist2017_import"),
-            "assist2017_question_id": question.get("assist2017_question_id"),
-            "assist2017_concept_id": question.get("assist2017_concept_id"),
-            "q_matrix_reference": question.get("q_matrix_reference"),
+            "mapping_source": question.get("canonical_mapping_source", "xes3g5m_import"),
+            "xes3g5m_question_id": question.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": question.get("xes3g5m_concept_id"),
+            "kc_routes_reference": question.get("kc_routes_reference"),
             "answer_source": question_provenance.get("answer_source"),
             "explanation_source": question_provenance.get("explanation_source"),
             "source_row_id": question_provenance.get("source_row_id"),
@@ -273,9 +273,9 @@ class ImportedTeachingContentRepository(BaseTeachingContentRepository):
         raw = question.model_dump()
         canonical = dict(raw.get("canonical_mapping", {}))
         raw["teaching_type"] = raw.get("teaching_type") or self.teaching_type_for(raw["concept_id"])
-        raw["canonical_mapping_source"] = canonical.get("source", "assist2017_import")
-        raw["q_matrix_reference"] = raw.get("q_matrix_reference") or canonical.get(
-            "q_matrix_reference"
+        raw["canonical_mapping_source"] = canonical.get("source", "xes3g5m_import")
+        raw["kc_routes_reference"] = raw.get("kc_routes_reference") or canonical.get(
+            "kc_routes_reference"
         )
         availability = self.content_availability(raw)
         raw["content_availability"] = availability

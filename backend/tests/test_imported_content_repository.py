@@ -21,8 +21,8 @@ from backend.app.storage.progress_store import InMemoryProgressStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPORTED_CONTENT = ROOT / "data" / "imported" / "assist2017_fixture" / "content_import.json"
-IMPORTED_RAG = ROOT / "data" / "imported" / "assist2017_fixture" / "rag_documents.json"
+IMPORTED_CONTENT = ROOT / "data" / "imported" / "xes3g5m_fixture" / "content_import.json"
+IMPORTED_RAG = ROOT / "data" / "imported" / "xes3g5m_fixture" / "rag_documents.json"
 
 
 def test_imported_repository_loads_canonical_content_artifact() -> None:
@@ -31,30 +31,30 @@ def test_imported_repository_loads_canonical_content_artifact() -> None:
     questions = repository.list_questions()
     public = repository.public_question(questions[0])
 
-    assert questions[0]["question_id"] == "q_assist2017_000001"
+    assert questions[0]["question_id"] == "q_xes3g5m_000001"
     assert questions[0]["stem"] == "快速回答：7 × 8 = ?"
     assert questions[0]["standard_answer"] == "56"
     assert questions[0]["explanation"] == "7 × 8 是常用乘法事实，结果是 56。"
-    assert questions[0]["concept_id"] == "c_assist2017_0001"
-    assert questions[0]["concept_ids"] == ["c_assist2017_0001"]
-    assert questions[0]["assist2017_question_id"] == 1
-    assert questions[0]["assist2017_concept_id"] == 1
+    assert questions[0]["concept_id"] == "c_xes3g5m_0001"
+    assert questions[0]["concept_ids"] == ["c_xes3g5m_0001"]
+    assert questions[0]["xes3g5m_question_id"] == 1
+    assert questions[0]["xes3g5m_concept_id"] == 1
     assert questions[0]["difficulty"] == 0.2
     assert questions[0]["mistake_patterns"] == ["乘法事实记忆不稳", "相邻口诀混淆"]
     assert questions[0]["content_availability"]["status"] == "available"
     assert public["answer"] == "56"
     assert public["provenance"]["content_source"].endswith(
-        "data/imported/assist2017_fixture/content_import.json"
+        "data/imported/xes3g5m_fixture/content_import.json"
     )
-    assert public["provenance"]["source_row_id"] == "assist2017-fixture-row-1"
-    assert public["canonical_mapping"]["assist2017_question_id"] == 1
-    assert public["canonical_mapping"]["assist2017_concept_id"] == 1
+    assert public["provenance"]["source_row_id"] == "xes3g5m-fixture-row-1"
+    assert public["canonical_mapping"]["xes3g5m_question_id"] == 1
+    assert public["canonical_mapping"]["xes3g5m_concept_id"] == 1
 
 
 def test_imported_repository_surfaces_partial_content_without_fabrication() -> None:
     repository = ImportedTeachingContentRepository(IMPORTED_CONTENT)
 
-    partial = repository.get_question("q_assist2017_000005")
+    partial = repository.get_question("q_xes3g5m_000005")
     assert partial is not None
     public = repository.public_question(partial)
 
@@ -64,7 +64,7 @@ def test_imported_repository_surfaces_partial_content_without_fabrication() -> N
     assert public["content_availability"]["status"] == "partial"
     assert public["content_availability"]["missing_fields"] == ["explanation"]
     assert public["content_availability"]["fallback_message"].startswith(
-        "q_assist2017_000005 缺少解析"
+        "q_xes3g5m_000005 缺少解析"
     )
 
 
@@ -85,8 +85,8 @@ def test_recommender_prefers_complete_imported_content_when_candidates_are_close
     raw = json.loads(IMPORTED_CONTENT.read_text(encoding="utf-8"))
     complete = dict(raw["questions"][0])
     partial = json.loads(json.dumps(complete))
-    partial["question_id"] = "q_assist2017_000099"
-    partial["assist2017_question_id"] = 99
+    partial["question_id"] = "q_xes3g5m_000099"
+    partial["xes3g5m_question_id"] = 99
     partial["stem"] = None
     partial["explanation"] = None
     partial["content_availability"] = {
@@ -97,7 +97,7 @@ def test_recommender_prefers_complete_imported_content_when_candidates_are_close
         "has_concept_metadata": True,
         "missing_fields": ["stem", "explanation"],
         "missing_reason_codes": ["missing_stem", "missing_explanation"],
-        "fallback_message": "q_assist2017_000099 缺少题干、解析。",
+        "fallback_message": "q_xes3g5m_000099 缺少题干、解析。",
     }
     raw["questions"] = [partial, complete]
     artifact_path = tmp_path / "content_import.json"
@@ -110,9 +110,9 @@ def test_recommender_prefers_complete_imported_content_when_candidates_are_close
         limit=2,
     )
 
-    assert recommendations[0]["question_id"] == "q_assist2017_000001"
+    assert recommendations[0]["question_id"] == "q_xes3g5m_000001"
     assert recommendations[0]["score_factors"]["content_completeness"] == 1.0
-    assert recommendations[1]["question_id"] == "q_assist2017_000099"
+    assert recommendations[1]["question_id"] == "q_xes3g5m_000099"
     assert recommendations[1]["content_availability"]["status"] == "partial"
 
 
@@ -139,7 +139,7 @@ def test_imported_content_api_grades_and_traces_canonical_question(
             "type": "answer_submitted",
             "message": "我故意答错 fixture 导入题",
             "payload": {
-                "question_id": "q_assist2017_000003",
+                "question_id": "q_xes3g5m_000003",
                 "answer": "1/6",
             },
         },
@@ -153,21 +153,21 @@ def test_imported_content_api_grades_and_traces_canonical_question(
 
     assert body["state_summary"]["intent"] == "answer_submission"
     assert body["state_summary"]["mistake_diagnosis"]["concept"]["concept_id"] == (
-        "c_assist2017_0002"
+        "c_xes3g5m_0002"
     )
-    assert load_trace["metadata"]["grading_source"] == "assist2017_content_import"
+    assert load_trace["metadata"]["grading_source"] == "xes3g5m_content_import"
     assert load_trace["metadata"]["is_correct"] is False
-    assert first_recommendation["concept_id"] == "c_assist2017_0002"
-    assert first_recommendation["assist2017_question_id"] == 3
-    assert first_recommendation["canonical_mapping"]["assist2017_question_id"] == 3
+    assert first_recommendation["concept_id"] == "c_xes3g5m_0002"
+    assert first_recommendation["xes3g5m_question_id"] == 3
+    assert first_recommendation["canonical_mapping"]["xes3g5m_question_id"] == 3
     assert first_recommendation["provenance"]["content_source"].endswith(
-        "data/imported/assist2017_fixture/content_import.json"
+        "data/imported/xes3g5m_fixture/content_import.json"
     )
     assert any(
-        recommendation["canonical_mapping"]["assist2017_question_id"] == 3
+        recommendation["canonical_mapping"]["xes3g5m_question_id"] == 3
         for recommendation in expert["recommendations"]
     )
-    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_assist2017_0002"
+    assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == "c_xes3g5m_0002"
 
 
 def test_imported_partial_content_gap_is_visible_in_trace_without_fabrication(
@@ -194,7 +194,7 @@ def test_imported_partial_content_gap_is_visible_in_trace_without_fabrication(
             "type": "answer_submitted",
             "message": "提交一题内容不完整但可判题的 fixture 题",
             "payload": {
-                "question_id": "q_assist2017_000005",
+                "question_id": "q_xes3g5m_000005",
                 "answer": "7",
             },
         },
@@ -216,21 +216,21 @@ def test_imported_partial_content_gap_is_visible_in_trace_without_fabrication(
     )
 
     assert load_trace["metadata"]["target_content"]["canonical_question_id"] == (
-        "q_assist2017_000005"
+        "q_xes3g5m_000005"
     )
     assert load_trace["metadata"]["target_content"]["canonical_concept_id"] == (
-        "c_assist2017_0003"
+        "c_xes3g5m_0003"
     )
     assert load_trace["metadata"]["target_content"]["content_availability"]["status"] == (
         "partial"
     )
     assert load_trace["metadata"]["target_content"]["provenance"]["source_row_id"] == (
-        "assist2017-fixture-row-5"
+        "xes3g5m-fixture-row-5"
     )
     assert content_gap["category"] == "missing_teaching_content"
     assert content_gap["details"]["missing_fields"] == ["explanation"]
-    assert content_gap["details"]["canonical_question_id"] == "q_assist2017_000005"
-    assert content_gap["details"]["provenance"]["source_row_id"] == "assist2017-fixture-row-5"
+    assert content_gap["details"]["canonical_question_id"] == "q_xes3g5m_000005"
+    assert content_gap["details"]["provenance"]["source_row_id"] == "xes3g5m-fixture-row-5"
     assert evidence_gap["details"]["content_availability"]["missing_reason_codes"] == [
         "missing_explanation"
     ]

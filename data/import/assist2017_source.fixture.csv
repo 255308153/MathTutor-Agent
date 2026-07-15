@@ -1,4 +1,0 @@
-assist2017_question_id,assist2017_concept_id,concept_name,teaching_type,question_text,correct_answer,explanation,difficulty,mistake_patterns,source_row_id
-1,1,乘法口诀事实,memory,快速回答：7 × 8 = ?,56,7 × 8 是常用乘法事实，结果是 56。,0.20,乘法事实记忆不稳|相邻口诀混淆,assist2017-fixture-row-1
-3,2,异分母分数加法,procedure,计算：1/2 + 1/4 = ?,3/4,先通分到四分之一，1/2 = 2/4，所以 2/4 + 1/4 = 3/4。,0.35,没有通分|分母直接相加,assist2017-fixture-row-3
-5,3,一元一次方程,procedure,解方程：x + 5 = 12。,7,,0.30,移项符号错误|逆运算混淆,assist2017-fixture-row-5

@@ -106,7 +106,7 @@ def test_tool_registry_registers_lists_finds_and_calls_kt_authority_tool() -> No
                     "target_question_id": "q_frac_001",
                     "prediction_probability": 0.58,
                     "provenance": {
-                        "dataset_dir": "/Users/lqc/private/assist2017",
+                        "dataset_dir": "/Users/lqc/private/xes3g5m",
                         "checkpoint_id": "fixture-epoch26",
                     },
                     "top_paths": [{"path_id": "mock-path-1"}],
@@ -424,7 +424,7 @@ def test_runtime_rag_and_memory_provider_gaps_do_not_override_kt_facts() -> None
     rag = VikingKnowledgeRAGAdapter(
         provider_name="openviking",
         provider_mode="live_provider",
-        collection="assist2017-smoke",
+        collection="xes3g5m-smoke",
         client=MalformedRAGClient(),
     )
     loop = MathTutorLearningLoop(
@@ -510,13 +510,13 @@ def test_dgekt_tool_observation_preserves_authoritative_facts_and_sanitizes_path
     tmp_path,
     monkeypatch,
 ) -> None:
-    checkpoint, dataset_dir, q_matrix = write_dgekt_fraction_fixture_files(tmp_path)
+    checkpoint, dataset_dir, kc_routes = write_dgekt_fraction_fixture_files(tmp_path)
     patch_fake_dgekt_runtime(monkeypatch, checkpoint)
     engine = DGEKTStateEngine(
-        dataset="assist2017",
+        dataset="xes3g5m",
         checkpoint_path=str(checkpoint),
         dataset_dir=str(dataset_dir),
-        q_matrix_path=str(q_matrix),
+        kc_routes_path=str(kc_routes),
     )
     monkeypatch.setattr(
         events_api,
@@ -569,10 +569,10 @@ def test_dgekt_tool_observation_preserves_authoritative_facts_and_sanitizes_path
     serialized = json.dumps(body, ensure_ascii=False)
     assert str(checkpoint) not in serialized
     assert str(dataset_dir) not in serialized
-    assert str(q_matrix) not in serialized
+    assert str(kc_routes) not in serialized
     assert "checkpoint_path" not in serialized
     assert "dataset_dir" not in serialized
-    assert "q_matrix_path" not in serialized
+    assert "kc_routes_path" not in serialized
     assert ".pkl" not in serialized
     assert "raw_provider_payload" not in serialized
 

@@ -68,13 +68,13 @@ class FakeKnowledgeRAGProvider:
         question_id = filters.get("question_id")
         if question_id and payload.get("question_id") != question_id:
             return False
-        assist_question_id = filters.get("assist2017_question_id")
-        if assist_question_id and str(payload.get("assist2017_question_id")) != str(
+        assist_question_id = filters.get("xes3g5m_question_id")
+        if assist_question_id and str(payload.get("xes3g5m_question_id")) != str(
             assist_question_id
         ):
             return False
-        assist_concept_id = filters.get("assist2017_concept_id")
-        if assist_concept_id and str(payload.get("assist2017_concept_id")) != str(
+        assist_concept_id = filters.get("xes3g5m_concept_id")
+        if assist_concept_id and str(payload.get("xes3g5m_concept_id")) != str(
             assist_concept_id
         ):
             return False
@@ -90,8 +90,8 @@ class FakeKnowledgeRAGProvider:
             source=str(payload["source"]),
             concept_id=payload.get("concept_id"),
             question_id=payload.get("question_id"),
-            assist2017_question_id=payload.get("assist2017_question_id"),
-            assist2017_concept_id=payload.get("assist2017_concept_id"),
+            xes3g5m_question_id=payload.get("xes3g5m_question_id"),
+            xes3g5m_concept_id=payload.get("xes3g5m_concept_id"),
             canonical_mapping=dict(payload.get("canonical_mapping") or {}),
             provenance={
                 "provider_name": "fake_vikingdb",
@@ -150,11 +150,11 @@ def _fake_provider_records() -> list[dict[str, Any]]:
                 "source": "fake-rag/fraction_concepts.md",
                 "concept_id": "c_fraction_addition",
                 "question_id": None,
-                "assist2017_question_id": None,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": None,
+                "xes3g5m_concept_id": 2,
                 "canonical_mapping": {
                     "concept_id": "c_fraction_addition",
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_concept_id": 2,
                     "source": "fake_provider_fixture",
                 },
                 "coverage": {
@@ -175,13 +175,13 @@ def _fake_provider_records() -> list[dict[str, Any]]:
                 "source": "fake-rag/question_solutions.md#q_frac_001",
                 "concept_id": "c_fraction_addition",
                 "question_id": "q_frac_001",
-                "assist2017_question_id": 3,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": 3,
+                "xes3g5m_concept_id": 2,
                 "canonical_mapping": {
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
-                    "assist2017_question_id": 3,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 3,
+                    "xes3g5m_concept_id": 2,
                     "source": "fake_provider_fixture",
                 },
                 "coverage": {
@@ -203,13 +203,13 @@ def _fake_provider_records() -> list[dict[str, Any]]:
                 "source": "fake-rag/fraction_mistakes.md",
                 "concept_id": "c_fraction_addition",
                 "question_id": "q_frac_001",
-                "assist2017_question_id": 3,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": 3,
+                "xes3g5m_concept_id": 2,
                 "canonical_mapping": {
                     "question_id": "q_frac_001",
                     "concept_id": "c_fraction_addition",
-                    "assist2017_question_id": 3,
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_question_id": 3,
+                    "xes3g5m_concept_id": 2,
                     "source": "fake_provider_fixture",
                 },
                 "coverage": {
@@ -231,11 +231,11 @@ def _fake_provider_records() -> list[dict[str, Any]]:
                 "source": "fake-rag/fraction_strategy.md",
                 "concept_id": "c_fraction_addition",
                 "question_id": None,
-                "assist2017_question_id": None,
-                "assist2017_concept_id": 2,
+                "xes3g5m_question_id": None,
+                "xes3g5m_concept_id": 2,
                 "canonical_mapping": {
                     "concept_id": "c_fraction_addition",
-                    "assist2017_concept_id": 2,
+                    "xes3g5m_concept_id": 2,
                     "source": "fake_provider_fixture",
                 },
                 "coverage": {

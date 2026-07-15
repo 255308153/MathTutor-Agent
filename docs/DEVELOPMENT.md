@@ -91,9 +91,9 @@ V1.2 DGEKT dashboard smoke：
 
 ```bash
 export MATHTUTOR_KT_ENGINE=dgekt
-export MATHTUTOR_DGEKT_DATASET=assist2017
+export MATHTUTOR_DGEKT_DATASET=xes3g5m
 export MATHTUTOR_DGEKT_CHECKPOINT_PATH=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl
-export MATHTUTOR_DGEKT_DATASET_DIR=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/Dataset/assist2017
+export MATHTUTOR_DGEKT_DATASET_DIR=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/Dataset/xes3g5m
 export MATHTUTOR_DGEKT_Q_MATRIX_PATH=/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/Dataset/H/2017.csv
 uvicorn backend.app.main:app --reload
 ```
@@ -101,9 +101,9 @@ uvicorn backend.app.main:app --reload
 前端仍按同一条 dashboard 路径操作。DGEKT 模式下应在 `模型证据` 看到 engine、checkpoint provenance、prediction facts、DGEKT attribution、Top path、Path strength 和 Key history。V1.6 如需读取原 DGEKT explainability outputs，额外显式配置：
 
 ```bash
-export MATHTUTOR_DGEKT_CHECKPOINT_ID=dgekt-assist2017-fixture-epoch26
+export MATHTUTOR_DGEKT_CHECKPOINT_ID=dgekt-xes3g5m-fixture-epoch26
 export MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR=/path/to/dgekt/offline_evidence_outputs
-export MATHTUTOR_DGEKT_CANONICAL_MAPPING_PATH=data/mapping/assist2017_canonical_mapping.fixture.json
+export MATHTUTOR_DGEKT_CANONICAL_MAPPING_PATH=data/mapping/xes3g5m_canonical_mapping.fixture.json
 ```
 
 配置后 `模型证据` 需要能区分 `complete/offline`、`partial`、`unavailable` 和 `invalid`，并展示 scorer provenance、gap reason、top paths、key history 和 path ablation。未配置 offline evidence 时，DGEKT 仍只能显示 partial online proxy；不能把 proxy path 当成完整离线归因。
@@ -115,9 +115,9 @@ V1.3 端到端验收路径：
 -> 错因诊断 -> attribution evidence -> TeachingTrace
 ```
 
-本地 CI 不读取真实 checkpoint，而是用 fake DGEKT runtime、fixture Q-matrix 和 `q_frac_001` / `c_fraction_addition` smoke case 验证链路。验收点包括：
+本地 CI 不读取真实 checkpoint，而是用 fake DGEKT runtime、fixture KC routes 和 `q_frac_001` / `c_fraction_addition` smoke case 验证链路。验收点包括：
 
-- 推荐题携带 canonical mapping、ASSIST2017 Q3 / C2、Q-matrix reference 和 content provenance。
+- 推荐题携带 canonical mapping、XES3G5M Q3 / C2、KC routes reference 和 content provenance。
 - 答错后 `KTDiagnosis.prediction_probability`、`weak_concepts`、`forgetting_risks` 仍来自 DGEKT / KT engine。
 - RAG citation、mistake diagnosis、attribution `key_history`、`top_paths`、TeachingTrace `selected_canonical_targets` 都能看到同一 canonical concept。
 - 新用户没有长期记忆时，`assembled_context.evidence_gaps` 显示“无可用记忆”，不伪造 memory asset。
@@ -131,8 +131,8 @@ python3 -m pytest backend/tests/test_kt_engine_config.py::test_v13_dgekt_e2e_smo
 V1.3 / V1.4 历史限制（V1.5 之前）：
 
 - `MockKTStateEngine` 仍是默认引擎，用来保证 V1.1 演示不依赖 checkpoint。
-- `DGEKTStateEngine` 只在显式配置时加载本地 ASSIST2017 checkpoint；大模型和原始数据只通过本地路径引用。
-- Demo 内容集优先读取 V1.3 canonical mapping fixture；未映射题会生成稳定 ASSIST2017 smoke question id，确保 dashboard 能走通 DGEKT 推理，但这不是完整 ASSISTments2017 内容语义对齐。
+- `DGEKTStateEngine` 只在显式配置时加载本地 XES3G5M checkpoint；大模型和原始数据只通过本地路径引用。
+- Demo 内容集优先读取 V1.3 canonical mapping fixture；未映射题会生成稳定 XES3G5M smoke question id，确保 dashboard 能走通 DGEKT 推理，但这不是完整 XES3G5M 内容语义对齐。
 - Attribution evidence 当时只有在线 partial evidence，没有运行原 DGEKT 离线 path scorer；V1.6 已增加显式配置的 offline evidence adapter。
 - 本地 memory store 默认进程内保存，服务重启后不保留长期记忆；显式启用 Mem0 adapter 后可持久化。
 - 本地 RAG 使用 JSON fallback，citation 形状稳定但不是生产向量库。
@@ -143,7 +143,7 @@ V1.5 已完成第一项 full-data artifact 生产线；V1.6 已接入 DGEKT offl
 1. Mem0 运营控制：学生记忆查看、禁用、清理和 provider health。
 2. Provider 失败降级与可观测性：补齐 Mem0、VikingDB / OpenViking live provider 的健康检查、错误提示和恢复路径。
 3. 持久化学习状态和 TeachingTrace：支持连续学习会话审计。
-4. Full artifact 存储和分发：如果完整 ASSISTments2017 generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程。
+4. Full artifact 存储和分发：如果完整 XES3G5M generated artifact 需要跨机器复用，应进入 Git 外部对象存储或发布流程。
 
 前端环境变量：
 
@@ -184,12 +184,12 @@ V1.7 provider contract 与 worktree 并发规则：
 
 - 所有 V1.7 子任务必须从最新 `origin/master` 创建独立 git worktree 和独立 `codex/...` 分支；不要在主工作区直接实现，也不要复用其他 issue 的未提交改动。
 - Provider mode 固定为 `local_fallback`、`fake_provider`、`live_provider` 三种语义。
-- 默认 `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`、`MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`，继续使用进程内 memory store 和本地 JSON RAG，不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint 或完整 ASSISTments2017 数据。
+- 默认 `MATHTUTOR_MEMORY_PROVIDER_MODE=local_fallback`、`MATHTUTOR_RAG_PROVIDER_MODE=local_fallback`，继续使用进程内 memory store 和本地 JSON RAG，不需要 Mem0、VikingDB、OpenViking、真实 DGEKT checkpoint 或完整 XES3G5M 数据。
 - `fake_provider` 是无网络、无密钥的 contract fixture，用于 Mem0 / VikingDB / OpenViking adapter 并发开发。fixture 内部可以模拟 SDK 响应，但向 planner、recommender、API、dashboard 只暴露 `StudentMemory` 和 `RAGSearchResult` 领域模型。
 - Memory 的 `live_provider` 是 Mem0 adapter 的显式 opt-in 入口；只有显式设置 `MATHTUTOR_MEMORY_PROVIDER_MODE=live_provider` 且提供 `MATHTUTOR_MEM0_API_KEY` 时才会加载 `mem0ai`。
 - RAG 的 `live_provider` 是 VikingDB / OpenViking adapter 的显式 opt-in 入口。必须同时配置 provider、endpoint、collection 和对应 API key；缺配置时会报错，默认不会读取外部服务。
 - Live smoke 是双重 opt-in：Mem0 需要 `MATHTUTOR_RUN_MEM0_LIVE_SMOKE=1` 和 `MATHTUTOR_MEM0_API_KEY`；VikingDB / OpenViking 需要 `MATHTUTOR_RUN_VIKING_RAG_SMOKE=1`、endpoint、collection 和对应 API key。任一条件缺失时测试自动 skip，默认 backend/frontend 测试不访问外部 provider。
-- VikingDB / OpenViking metadata filter 支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`，并兼容 `assistments2017_*` 别名。若 provider 不支持或只弱支持 metadata filter，adapter 会在规范化为 `RAGSearchResult` 后做确定性 post-filter。
+- VikingDB / OpenViking metadata filter 支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`xes3g5m_question_id`、`xes3g5m_concept_id`，并兼容 `xes3g5m_*` 别名。若 provider 不支持或只弱支持 metadata filter，adapter 会在规范化为 `RAGSearchResult` 后做确定性 post-filter。
 - Mem0 adapter 返回稳定 `StudentMemory`，覆盖 `preference`、`repeated_mistake`、`effective_strategy`、`reflection`，并保留 event source、question / concept、trace、event time、relevance、freshness、source 和 provider provenance。下游不能解析 Mem0 raw response。
 - Mem0 写入使用稳定 dedupe key；重复学习事件会更新同一条记忆的 provenance，而不是无界生成重复记忆。
 - Provider 只能替换存储 / 检索后端，不能改变学习事实边界：KT facts are authoritative；Offline attribution explains prediction, not overwrite prediction facts；Memory can influence strategy, not mastery；RAG can support explanation, not overwrite prediction facts；Context can assemble evidence, not decide learning facts。
@@ -298,7 +298,7 @@ V1.8 记忆控制最终验收记录（2026-07-09）：
 - 每个 issue 收口前至少运行 Python 编译检查和相关测试。
 - 新功能必须补可验证测试，除非 issue 明确只改文档。
 
-## 4.1 ASSIST2017 canonical mapping workflow
+## 4.1 XES3G5M canonical mapping workflow
 
 V1.3 的 mapping 地基位于：
 
@@ -309,49 +309,49 @@ data/mapping/
 
 核心 artifact schema 覆盖：
 
-- ASSIST2017 `question_id`
-- ASSIST2017 `concept_id`
+- XES3G5M `question_id`
+- XES3G5M `concept_id`
 - MathTutor `concept_id` / `concept_name`
 - `teaching_type`
-- Q-matrix row / concept column reference
+- KC routes row / concept column reference
 - source provenance
 - 关联 RAG doc ids
 
 当前提交的小型 fixture：
 
 ```text
-data/mapping/assist2017_q_matrix.fixture.csv
-data/mapping/assist2017_curated_metadata.fixture.json
-data/mapping/assist2017_canonical_mapping.fixture.json
+data/mapping/xes3g5m_kc_routes.fixture.csv
+data/mapping/xes3g5m_curated_metadata.fixture.json
+data/mapping/xes3g5m_canonical_mapping.fixture.json
 ```
 
 重新生成并打印 coverage 诊断：
 
 ```bash
-python -m backend.app.mapping.build_assist2017_mapping \
-  --q-matrix data/mapping/assist2017_q_matrix.fixture.csv \
-  --metadata data/mapping/assist2017_curated_metadata.fixture.json \
+python -m backend.app.mapping.build_xes3g5m_mapping \
+  --kc-routes data/mapping/xes3g5m_kc_routes.fixture.csv \
+  --metadata data/mapping/xes3g5m_curated_metadata.fixture.json \
   --teaching-content data/content/demo_teaching_content.json \
   --rag-docs data/rag/demo_knowledge.json \
-  --output data/mapping/assist2017_canonical_mapping.fixture.json
+  --output data/mapping/xes3g5m_canonical_mapping.fixture.json
 ```
 
 诊断字段：
 
 | 字段 | 含义 |
 | --- | --- |
-| `mapped_questions` / `mapped_question_count` | artifact 中已有 canonical mapping 的 ASSIST2017 question。 |
-| `mapped_concepts` / `mapped_concept_count` | artifact 中已有 canonical mapping 的 ASSIST2017 concept。 |
-| `missing_questions` | Q-matrix 中存在但 curated metadata 未覆盖的 question 行。 |
-| `missing_concepts` | Q-matrix 中出现但 concept metadata 未覆盖的 concept 列。 |
+| `mapped_questions` / `mapped_question_count` | artifact 中已有 canonical mapping 的 XES3G5M question。 |
+| `mapped_concepts` / `mapped_concept_count` | artifact 中已有 canonical mapping 的 XES3G5M concept。 |
+| `missing_questions` | KC routes 中存在但 curated metadata 未覆盖的 question 行。 |
+| `missing_concepts` | KC routes 中出现但 concept metadata 未覆盖的 concept 列。 |
 | `missing_teaching_content` | artifact 指向但本地教学内容集缺失的 MathTutor question。 |
 | `missing_rag_docs` | artifact 指向但本地 RAG JSON 缺失的 doc id。 |
 
-本地全量 ASSIST2017 文件放置建议：
+本地全量 XES3G5M 文件放置建议：
 
-- checkpoint、`.pkl`、原始 train/test 和全量 Q-matrix 放在 Git 外部路径，使用环境变量引用。
+- checkpoint、`.pkl`、原始 train/test 和全量 KC routes 放在 Git 外部路径，使用环境变量引用。
 - 若需要临时放到仓库内，放在 `data/local/`，该目录默认不提交。
-- 不要提交全量 ASSIST2017 train/test、大型 generated mapping、checkpoint、`.pkl`、`.pt`、`.pth` 或生成模型文件。
+- 不要提交全量 XES3G5M train/test、大型 generated mapping、checkpoint、`.pkl`、`.pt`、`.pth` 或生成模型文件。
 
 当前已知缺口：
 
@@ -361,7 +361,7 @@ python -m backend.app.mapping.build_assist2017_mapping \
 
 边界要求保持不变：
 
-- `MockKTStateEngine` 是默认模式；不读取 checkpoint 或全量 ASSIST2017 文件。
+- `MockKTStateEngine` 是默认模式；不读取 checkpoint 或全量 XES3G5M 文件。
 - `DGEKTStateEngine` 只在显式设置 `MATHTUTOR_KT_ENGINE=dgekt` 时启用。
 - KT facts 是权威事实；RAG 和 Memory 只能影响解释、偏好和策略，不能覆盖 KT mastery / risk / prediction facts。
 
@@ -370,20 +370,20 @@ python -m backend.app.mapping.build_assist2017_mapping \
 默认本地运行和默认测试使用：
 
 ```bash
-MATHTUTOR_ASSIST2017_DATASET_MODE=demo
+MATHTUTOR_XES3G5M_DATASET_MODE=demo
 MATHTUTOR_CONTENT_SOURCE=demo
 MATHTUTOR_RAG_SOURCE=demo
 MATHTUTOR_KT_ENGINE=mock
 ```
 
-这条路径不需要完整 ASSISTments2017、DGEKT checkpoint、Mem0、VikingDB/OpenViking，也不会读取本地 full data。
+这条路径不需要完整 XES3G5M、DGEKT checkpoint、Mem0、VikingDB/OpenViking，也不会读取本地 full data。
 
 导入小型 fixture artifact：
 
 ```bash
-python3 -m backend.app.importing.build_assist2017_artifacts \
+python3 -m backend.app.importing.build_xes3g5m_artifacts \
   --dataset-mode fixture \
-  --output-dir data/imported/assist2017_fixture \
+  --output-dir data/imported/xes3g5m_fixture \
   --generated-at 2026-07-09T00:00:00+00:00
 ```
 
@@ -391,55 +391,55 @@ python3 -m backend.app.importing.build_assist2017_artifacts \
 
 ```bash
 export MATHTUTOR_CONTENT_SOURCE=imported
-export MATHTUTOR_CONTENT_IMPORT_PATH=data/imported/assist2017_fixture/content_import.json
+export MATHTUTOR_CONTENT_IMPORT_PATH=data/imported/xes3g5m_fixture/content_import.json
 export MATHTUTOR_RAG_SOURCE=imported
-export MATHTUTOR_RAG_ARTIFACT_PATH=data/imported/assist2017_fixture/rag_documents.json
+export MATHTUTOR_RAG_ARTIFACT_PATH=data/imported/xes3g5m_fixture/rag_documents.json
 ```
 
 本地 full data 构建必须显式传入源路径，推荐输出到 ignored 目录：
 
 ```bash
-python3 -m backend.app.importing.build_assist2017_artifacts \
+python3 -m backend.app.importing.build_xes3g5m_artifacts \
   --dataset-mode full \
-  --source-rows /Users/lqc/data/assist2017/source_rows.csv \
-  --q-matrix /Users/lqc/data/assist2017/q_matrix.csv \
-  --output-dir data/local/assist2017_full_artifacts
+  --source-rows /Users/lqc/data/xes3g5m/source_rows.csv \
+  --kc-routes /Users/lqc/data/xes3g5m/kc_routes.csv \
+  --output-dir data/local/xes3g5m_full_artifacts
 ```
 
 提交规则：
 
-- 可以提交 `data/import/assist2017_source.fixture.csv`、`data/mapping/*.fixture.*`、`data/imported/assist2017_fixture/*.json`。
+- 可以提交 `data/import/xes3g5m_source.fixture.csv`、`data/mapping/*.fixture.*`、`data/imported/xes3g5m_fixture/*.json`。
 - 不提交 provider credentials、secrets、`.env`、provider cache、generated vector index、raw train/test、checkpoint、`.pkl`、`.pt`、`.pth`、`.ckpt`、`.safetensors`、cache、`dist/`、`build/`、`node_modules/` 或 full generated artifact。
-- full data 推荐放在 Git 外部路径；若临时放仓库内，使用 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/assist2017/`。
+- full data 推荐放在 Git 外部路径；若临时放仓库内，使用 `data/local/`、`data/raw/`、`data/full/` 或 `data/import/xes3g5m/`。
 - 提交前运行 `python3 scripts/check_repository_safety.py`，确认 tracked 文件没有禁提交项。
 
 清理方式：
 
 ```bash
-rm -rf data/local/assist2017_full_artifacts
+rm -rf data/local/xes3g5m_full_artifacts
 rm -rf frontend/dist .pytest_cache .ruff_cache
 rm -rf provider_caches vector_indexes generated_vector_indexes
 ```
 
 ## 4.1.2 V1.5 artifact schema 与 coverage 诊断
 
-`backend.app.importing.assist2017_artifacts` 是 V1.5 数据导入 contract 的唯一 Pydantic 定义来源。构建 CLI 写出的文件和 runtime 读取关系如下：
+`backend.app.importing.xes3g5m_artifacts` 是 V1.5 数据导入 contract 的唯一 Pydantic 定义来源。构建 CLI 写出的文件和 runtime 读取关系如下：
 
 | artifact | schema_version | runtime consumer | 关键字段 |
 | --- | --- | --- | --- |
-| `canonical_mapping.json` | `assist2017-canonical-mapping/v1` | mapping diagnostics / DGEKT target alignment | `questions[].question_id`、`questions[].assist2017_question_id`、`questions[].assist2017_concept_id`、`q_matrix_reference`、`rag_doc_ids`。 |
-| `content_import.json` | `assist2017-content-import/v1` | `ImportedTeachingContentRepository` | `questions[].stem`、`standard_answer`、`explanation`、`difficulty`、`mistake_patterns`、`canonical_mapping`、`provenance`、`content_availability`。 |
-| `rag_documents.json` | `assist2017-rag-documents/v1` | `LocalKnowledgeRAG(documents_path=...)` | `documents[].doc_type`、`concept_id`、`question_id`、ASSIST2017 ids、`canonical_mapping`、`coverage`、`provenance`。 |
-| `coverage_report.json` | `assist2017-coverage-report/v1` | reviewer / researcher diagnostics | `summary.mapping`、`summary.content`、`summary.rag`、`summary.q_matrix`、`gaps[]`。 |
-| `smoke_dataset.json` | `assist2017-smoke-dataset/v1` | API smoke tests | `learning_paths[].canonical_question_id`、`canonical_concept_id`、`steps[]`。 |
+| `canonical_mapping.json` | `xes3g5m-canonical-mapping/v1` | mapping diagnostics / DGEKT target alignment | `questions[].question_id`、`questions[].xes3g5m_question_id`、`questions[].xes3g5m_concept_id`、`kc_routes_reference`、`rag_doc_ids`。 |
+| `content_import.json` | `xes3g5m-content-import/v1` | `ImportedTeachingContentRepository` | `questions[].stem`、`standard_answer`、`explanation`、`difficulty`、`mistake_patterns`、`canonical_mapping`、`provenance`、`content_availability`。 |
+| `rag_documents.json` | `xes3g5m-rag-documents/v1` | `LocalKnowledgeRAG(documents_path=...)` | `documents[].doc_type`、`concept_id`、`question_id`、XES3G5M ids、`canonical_mapping`、`coverage`、`provenance`。 |
+| `coverage_report.json` | `xes3g5m-coverage-report/v1` | reviewer / researcher diagnostics | `summary.mapping`、`summary.content`、`summary.rag`、`summary.kc_routes`、`gaps[]`。 |
+| `smoke_dataset.json` | `xes3g5m-smoke-dataset/v1` | API smoke tests | `learning_paths[].canonical_question_id`、`canonical_concept_id`、`steps[]`。 |
 
 所有 artifact 都包含相同结构的 `metadata`：
 
 | 字段 | 含义 |
 | --- | --- |
 | `generated_at` | 构建时间；fixture 构建可传固定值保证 deterministic diff。 |
-| `source_paths` | source rows 和 Q-matrix 的本地来源。full data 路径可以是 Git 外部路径。 |
-| `row_counts` | source rows、valid rows、Q-matrix question/concept、content question、RAG document 数量。 |
+| `source_paths` | source rows 和 KC routes 的本地来源。full data 路径可以是 Git 外部路径。 |
+| `row_counts` | source rows、valid rows、KC routes question/concept、content question、RAG document 数量。 |
 | `coverage_summary` | compact coverage summary，便于 artifact consumer 快速显示。 |
 | `validation_errors` | error / warning / info 级导入问题，不能静默吞掉。 |
 
@@ -447,13 +447,13 @@ rm -rf provider_caches vector_indexes generated_vector_indexes
 
 | category | 常见 reason_code | 如何解读 | 处理建议 |
 | --- | --- | --- | --- |
-| `missing_question_mapping` | `q_matrix_row_without_source_question` | Q-matrix 有题目行，但 source rows 未导入对应题目。 | 补 source rows 或确认 full data 抽样范围。 |
-| `missing_concept_mapping` | `q_matrix_concept_without_source_concept` | Q-matrix 有 concept 列，但 source rows 没有该 concept metadata。 | 补 concept metadata 或检查 Q-matrix。 |
-| `q_matrix_mismatch` | `question_outside_q_matrix` / `concept_not_in_q_matrix_row` | source row 的 question/concept 与 Q-matrix 不一致。 | 作为 error 修正源文件；默认 CLI 会失败。 |
+| `missing_question_mapping` | `kc_routes_row_without_source_question` | KC routes 有题目行，但 source rows 未导入对应题目。 | 补 source rows 或确认 full data 抽样范围。 |
+| `missing_concept_mapping` | `kc_routes_concept_without_source_concept` | KC routes 有 concept 列，但 source rows 没有该 concept metadata。 | 补 concept metadata 或检查 KC routes。 |
+| `kc_routes_mismatch` | `question_outside_kc_routes` / `concept_not_in_kc_routes_row` | source row 的 question/concept 与 KC routes 不一致。 | 作为 error 修正源文件；默认 CLI 会失败。 |
 | `missing_teaching_content` | `essential_teaching_field_missing` | mapping 成功，但题干、标准答案或解析缺失。 | 补内容；runtime 必须通过 `content_availability` 暴露 partial/missing。 |
 | `missing_rag_doc` | `expected_rag_doc_not_generated` | content 期望的 RAG doc 不存在。 | 补 question explanation、mistake pattern、concept note 或 strategy 文档。 |
 
-`summary.mapping.mapped_*` / `unmapped_*` 用于判断 canonical 对齐覆盖；`summary.content.missing_teaching_content` 用于判断教学内容是否完整；`summary.rag.missing_rag_docs` 用于判断 citation 质量；`summary.q_matrix.mismatches` 用于阻断不可信的 KT / DGEKT target alignment。
+`summary.mapping.mapped_*` / `unmapped_*` 用于判断 canonical 对齐覆盖；`summary.content.missing_teaching_content` 用于判断教学内容是否完整；`summary.rag.missing_rag_docs` 用于判断 citation 质量；`summary.kc_routes.mismatches` 用于阻断不可信的 KT / DGEKT target alignment。
 
 导入 artifact 不能改变学习事实边界：
 
@@ -467,7 +467,7 @@ rm -rf provider_caches vector_indexes generated_vector_indexes
 V1.5 API smoke 可单独运行：
 
 ```bash
-python3 -m pytest backend/tests/test_assist2017_learning_path_smoke.py -q
+python3 -m pytest backend/tests/test_xes3g5m_learning_path_smoke.py -q
 ```
 
 该 smoke 使用 committed imported fixture，验证同一 `canonical_question_id` / `canonical_concept_id` 贯穿推荐 payload、服务端判题、KT facts、RAG citation、`assembled_context` 和 TeachingTrace。默认仍是 `MockKTStateEngine`，不会读取 DGEKT checkpoint。
@@ -761,8 +761,8 @@ DGEKT attribution evidence 约定：
 
 1. 保持 `KTStateEngine.explain_prediction(progress, target_question_id)` 接口不变。
 2. DGEKT adapter 返回 `AttributionEvidence`，其中 `prediction_probability` 与 `diagnose` 的预测概率一致。
-3. `key_history` 放进入 DGEKT one-hot 序列的关键历史交互，包括 MathTutor question、ASSIST2017 question、正确性、序列位置和 concept 映射；offline evidence 命中时来自 `key_history.csv`。
-4. `top_paths` 放 history question 到 target question 的可审计 path。offline evidence 命中时来自 `attribution_paths.csv`；未命中时只能使用 recent history + Q-matrix 的 partial proxy，并标注 `partial_evidence=true`。
+3. `key_history` 放进入 DGEKT one-hot 序列的关键历史交互，包括 MathTutor question、XES3G5M question、正确性、序列位置和 concept 映射；offline evidence 命中时来自 `key_history.csv`。
+4. `top_paths` 放 history question 到 target question 的可审计 path。offline evidence 命中时来自 `attribution_paths.csv`；未命中时只能使用 recent history + KC routes 的 partial proxy，并标注 `partial_evidence=true`。
 5. `weak_concept_hit` 和 `weak_concept_evidence` 只说明该 path 命中了 DGEKT 诊断出的薄弱概念 proxy，不能反向改写 `KTDiagnosis.weak_concepts`。
 6. `diagnose` 阶段 TeachingTrace 会记录 `attribution_chain`，按 raw model target -> mapped teaching content -> attribution evidence 串联研究者可审计链路。
 7. `path_ablation` 来自 `path_ablation.csv`；缺失、缺列或 numeric 解析失败时 evidence status 必须降为 `invalid` 或 `unavailable`，不能显示为 complete。
@@ -790,12 +790,12 @@ RAG 文档 schema：
   "source": "demo-rag/fraction_addition.md",
   "concept_id": "c_fraction_addition",
   "question_id": null,
-  "assist2017_question_id": null,
-  "assist2017_concept_id": 2,
+  "xes3g5m_question_id": null,
+  "xes3g5m_concept_id": 2,
   "canonical_mapping": {
     "concept_id": "c_fraction_addition",
-    "assist2017_concept_id": 2,
-    "source": "assist2017_curated_metadata.fixture.json"
+    "xes3g5m_concept_id": 2,
+    "source": "xes3g5m_curated_metadata.fixture.json"
   },
   "provenance": {
     "rag_source": "data/rag/demo_knowledge.json",
@@ -809,7 +809,7 @@ RAG 文档 schema：
 }
 ```
 
-`data/rag/demo_knowledge.json` 保持小型可读 fixture，可以只手写 `doc_id`、`doc_type`、`title`、`content`、`source`、`concept_id`、`question_id` 和 `keywords`。`LocalKnowledgeRAG` 读取时会根据 `data/mapping/assist2017_canonical_mapping.fixture.json` 做 runtime enrichment，补齐 ASSIST2017 id、Q-matrix reference、provenance 和 coverage；未映射时 `coverage.coverage_type` 会标记为 `unmapped_question` 或 `unmapped_concept` 并带 `missing_reason`。
+`data/rag/demo_knowledge.json` 保持小型可读 fixture，可以只手写 `doc_id`、`doc_type`、`title`、`content`、`source`、`concept_id`、`question_id` 和 `keywords`。`LocalKnowledgeRAG` 读取时会根据 `data/mapping/xes3g5m_canonical_mapping.fixture.json` 做 runtime enrichment，补齐 XES3G5M id、KC routes reference、provenance 和 coverage；未映射时 `coverage.coverage_type` 会标记为 `unmapped_question` 或 `unmapped_concept` 并带 `missing_reason`。
 
 四类知识：
 
@@ -826,7 +826,7 @@ RAG 文档 schema：
 - 支持 `doc_types` 多类型过滤。
 - 支持 `concept_id` 过滤。
 - 支持 `question_id` 过滤。
-- 支持 `assist2017_question_id` / `assist2017_concept_id` 过滤。
+- 支持 `xes3g5m_question_id` / `xes3g5m_concept_id` 过滤。
 - 返回 `title`、`source`、`content`、`score`、canonical mapping、provenance 和 coverage，供 response、TeachingTrace、LearningContextLayer 和 dashboard 引用。
 
 主循环接入：
@@ -836,8 +836,8 @@ RAG 文档 schema：
 - 答题提交按 `question_id` / `concept_id` 检索题解和错因。
 - 下一步建议检索概念说明和学习策略。
 - 学生回答中会附简短 `参考：title（source）` citation。
-- TeachingTrace 记录 `rag_query`、`rag_filters` 和 canonical `rag_sources`，包括 `question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id` 和 coverage。
-- dashboard 的 `RAG 引用` 区会显示引用对应的真实题目 / 知识点，例如 `题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2`。
+- TeachingTrace 记录 `rag_query`、`rag_filters` 和 canonical `rag_sources`，包括 `question_id`、`concept_id`、`xes3g5m_question_id`、`xes3g5m_concept_id` 和 coverage。
+- dashboard 的 `RAG 引用` 区会显示引用对应的真实题目 / 知识点，例如 `题 q_frac_001 · 知识点 c_fraction_addition · XES3G5M Q3 · C2`。
 
 边界：
 
@@ -853,18 +853,18 @@ RAG 缺失时只进入 assembled_context.evidence_gaps，不能伪造 knowledge_
 
 | category | 常见 code | 阶段 | 含义 | 处理方式 |
 | --- | --- | --- | --- | --- |
-| `missing_mapping` | `missing_question_id` / `missing_mapping` | `load_context` / `diagnose` | 缺 ASSIST2017 / canonical mapping，或 concept 与 Q-matrix 不一致。 | 补 mapping artifact 或修正事件 payload。 |
+| `missing_mapping` | `missing_question_id` / `missing_mapping` | `load_context` / `diagnose` | 缺 XES3G5M / canonical mapping，或 concept 与 KC routes 不一致。 | 补 mapping artifact 或修正事件 payload。 |
 | `missing_content` | `missing_standard_answer` / `missing_teaching_content` | `load_context` | 题干、标准答案或解析缺失；标准答案缺失时不能确定性判题。 | 补 `data/content/demo_teaching_content.json` 或外部内容导入。 |
 | `missing_rag_citation` | `missing_rag_citation` | `load_context` | RAG 未召回 canonical question / concept 对齐文档。 | 补 `data/rag/demo_knowledge.json` 或放宽过滤条件。 |
-| `unsupported_dgekt_target` | `unsupported_dgekt_target` | `diagnose` | 显式 DGEKT target 超出 ASSIST2017 / Q-matrix 支持范围。 | 检查 target question id 和 Q-matrix 行。 |
-| `scorer_failure` | `scorer_failure` | `diagnose` | attribution scorer 运行失败。 | 检查 scorer 输入、checkpoint、Q-matrix 或回退到 partial evidence。 |
+| `unsupported_dgekt_target` | `unsupported_dgekt_target` | `diagnose` | 显式 DGEKT target 超出 XES3G5M / KC routes 支持范围。 | 检查 target question id 和 KC routes 行。 |
+| `scorer_failure` | `scorer_failure` | `diagnose` | attribution scorer 运行失败。 | 检查 scorer 输入、checkpoint、KC routes 或回退到 partial evidence。 |
 
 这些记录是诊断与审计信息，不是新的学习事实来源。KT facts 仍只能来自 `KTDiagnosis`；RAG / Memory / Context 不能覆盖 mastery、weak concepts、forgetting risk 或 prediction probability。
 
 替换为 Chroma / VikingDB / OpenViking 时：
 
 1. 保持 `KnowledgeRAG.search(query, filters, limit)` 接口不变。
-2. 保持文档 metadata 字段语义不变，并支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`assist2017_question_id`、`assist2017_concept_id`。
+2. 保持文档 metadata 字段语义不变，并支持 `doc_type`、`doc_types`、`question_id`、`concept_id`、`xes3g5m_question_id`、`xes3g5m_concept_id`。
 3. adapter 内部负责向量召回和 metadata filter；provider 不支持时必须在返回前做确定性 post-filter。
 4. 返回结果仍然映射为 `RAGSearchResult`。
 5. 不允许 adapter 写入 KT progress 或修改 diagnosis。
@@ -980,7 +980,7 @@ data/content/demo_teaching_content.json
 - `rag_doc_ids`：关联 RAG 文档 ID。
 - `concept_teaching_type_map`：稳定标注知识点教学类型，取值为 `memory`、`concept`、`procedure`、`design`。
 - `content_availability`：推荐题返回的内容可用性诊断，包含题干、标准答案、解析是否缺失，以及中文 fallback 信息。
-- `provenance` / `canonical_mapping`：推荐题返回的来源与 ASSIST2017 / Q-matrix 对齐信息。
+- `provenance` / `canonical_mapping`：推荐题返回的来源与 XES3G5M / KC routes 对齐信息。
 
 确定性判题规则：
 
@@ -994,11 +994,11 @@ data/content/demo_teaching_content.json
 推荐题 canonical teaching content：
 
 - `RiskPrioritizedRecommender` 从 `ContentRepository.public_question()` 获取推荐题公开快照，包含 `question_id`、`stem`、`answer`、`explanation`、`concept_name`、`difficulty`、`teaching_type`、`content_availability`、`provenance` 和 `canonical_mapping`。
-- 已具备 curated ASSIST2017 question/concept/Q-matrix 对齐的题会获得轻量 `canonical_alignment` 排序因子，优先于仅有 `local_sequence_fallback` 的 smoke id。
+- 已具备 curated XES3G5M question/concept/KC routes 对齐的题会获得轻量 `canonical_alignment` 排序因子，优先于仅有 `local_sequence_fallback` 的 smoke id。
 - TeachingTrace 的 plan 阶段会记录 `selected_canonical_targets`，用于核对推荐题、KTDiagnosis 和 trace 是否指向同一 canonical question / concept。
-- 当前覆盖范围仍是小型 demo 内容集 + `data/mapping/assist2017_canonical_mapping.fixture.json`。全量 ASSISTments2017 题干、答案、解析、RAG 文档导入不得直接提交大文件，应放在 Git 外部或 `data/local/`。
+- 当前覆盖范围仍是小型 demo 内容集 + `data/mapping/xes3g5m_canonical_mapping.fixture.json`。全量 XES3G5M 题干、答案、解析、RAG 文档导入不得直接提交大文件，应放在 Git 外部或 `data/local/`。
 
-替换为 ASSISTments2017 / DGEKT 数据时：
+替换为 XES3G5M / DGEKT 数据时：
 
 1. 保持 `question_id`、标准答案、知识点、难度、解析、错因、RAG 文档 ID 的字段语义不变。
 2. 将 ASSISTments skill / problem 映射到 `concept_id` 与 `question_id`。
@@ -1056,11 +1056,11 @@ cp .env.example .env
 | `MATHTUTOR_RAG_PROVIDER_SUPPORTS_METADATA_FILTER` | `true` | provider 是否支持 metadata filter；设为 `false` 时 adapter 会扩大召回并做确定性 post-filter。 |
 | `MATHTUTOR_RAG_PROVIDER_TIMEOUT_SECONDS` | `5.0` | live provider HTTP 检索超时时间。 |
 | `MATHTUTOR_KT_ENGINE` | `mock` | KT 引擎选择。默认 `mock`，显式设为 `dgekt` 才会验证并加载真实 DGEKT 配置。 |
-| `MATHTUTOR_DGEKT_DATASET` | `assist2017` | DGEKT 数据集名；当前只支持 `assist2017`。 |
-| `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 ASSIST2017 DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
+| `MATHTUTOR_DGEKT_DATASET` | `xes3g5m` | DGEKT 数据集名；当前只支持 `xes3g5m`。 |
+| `MATHTUTOR_DGEKT_CHECKPOINT_PATH` | 空 | 本地 XES3G5M DGEKT checkpoint 路径，例如 `/Users/lqc/Downloads/LDGEKT_副本/90_源码与原始工程/DGEKT原版-自注意力机制-master_副本/KnowledgeTracing/model/runs/20260707_222733/save2017model.pkl`。大模型文件只通过本地路径引用，不提交 Git。 |
 | `MATHTUTOR_DGEKT_CHECKPOINT_ID` | 空 | 可选 checkpoint provenance ID；用于和 offline evidence artifact 的 `checkpoint_id` 对齐。 |
-| `MATHTUTOR_DGEKT_DATASET_DIR` | 空 | ASSIST2017 数据目录，例如原始工程中的 `Dataset/assist2017`，需包含 `assist2017_pid_train.csv` 和 `assist2017_pid_test.csv`。 |
-| `MATHTUTOR_DGEKT_Q_MATRIX_PATH` | 空 | DGEKT Q-matrix / incidence matrix 文件，例如原始工程中的 `Dataset/H/2017.csv`。 |
+| `MATHTUTOR_DGEKT_DATASET_DIR` | 空 | XES3G5M 数据目录，例如原始工程中的 `Dataset/xes3g5m`，需包含 `xes3g5m_pid_train.csv` 和 `xes3g5m_pid_test.csv`。 |
+| `MATHTUTOR_DGEKT_Q_MATRIX_PATH` | 空 | DGEKT KC routes / incidence matrix 文件，例如原始工程中的 `Dataset/H/2017.csv`。 |
 | `MATHTUTOR_DGEKT_OFFLINE_EVIDENCE_DIR` | 空 | 可选 DGEKT offline evidence artifact 目录；必须显式配置才会读取。 |
 | `MATHTUTOR_DGEKT_CANONICAL_MAPPING_PATH` | 空 | 可选 canonical mapping artifact 路径；用于校验 offline evidence 的 canonical question/concept。 |
 | `MATHTUTOR_RUN_DGEKT_SMOKE` | `0` | 设为 `1` 时启用本地真实 checkpoint smoke test；默认测试不依赖大模型文件。 |
@@ -1074,7 +1074,7 @@ cp .env.example .env
 data/
   content/      小型数学教学内容集：题目、知识点、答案、题解、错因、策略。
   dgekt/        DGEKT 小型 offline evidence fixture；真实 full outputs 必须放到 Git 外部或 ignored 目录。
-  mapping/      ASSIST2017 canonical mapping 小型 fixture 与 schema artifact。
+  mapping/      XES3G5M canonical mapping 小型 fixture 与 schema artifact。
   rag/          本地 RAG 文档和可检索片段。
   local/        sqlite、cache、临时索引等本地运行产物，不提交。
 ```
@@ -1083,18 +1083,18 @@ data/
 
 - 先用本地 JSON / sqlite / 内存实现跑通 V1 闭环。
 - `MockKTStateEngine` 是默认 KT 实现。
-- `DGEKTStateEngine` 只有在 `MATHTUTOR_KT_ENGINE=dgekt` 时启用；启动或首次构造时会检查 checkpoint、ASSIST2017 train/test 数据和 Q-matrix / incidence matrix，缺失时给出明确环境变量修复提示。
+- `DGEKTStateEngine` 只有在 `MATHTUTOR_KT_ENGINE=dgekt` 时启用；启动或首次构造时会检查 checkpoint、XES3G5M train/test 数据和 KC routes / incidence matrix，缺失时给出明确环境变量修复提示。
 - DGEKT / SAFKT 只通过稳定接口接入，不把 PyTorch checkpoint、数据路径或矩阵细节泄漏到 API、planner、recommender 或前端。
 - V1.2 的 DGEKT adapter 会读取 checkpoint 字典中的 `epoch`、`model_state_dict`、`optimizer_state_dict`、`auc`、`acc`，但推理只加载 `model_state_dict`，不会依赖 optimizer 状态。
 - 已验证本地 checkpoint provenance：epoch 26，AUC 0.7866464407565317，ACC 0.728796544573157。adapter 加载后会进入 `eval()` 模式，并通过 `diagnostics` / KT evidence 暴露 engine metadata。
 - PyTorch 2.6+ 将 `torch.load` 默认改为 `weights_only=True`，该历史 checkpoint 内含 numpy 标量 metadata；adapter 在显式启用 DGEKT 且用户信任本地 checkpoint 时使用 `weights_only=False` 读取。不要对未知来源 checkpoint 使用该配置。
 - MathTutor 到 DGEKT 的输入转换规则：
-  - `recent_events` 中已判题的 `answer_submitted` 会转换为 ASSIST2017 序列，最多保留最近 50 步。
-  - 题目映射优先读取 payload 的 `assist2017_question_id`，其次读取 `dgekt_question_id`，也支持 `assist2017:<id>` 形式。
+  - `recent_events` 中已判题的 `answer_submitted` 会转换为 XES3G5M 序列，最多保留最近 50 步。
+  - 题目映射优先读取 payload 的 `xes3g5m_question_id`，其次读取 `dgekt_question_id`，也支持 `xes3g5m:<id>` 形式。
   - 正确性来自服务端判题后的 `is_correct`，正确编码到前 3162 维，错误编码到后 3162 维，保持原 DGEKT OneHot 规则。
-  - concept 映射优先读取 `assist2017_concept_id` / `dgekt_concept_id`；未提供时由 Q-matrix 对应题目行推导第一个 concept。
-  - 如果题目 ID 不能映射为 ASSIST2017 整数、超出 1..3162、Q-matrix 缺题、题目没有 concept，或显式 concept 与 Q-matrix 不一致，会抛出明确映射错误，不返回伪诊断。
-- 当前支持范围：本地 ASSIST2017 checkpoint + `Dataset/assist2017` + `Dataset/H/2017.csv`，以及 V1.6 显式配置的 offline evidence artifact。小型 demo 内容集仍使用自己的 `question_id`，系统会为 dashboard smoke 生成稳定 ASSIST2017 question id 并随事件传入 DGEKT；这只证明真实 checkpoint 推理链路可运行，不代表完整 ASSISTments2017 内容语义导入。
+  - concept 映射优先读取 `xes3g5m_concept_id` / `dgekt_concept_id`；未提供时由 KC routes 对应题目行推导第一个 concept。
+  - 如果题目 ID 不能映射为 XES3G5M 整数、超出 1..3162、KC routes 缺题、题目没有 concept，或显式 concept 与 KC routes 不一致，会抛出明确映射错误，不返回伪诊断。
+- 当前支持范围：本地 XES3G5M checkpoint + `Dataset/xes3g5m` + `Dataset/H/2017.csv`，以及 V1.6 显式配置的 offline evidence artifact。小型 demo 内容集仍使用自己的 `question_id`，系统会为 dashboard smoke 生成稳定 XES3G5M question id 并随事件传入 DGEKT；这只证明真实 checkpoint 推理链路可运行，不代表完整 XES3G5M 内容语义导入。
 - DGEKT prediction facts 规范化：
   - `diagnose` 会在 `eval()` / `no_grad` 下读取 ensemble logits，输出 numeric `prediction_probability`。
   - `prediction_probability < 0.6` 会生成 weak concept proxy，`1 - prediction_probability >= 0.4` 会生成 forgetting risk proxy。

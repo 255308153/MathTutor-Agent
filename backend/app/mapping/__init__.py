@@ -1,6 +1,6 @@
-"""Canonical ASSIST2017 mapping utilities."""
+"""Canonical XES3G5M mapping utilities."""
 
-from .assist2017_mapping import (
+from .xes3g5m_mapping import (
     CanonicalMappingArtifact,
     CanonicalMappingRepository,
     build_mapping_artifact,

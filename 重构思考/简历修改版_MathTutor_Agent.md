@@ -33,18 +33,18 @@ KT / DGEKT Facts       RAG Evidence       Student Memory
                          |
           Context Governance（排序、裁剪、脱敏、审计）
                          |
-      ResponseContextPackage -> Planner / Response Generator
+      ResponseContextPackage -> Response Generator
                          |
       TeachingTrace / Provider Health / Dashboard
 ```
 
-架构核心不是“让 LLM 自己决定下一步”，而是将系统分成两条平面：**事实平面**由确定性判题、KT/DGEKT、progress store 生产和写入学习状态；**教学平面**只读取治理后的 KT、RAG、Memory 证据，决定讲解方式、提示策略和练习计划。Runtime、Context Governance、RAG、Memory 和 Provider Health 都没有改写学习事实的权限，TeachingTrace 则负责将每轮状态流和证据选择变成可审计记录。
+架构核心不是“让 LLM 自己决定下一步”，而是将系统分成两条平面：**事实平面**由确定性判题、KT/DGEKT、progress store 生产和写入学习状态；**回复与推荐平面**只读取治理后的 KT、RAG、Memory 证据，按学生问题生成回复，或在明确请求时推荐练习。Runtime、Context Governance、RAG、Memory 和 Provider Health 都没有改写学习事实的权限，TeachingTrace 则负责将每轮状态流、AI 完整回复和证据选择变成可审计记录。
 
 ## 技术亮点候选
 
 ### • [现有基础] 事实平面—教学平面双轨 Agent 架构
 
-设计并实现“事实生产与教学表达分离”的双轨架构：Progress Store、确定性判题和 KT/DGEKT 组成事实平面，唯一负责 mastery、weak concepts、prediction probability、forgetting risks 等学习状态的产生与写入；RAG、Memory、Planner、Response Generator 组成教学平面，只能读取事实并调整讲解、提示和练习策略。通过 `state_write_policy`、authority boundary、只读 Tool Observation 和契约测试约束跨层访问，解决传统 Agent 将检索文本、历史偏好或模型输出直接写回业务状态导致事实漂移的问题。
+设计并实现“事实生产与教学表达分离”的双轨架构：Progress Store、确定性判题和 KT/DGEKT 组成事实平面，分别负责作答事实、判题结果与 mastery、weak concepts、prediction probability、forgetting risks 等模型状态；RAG、Memory、Response Generator 与推荐器组成只读的回复与推荐平面，按学生主动提出的问题生成回答，或在明确请求时选题。通过 `state_write_policy`、authority boundary、只读 Tool Observation 和契约测试约束跨层访问，解决传统 Agent 将检索文本、历史偏好或模型输出直接写回业务状态导致事实漂移的问题。
 
 ### • [现有基础] Runtime Context Governance 与 Evidence Firewall
 
@@ -60,11 +60,11 @@ KT / DGEKT Facts       RAG Evidence       Student Memory
 
 ### • [现有基础] 题目对齐 RAG 与证据缺口治理
 
-设计以 canonical `question_id` / `concept_id` 为核心的教学检索架构，将 concept note、question explanation、mistake pattern 和 learning strategy 组织为带 coverage、provenance 和 ASSIST2017 mapping 的知识资源；在检索与上下文组装阶段校验题目、知识点、citation 和内容可用性。对空检索、映射缺失、内容缺失、低置信度和上下文超限统一生成 `evidence_gap`，使系统在缺证据时显式降级而非让模型补造引用，降低题目串扰与无依据讲解风险。
+设计以 canonical `question_id` / `concept_id` 为核心的教学检索架构，将 concept note、question explanation、mistake pattern 和 learning strategy 组织为带 coverage、provenance 和 XES3G5M mapping 的知识资源；在检索与上下文组装阶段校验题目、知识点、citation 和内容可用性。对空检索、映射缺失、内容缺失、低置信度和上下文超限统一生成 `evidence_gap`，使系统在缺证据时显式降级而非让模型补造引用，降低题目串扰与无依据讲解风险。
 
 ### • [现有基础] 可解释推荐与确定性学习闭环
 
-设计服务端确定性判题与风险优先推荐链路，将弱知识点匹配、遗忘风险、预测风险、难度适配、近期重复度、学习偏好和 canonical mapping 完整度拆为 `score_factors`；推荐器输出中文 reason 与候选证据，TeachingTrace 同步记录判题、KT diagnosis、错因分析、RAG citation、memory recall 和 planner decision。通过将“判题事实—模型状态—推荐决策—教学反馈”绑定到同一 trace，支持定位一条推荐或讲解到底来自哪次作答、哪项风险和哪条资源。
+设计服务端确定性判题与风险优先推荐链路，将弱知识点匹配、遗忘风险、预测风险、难度适配、近期重复度、学习偏好和 canonical mapping 完整度拆为 `score_factors`；推荐器输出中文 reason 与候选证据，TeachingTrace 同步记录判题、KT diagnosis、错因证据、RAG citation、memory recall、AI 完整回复和推荐结果。通过将“判题事实—模型状态—推荐决策—学生反馈”绑定到同一 trace，支持定位一条推荐或讲解到底来自哪次作答、哪项风险和哪条资源。
 
 ### • [现有基础] Provider Fallback、敏感信息清洗与回归门禁
 
@@ -80,11 +80,11 @@ KT / DGEKT Facts       RAG Evidence       Student Memory
 
 ### • [终局规划] 长期对话学习工作区与版本化教学资产
 
-采用 PostgreSQL Event Sourcing 持久化会话事件、学习状态、证据引用、提示历史和练习修订链，以 Redis 缓存活跃学生工作区；通过滑动窗口、分层摘要、语义记忆检索和 Token Budget Context Pack 管理长对话。为解题步骤、教学计划和练习 Suite 引入 version、JSON Patch、Revision DAG、semantic diff、乐观锁和回滚，使学生能够围绕同一道题持续修改、检查、追问与确认，而不是每轮重新生成导致状态漂移。
+采用 PostgreSQL Event Sourcing 持久化会话事件、学习状态、学生输入、AI 完整回复、证据引用、提示历史和练习修订链，以 Redis 缓存活跃学生工作区；通过滑动窗口、分层摘要、语义记忆检索和 Token Budget Context Pack 管理长对话。为解题步骤、回复记录和练习 Suite 引入 version、JSON Patch、Revision DAG、semantic diff、乐观锁和回滚，使学生能够围绕同一道题持续修改、检查、追问与确认，而不是每轮重新生成导致状态漂移。
 
 ### • [终局规划] 动态图 ReAct 教学 Runtime
 
-设计基于 DAG 的教学 Agent Workflow Runtime，将传统串行 Thought–Action–Observation 升级为“可调度、可并行、可恢复”的动态图执行框架；通过任务拆分、节点依赖、拓扑排序、入度控制和 checkpoint 实现对题目检索、知识点检索、Memory recall、KT inference 等无依赖节点的并发执行。引入 Race Strategy 支持多检索源、多模型、多提示策略竞速，并结合 Human-in-the-loop、最大重规划次数和恢复范围控制，使 Agent 能基于 execution observation 补证据、调整提示层级、修订教学计划或请求人工澄清。
+设计基于 DAG 的教学 Agent Workflow Runtime，将传统串行 Thought–Action–Observation 升级为“可调度、可并行、可恢复”的动态图执行框架；通过任务拆分、节点依赖、拓扑排序、入度控制和 checkpoint 实现对题目检索、知识点检索、Memory recall、KT inference 等无依赖节点的并发执行。引入 Race Strategy 支持多检索源和多模型竞速，并通过最大重试次数与恢复范围控制，使 Agent 能在证据不足时降级回复，而不是主动追问或自行改写学习事实。
 
 ### • [终局规划] 状态图驱动的分层提示与教学自我修复
 

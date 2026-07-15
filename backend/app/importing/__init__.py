@@ -1,2 +1,2 @@
-"""ASSISTments2017 import artifact builders."""
+"""XES3G5M import artifact builders."""
 

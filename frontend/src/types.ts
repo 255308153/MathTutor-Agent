@@ -166,9 +166,9 @@ export interface TrialFeedbackCreate {
 
 export interface RecommendedQuestion {
   question_id: string;
-  assist2017_question_id?: number | string;
+  xes3g5m_question_id?: number | string;
   dgekt_question_id?: number | string;
-  assist2017_concept_id?: number | string;
+  xes3g5m_concept_id?: number | string;
   dgekt_concept_id?: number | string;
   stem: string;
   answer?: string | null;
@@ -399,8 +399,8 @@ export interface TeachingTraceSummary {
       source?: string;
       concept_id?: string | null;
       question_id?: string | null;
-      assist2017_question_id?: number | string | null;
-      assist2017_concept_id?: number | string | null;
+      xes3g5m_question_id?: number | string | null;
+      xes3g5m_concept_id?: number | string | null;
       canonical_mapping?: Record<string, unknown> | null;
       provenance?: Record<string, unknown> | null;
       coverage?: Record<string, unknown> | null;
@@ -429,8 +429,8 @@ export interface TeachingTraceSummary {
 export interface AttributionEvidence {
   target_question_id: string;
   target_concept_id?: string | null;
-  target_assist2017_question_id?: number | string | null;
-  target_assist2017_concept_id?: number | string | null;
+  target_xes3g5m_question_id?: number | string | null;
+  target_xes3g5m_concept_id?: number | string | null;
   prediction_probability?: number | null;
   evidence_status?: string | null;
   evidence_source?: string | null;

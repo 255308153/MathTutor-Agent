@@ -144,9 +144,9 @@ class RiskPrioritizedRecommender:
 
     def _canonical_alignment(self, question: dict[str, Any]) -> float:
         has_curated_mapping = bool(
-            question.get("assist2017_question_id")
-            and question.get("assist2017_concept_id")
-            and question.get("q_matrix_reference")
+            question.get("xes3g5m_question_id")
+            and question.get("xes3g5m_concept_id")
+            and question.get("kc_routes_reference")
             and question.get("canonical_mapping_source")
         )
         return 1.0 if has_curated_mapping else 0.0
@@ -167,9 +167,9 @@ class RiskPrioritizedRecommender:
             "concept_id": question.get("concept_id"),
             "concept_name": question.get("concept_name"),
             "teaching_type": question.get("teaching_type"),
-            "assist2017_question_id": question.get("assist2017_question_id"),
-            "assist2017_concept_id": question.get("assist2017_concept_id"),
-            "q_matrix_reference": question.get("q_matrix_reference"),
+            "xes3g5m_question_id": question.get("xes3g5m_question_id"),
+            "xes3g5m_concept_id": question.get("xes3g5m_concept_id"),
+            "kc_routes_reference": question.get("kc_routes_reference"),
             "source": question.get("canonical_mapping_source", "local_sequence_fallback"),
         }
 
@@ -201,8 +201,8 @@ class RiskPrioritizedRecommender:
         if factors.get("prediction_risk", 0.0) >= 0.5:
             reason_parts.append("DGEKT 预测答对概率偏低")
         canonical = item.get("canonical_mapping", {})
-        if canonical.get("assist2017_question_id"):
-            reason_parts.append(f"对齐 ASSIST2017 question {canonical['assist2017_question_id']}")
+        if canonical.get("xes3g5m_question_id"):
+            reason_parts.append(f"对齐 XES3G5M question {canonical['xes3g5m_question_id']}")
         context_rationale = item.get("context_rationale", {})
         for reason in context_rationale.get("included_reasons", [])[:2]:
             reason_parts.append(reason)

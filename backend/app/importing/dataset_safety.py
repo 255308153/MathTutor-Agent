@@ -19,9 +19,9 @@ BANNED_TRACKED_PATH_PATTERNS = [
     r"\.(pkl|pt|pth|ckpt|safetensors)$",
     r"^data/(local|raw|full)(/|$)",
     r"^data/(provider[-_]?caches?|generated[-_]?vector[-_]?indexes?|vector[-_]?indexes?)(/|$)",
-    r"^data/import/(assist2017|full)(/|$)",
+    r"^data/import/(xes3g5m|full)(/|$)",
     r"^data/.*/[^/]*(train|test)[^/]*\.(csv|json|jsonl|txt|tsv)$",
-    r"^data/imported/(?!assist2017_fixture/)",
+    r"^data/imported/(?!xes3g5m_fixture/)",
     r"(^|/)(attribution_paths|key_history|path_ablation|weak_concepts|weak_concept_hit|stability|explanation_baselines|diagnosis_cases)\.(csv|json|md)$",
     r"^outputs/",
     r"^logs/",
@@ -33,7 +33,7 @@ COMMITTABLE_FIXTURE_PATH_PATTERNS = [
     r"^data/rag/demo_knowledge\.json$",
     r"^data/import/[^/]+\.fixture\.csv$",
     r"^data/mapping/[^/]+\.fixture\.(csv|json)$",
-    r"^data/imported/assist2017_fixture/(canonical_mapping|content_import|coverage_report|rag_documents|smoke_dataset)\.json$",
+    r"^data/imported/xes3g5m_fixture/(canonical_mapping|content_import|coverage_report|rag_documents|smoke_dataset)\.json$",
     r"^data/dgekt/offline_evidence_fixture/(attribution_paths|key_history|path_ablation|weak_concepts)\.csv$",
     r"^data/dgekt/offline_evidence_fixture/diagnosis_cases\.json$",
 ]
@@ -46,16 +46,17 @@ class TrackedPathViolation:
 
 
 def tracked_paths_from_git(repo_root: str | Path = ".") -> list[str]:
+    root = Path(repo_root)
     result = subprocess.run(
         ["git", "ls-files", "-z"],
-        cwd=repo_root,
+        cwd=root,
         check=True,
         capture_output=True,
     )
     return [
         path
         for path in result.stdout.decode("utf-8").split("\0")
-        if path
+        if path and (root / path).exists()
     ]
 
 

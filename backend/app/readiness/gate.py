@@ -374,11 +374,11 @@ def _artifact_detail_components(
         )
         details.append(
             TrialReadinessComponent(
-                component="dgekt_dataset_qmatrix",
-                display_name="DGEKT Dataset / Q-matrix",
+                component="dgekt_dataset_kcroutes",
+                display_name="DGEKT Dataset / KC routes",
                 status="degraded",
-                reason="默认 mock 路径不加载真实 dataset / Q-matrix。",
-                actionable_hint="显式配置 dataset_dir 与 q_matrix 路径（Git 外）后再验证。",
+                reason="默认 mock 路径不加载真实 dataset / KC routes。",
+                actionable_hint="显式配置 dataset_dir 与 kc_routes 路径（Git 外）后再验证。",
                 details={"configured": False, "evidence_class": "mock"},
             )
         )
@@ -405,10 +405,10 @@ def _artifact_detail_components(
         )
         details.append(
             TrialReadinessComponent(
-                component="dgekt_dataset_qmatrix",
-                display_name="DGEKT Dataset / Q-matrix",
+                component="dgekt_dataset_kcroutes",
+                display_name="DGEKT Dataset / KC routes",
                 status=_map_provider_status(kt.status if kt else "not_configured"),
-                reason="Dataset / Q-matrix readiness 已纳入 KT 诊断。",
+                reason="Dataset / KC routes readiness 已纳入 KT 诊断。",
                 actionable_hint="只报告类别与状态，不输出绝对路径。",
                 details={"path_leaked": False},
             )

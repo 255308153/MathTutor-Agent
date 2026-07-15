@@ -7,20 +7,20 @@ from typing import Any
 
 from .engine import KTStateEngine
 from .offline_evidence import DGEKTOfflineEvidenceAdapter
-from ..mapping.assist2017_mapping import DEFAULT_MAPPING_PATH
+from ..mapping.xes3g5m_mapping import DEFAULT_MAPPING_PATH
 from ..schemas.learning import AttributionEvidence, KTDiagnosis, KTLearningProgress, LearningEvent
 
 
-SUPPORTED_DATASETS = {"assist2017"}
-ASSIST2017_QUESTION_COUNT = 3162
-ASSIST2017_HIDDEN_DIM = 128
-ASSIST2017_LAYERS = 1
-ASSIST2017_MAX_STEP = 50
+SUPPORTED_DATASETS = {"xes3g5m"}
+XES3G5M_QUESTION_COUNT = 3162
+XES3G5M_HIDDEN_DIM = 128
+XES3G5M_LAYERS = 1
+XES3G5M_MAX_STEP = 50
 DGEKT_ONLINE_SCORER_NAME = "dgekt_online_graph_proxy_scorer"
 DGEKT_ONLINE_SCORER_VERSION = "v1.3-partial"
-DGEKT_RELATION_SOURCE = "q_matrix_recent_history_proxy"
+DGEKT_RELATION_SOURCE = "kc_routes_recent_history_proxy"
 DGEKT_PARTIAL_ATTRIBUTION_REASON = (
-    "Online MathTutor has the DGEKT prediction, recent ASSIST2017 sequence, and Q-matrix "
+    "Online MathTutor has the DGEKT prediction, recent XES3G5M sequence, and KC routes "
     "links, but does not yet run the original offline DGEKT explainability path scorer."
 )
 
@@ -34,7 +34,7 @@ class DGEKTCheckpointError(RuntimeError):
 
 
 class DGEKTMappingError(ValueError):
-    """Raised when MathTutor events cannot be mapped into ASSIST2017 ids."""
+    """Raised when MathTutor events cannot be mapped into XES3G5M ids."""
 
 
 class DGEKTUnsupportedTargetError(DGEKTMappingError):
@@ -45,7 +45,7 @@ class DGEKTUnsupportedTargetError(DGEKTMappingError):
 class DGEKTPaths:
     checkpoint_path: Path
     dataset_dir: Path
-    q_matrix_path: Path
+    kc_routes_path: Path
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ class DGEKTInferenceInput:
 
 
 class DGEKTStateEngine(KTStateEngine):
-    """Safety-checked adapter boundary for the real ASSIST2017 DGEKT engine.
+    """Safety-checked adapter boundary for the real XES3G5M DGEKT engine.
 
     Issue #13 only establishes configuration validation and the KTStateEngine seam.
     Checkpoint loading and real inference are implemented in the following slices.
@@ -88,7 +88,7 @@ class DGEKTStateEngine(KTStateEngine):
         dataset: str,
         checkpoint_path: str,
         dataset_dir: str,
-        q_matrix_path: str,
+        kc_routes_path: str,
         checkpoint_id: str = "",
         offline_evidence_dir: str = "",
         canonical_mapping_path: str = "",
@@ -99,7 +99,7 @@ class DGEKTStateEngine(KTStateEngine):
             dataset=dataset,
             checkpoint_path=checkpoint_path,
             dataset_dir=dataset_dir,
-            q_matrix_path=q_matrix_path,
+            kc_routes_path=kc_routes_path,
         )
         self.runtime = self._load_runtime(device=device)
         self.engine_name = "dgekt"
@@ -124,7 +124,7 @@ class DGEKTStateEngine(KTStateEngine):
         dataset: str,
         checkpoint_path: str,
         dataset_dir: str,
-        q_matrix_path: str,
+        kc_routes_path: str,
     ) -> DGEKTPaths:
         if dataset not in SUPPORTED_DATASETS:
             supported = ", ".join(sorted(SUPPORTED_DATASETS))
@@ -136,30 +136,30 @@ class DGEKTStateEngine(KTStateEngine):
         checkpoint = cls._require_file(
             value=checkpoint_path,
             env_name="MATHTUTOR_DGEKT_CHECKPOINT_PATH",
-            description="ASSIST2017 DGEKT checkpoint (.pkl)",
+            description="XES3G5M DGEKT checkpoint (.pkl)",
         )
         dataset_root = cls._require_dir(
             value=dataset_dir,
             env_name="MATHTUTOR_DGEKT_DATASET_DIR",
-            description="ASSIST2017 dataset directory",
+            description="XES3G5M dataset directory",
         )
-        q_matrix = cls._require_file(
-            value=q_matrix_path,
+        kc_routes = cls._require_file(
+            value=kc_routes_path,
             env_name="MATHTUTOR_DGEKT_Q_MATRIX_PATH",
-            description="DGEKT Q-matrix / incidence matrix file",
+            description="DGEKT KC routes / incidence matrix file",
         )
 
-        for filename in ("assist2017_pid_train.csv", "assist2017_pid_test.csv"):
+        for filename in ("xes3g5m_pid_train.csv", "xes3g5m_pid_test.csv"):
             cls._require_file(
                 value=str(dataset_root / filename),
                 env_name="MATHTUTOR_DGEKT_DATASET_DIR",
-                description=f"ASSIST2017 data file {filename}",
+                description=f"XES3G5M data file {filename}",
             )
 
         return DGEKTPaths(
             checkpoint_path=checkpoint,
             dataset_dir=dataset_root,
-            q_matrix_path=q_matrix,
+            kc_routes_path=kc_routes,
         )
 
     @staticmethod
@@ -280,16 +280,16 @@ class DGEKTStateEngine(KTStateEngine):
             ) from exc
 
         C.DATASET = self.dataset
-        C.NUM_OF_QUESTIONS = ASSIST2017_QUESTION_COUNT
+        C.NUM_OF_QUESTIONS = XES3G5M_QUESTION_COUNT
         C.H = "2017"
-        C.MAX_STEP = ASSIST2017_MAX_STEP
-        C.HIDDEN = ASSIST2017_HIDDEN_DIM
-        C.LAYERS = ASSIST2017_LAYERS
+        C.MAX_STEP = XES3G5M_MAX_STEP
+        C.HIDDEN = XES3G5M_HIDDEN_DIM
+        C.LAYERS = XES3G5M_LAYERS
 
-        q_matrix = pd.read_csv(self.paths.q_matrix_path, header=None)
-        graph = self._generate_hypergraph(q_matrix, np=np, sp=sp, torch=torch).to(device)
+        kc_routes = pd.read_csv(self.paths.kc_routes_path, header=None)
+        graph = self._generate_hypergraph(kc_routes, np=np, sp=sp, torch=torch).to(device)
         adj_out, adj_in = self._generate_transition_adjacency(np=np, sp=sp, torch=torch)
-        model = DKT(ASSIST2017_HIDDEN_DIM, ASSIST2017_LAYERS, graph, adj_out.to(device), adj_in.to(device))
+        model = DKT(XES3G5M_HIDDEN_DIM, XES3G5M_LAYERS, graph, adj_out.to(device), adj_in.to(device))
         return model.to(device)
 
     def _generate_hypergraph(self, h_matrix: Any, *, np: Any, sp: Any, torch: Any) -> Any:
@@ -306,9 +306,9 @@ class DGEKTStateEngine(KTStateEngine):
         return self._sparse_matrix_to_torch(sp.coo_matrix(graph), np=np, torch=torch)
 
     def _generate_transition_adjacency(self, *, np: Any, sp: Any, torch: Any) -> tuple[Any, Any]:
-        question_count = ASSIST2017_QUESTION_COUNT
+        question_count = XES3G5M_QUESTION_COUNT
         adjacency_out = np.zeros((2 * question_count, 2 * question_count), dtype=np.float32)
-        train_path = self.paths.dataset_dir / "assist2017_pid_train.csv"
+        train_path = self.paths.dataset_dir / "xes3g5m_pid_train.csv"
         with train_path.open("r", encoding="UTF-8-sig") as train_file:
             rows = iter(train_file)
             for length_line, questions_line, _unused, answers_line in zip(rows, rows, rows, rows):
@@ -353,12 +353,12 @@ class DGEKTStateEngine(KTStateEngine):
             import pandas as pd
         except ImportError as exc:
             raise DGEKTCheckpointError(
-                "DGEKT input mapping requires pandas to read the Q-matrix."
+                "DGEKT input mapping requires pandas to read the KC routes."
             ) from exc
 
-        q_matrix = pd.read_csv(self.paths.q_matrix_path, header=None)
+        kc_routes = pd.read_csv(self.paths.kc_routes_path, header=None)
         mapping: dict[int, list[int]] = {}
-        for row_index, row in q_matrix.iterrows():
+        for row_index, row in kc_routes.iterrows():
             concepts = [
                 int(column_index) + 1
                 for column_index, value in enumerate(row.tolist())
@@ -378,9 +378,9 @@ class DGEKTStateEngine(KTStateEngine):
         concept_ids: list[int] = []
         mathtutor_concepts: list[dict[str, Any]] = []
         for event in answer_events:
-            question_id = self._extract_assist2017_question_id(event)
+            question_id = self._extract_xes3g5m_question_id(event)
             answer = 1 if event.payload.get("is_correct") is True else 0
-            concept_id = self._resolve_assist2017_concept_id(event, question_id)
+            concept_id = self._resolve_xes3g5m_concept_id(event, question_id)
             question_ids.append(question_id)
             answers.append(answer)
             concept_ids.append(concept_id)
@@ -389,7 +389,7 @@ class DGEKTStateEngine(KTStateEngine):
                     "concept_id": event.payload.get("concept_id"),
                     "concept_name": event.payload.get("concept_name"),
                     "teaching_type": event.payload.get("teaching_type"),
-                    "assist2017_concept_id": concept_id,
+                    "xes3g5m_concept_id": concept_id,
                 }
             )
 
@@ -409,58 +409,58 @@ class DGEKTStateEngine(KTStateEngine):
             event
             for event in progress.recent_events
             if event.type == "answer_submitted" and event.payload.get("is_correct") is not None
-        ][-ASSIST2017_MAX_STEP:]
+        ][-XES3G5M_MAX_STEP:]
 
-    def _extract_assist2017_question_id(self, event: LearningEvent) -> int:
+    def _extract_xes3g5m_question_id(self, event: LearningEvent) -> int:
         raw_question_id = (
-            event.payload.get("assist2017_question_id")
+            event.payload.get("xes3g5m_question_id")
             or event.payload.get("dgekt_question_id")
             or event.payload.get("question_id")
         )
         if raw_question_id is None:
             raise DGEKTMappingError(
-                "Missing ASSIST2017 question mapping. Add assist2017_question_id or "
+                "Missing XES3G5M question mapping. Add xes3g5m_question_id or "
                 "dgekt_question_id to the LearningEvent payload."
             )
-        question_id = self._parse_assist2017_id(raw_question_id, field_name="question_id")
-        if question_id < 1 or question_id > ASSIST2017_QUESTION_COUNT:
+        question_id = self._parse_xes3g5m_id(raw_question_id, field_name="question_id")
+        if question_id < 1 or question_id > XES3G5M_QUESTION_COUNT:
             raise DGEKTMappingError(
-                f"ASSIST2017 question_id {question_id} is out of range 1.."
-                f"{ASSIST2017_QUESTION_COUNT}."
+                f"XES3G5M question_id {question_id} is out of range 1.."
+                f"{XES3G5M_QUESTION_COUNT}."
             )
         if question_id not in self.question_concept_map:
             raise DGEKTMappingError(
-                f"ASSIST2017 question_id {question_id} is missing from the configured Q-matrix."
+                f"XES3G5M question_id {question_id} is missing from the configured KC routes."
             )
         if not self.question_concept_map[question_id]:
             raise DGEKTMappingError(
-                f"ASSIST2017 question_id {question_id} has no concept in the configured Q-matrix."
+                f"XES3G5M question_id {question_id} has no concept in the configured KC routes."
             )
         return question_id
 
-    def _resolve_assist2017_concept_id(self, event: LearningEvent, question_id: int) -> int:
+    def _resolve_xes3g5m_concept_id(self, event: LearningEvent, question_id: int) -> int:
         mapped_concepts = self.question_concept_map[question_id]
-        raw_concept_id = event.payload.get("assist2017_concept_id") or event.payload.get("dgekt_concept_id")
+        raw_concept_id = event.payload.get("xes3g5m_concept_id") or event.payload.get("dgekt_concept_id")
         if raw_concept_id is None:
             return mapped_concepts[0]
-        concept_id = self._parse_assist2017_id(raw_concept_id, field_name="concept_id")
+        concept_id = self._parse_xes3g5m_id(raw_concept_id, field_name="concept_id")
         if concept_id not in mapped_concepts:
             raise DGEKTMappingError(
-                f"ASSIST2017 concept_id {concept_id} is inconsistent with Q-matrix mapping "
+                f"XES3G5M concept_id {concept_id} is inconsistent with KC routes mapping "
                 f"for question_id {question_id}; expected one of {mapped_concepts}."
             )
         return concept_id
 
-    def _parse_assist2017_id(self, raw_value: Any, *, field_name: str) -> int:
+    def _parse_xes3g5m_id(self, raw_value: Any, *, field_name: str) -> int:
         if isinstance(raw_value, int):
             return raw_value
         value = str(raw_value)
-        if value.startswith("assist2017:"):
+        if value.startswith("xes3g5m:"):
             value = value.split(":", 1)[1]
         if not value.isdigit():
             raise DGEKTMappingError(
-                f"Cannot map MathTutor {field_name} '{raw_value}' to ASSIST2017. "
-                f"Use an integer id or assist2017:<id>."
+                f"Cannot map MathTutor {field_name} '{raw_value}' to XES3G5M. "
+                f"Use an integer id or xes3g5m:<id>."
             )
         return int(value)
 
@@ -472,13 +472,13 @@ class DGEKTStateEngine(KTStateEngine):
 
         tensor = torch.zeros(
             1,
-            ASSIST2017_MAX_STEP,
-            2 * ASSIST2017_QUESTION_COUNT,
+            XES3G5M_MAX_STEP,
+            2 * XES3G5M_QUESTION_COUNT,
             device=self.runtime.device,
         )
-        start = max(0, ASSIST2017_MAX_STEP - len(question_ids))
+        start = max(0, XES3G5M_MAX_STEP - len(question_ids))
         for offset, (question_id, answer) in enumerate(zip(question_ids, answers)):
-            column = question_id - 1 if answer == 1 else ASSIST2017_QUESTION_COUNT + question_id - 1
+            column = question_id - 1 if answer == 1 else XES3G5M_QUESTION_COUNT + question_id - 1
             tensor[0, start + offset, column] = 1.0
         return tensor
 
@@ -492,20 +492,20 @@ class DGEKTStateEngine(KTStateEngine):
         except ImportError as exc:
             raise DGEKTCheckpointError("DGEKT prediction requires torch.") from exc
 
-        target_assist2017_id = self._target_assist2017_question_id(
+        target_xes3g5m_id = self._target_xes3g5m_question_id(
             inference_input=inference_input,
             target_question_id=target_question_id,
         )
-        sequence_index = ASSIST2017_MAX_STEP - 1
+        sequence_index = XES3G5M_MAX_STEP - 1
         with torch.no_grad():
             output = self.runtime.model(inference_input.tensor)
             if isinstance(output, tuple) and len(output) == 2:
                 output = output[0]
             logit_ensemble = output[2]
-            probability = torch.sigmoid(logit_ensemble)[0, sequence_index, target_assist2017_id - 1]
+            probability = torch.sigmoid(logit_ensemble)[0, sequence_index, target_xes3g5m_id - 1]
         return round(float(probability.detach().cpu().item()), 6)
 
-    def _target_assist2017_question_id(
+    def _target_xes3g5m_question_id(
         self,
         *,
         inference_input: DGEKTInferenceInput,
@@ -513,24 +513,24 @@ class DGEKTStateEngine(KTStateEngine):
     ) -> int:
         if target_question_id:
             try:
-                target_id = self._parse_assist2017_id(
+                target_id = self._parse_xes3g5m_id(
                     target_question_id,
                     field_name="target_question_id",
                 )
-                if target_id < 1 or target_id > ASSIST2017_QUESTION_COUNT:
+                if target_id < 1 or target_id > XES3G5M_QUESTION_COUNT:
                     raise DGEKTUnsupportedTargetError(
-                        f"ASSIST2017 target question_id {target_id} is out of range 1.."
-                        f"{ASSIST2017_QUESTION_COUNT}."
+                        f"XES3G5M target question_id {target_id} is out of range 1.."
+                        f"{XES3G5M_QUESTION_COUNT}."
                     )
                 if target_id not in self.question_concept_map:
                     raise DGEKTUnsupportedTargetError(
-                        f"ASSIST2017 target question_id {target_id} is missing from the "
-                        "configured Q-matrix."
+                        f"XES3G5M target question_id {target_id} is missing from the "
+                        "configured KC routes."
                     )
                 if not self.question_concept_map[target_id]:
                     raise DGEKTUnsupportedTargetError(
-                        f"ASSIST2017 target question_id {target_id} has no concept in the "
-                        "configured Q-matrix."
+                        f"XES3G5M target question_id {target_id} has no concept in the "
+                        "configured KC routes."
                     )
                 return target_id
             except DGEKTUnsupportedTargetError:
@@ -545,8 +545,8 @@ class DGEKTStateEngine(KTStateEngine):
         prediction_probability: float,
     ) -> list[dict[str, Any]]:
         concept = inference_input.mathtutor_concepts[-1] if inference_input.mathtutor_concepts else {}
-        concept_id = concept.get("concept_id") or f"assist2017_concept:{inference_input.concept_ids[-1]}"
-        concept_name = concept.get("concept_name") or f"ASSIST2017 concept {inference_input.concept_ids[-1]}"
+        concept_id = concept.get("concept_id") or f"xes3g5m_concept:{inference_input.concept_ids[-1]}"
+        concept_name = concept.get("concept_name") or f"XES3G5M concept {inference_input.concept_ids[-1]}"
         mastery = prediction_probability
         if mastery >= 0.6:
             return []
@@ -556,7 +556,7 @@ class DGEKTStateEngine(KTStateEngine):
                 "concept_name": concept_name,
                 "mastery": mastery,
                 "prediction_probability": prediction_probability,
-                "assist2017_concept_id": inference_input.concept_ids[-1],
+                "xes3g5m_concept_id": inference_input.concept_ids[-1],
                 "reason": "DGEKT prediction probability below mastery threshold",
             }
         ]
@@ -573,9 +573,9 @@ class DGEKTStateEngine(KTStateEngine):
         return [
             {
                 "concept_id": concept.get("concept_id")
-                or f"assist2017_concept:{inference_input.concept_ids[-1]}",
+                or f"xes3g5m_concept:{inference_input.concept_ids[-1]}",
                 "concept_name": concept.get("concept_name")
-                or f"ASSIST2017 concept {inference_input.concept_ids[-1]}",
+                or f"XES3G5M concept {inference_input.concept_ids[-1]}",
                 "forgetting_risk": risk,
                 "prediction_probability": prediction_probability,
                 "risk_source": "dgekt_prediction_proxy",
@@ -589,7 +589,7 @@ class DGEKTStateEngine(KTStateEngine):
     ) -> KTLearningProgress:
         progress.current_session_id = event.session_id
         progress.recent_events.append(event)
-        progress.recent_events = progress.recent_events[-ASSIST2017_MAX_STEP:]
+        progress.recent_events = progress.recent_events[-XES3G5M_MAX_STEP:]
         progress.version += 1
         return progress
 
@@ -658,21 +658,21 @@ class DGEKTStateEngine(KTStateEngine):
                 evidence_status="partial",
                 evidence_source="online_proxy",
                 partial_evidence=True,
-                partial_evidence_reason="No graded ASSIST2017 answer history is available.",
+                partial_evidence_reason="No graded XES3G5M answer history is available.",
                 raw_model_target={
                     "target_question_id": target_question_id,
                     "dataset": self.dataset,
-                    "model_vocabulary": "DGEKT ASSIST2017 question id",
+                    "model_vocabulary": "DGEKT XES3G5M question id",
                     "mapping_status": "no_history",
                 },
                 mapped_teaching_content={
                     "question_id": target_question_id,
                     "mapping_status": "unavailable",
-                    "missing_reason": "No graded ASSIST2017 answer history is available.",
+                    "missing_reason": "No graded XES3G5M answer history is available.",
                 },
                 scorer=self._scorer_metadata(
                     evidence_status="partial",
-                    partial_evidence_reason="No graded ASSIST2017 answer history is available.",
+                    partial_evidence_reason="No graded XES3G5M answer history is available.",
                 ),
                 provenance=self._attribution_provenance(),
                 top_paths=[
@@ -683,14 +683,14 @@ class DGEKTStateEngine(KTStateEngine):
                         "scorer_version": DGEKT_ONLINE_SCORER_VERSION,
                         "evidence_status": "partial",
                         "partial_evidence": True,
-                        "partial_evidence_reason": "No graded ASSIST2017 answer history is available.",
+                        "partial_evidence_reason": "No graded XES3G5M answer history is available.",
                         "relation_source": DGEKT_RELATION_SOURCE,
                         "relation_strength": 0.0,
                         "path_strength": 0.0,
                         "weak_concept_hit": False,
                         "weak_concept_evidence": [],
                         "description": (
-                            "No graded ASSIST2017 answer history is available, so DGEKT cannot "
+                            "No graded XES3G5M answer history is available, so DGEKT cannot "
                             "build online attribution paths for this turn."
                         ),
                     }
@@ -701,11 +701,11 @@ class DGEKTStateEngine(KTStateEngine):
 
         prediction_probability = self._prediction_probability(inference_input, target_question_id)
         weak_concepts = self._prediction_weak_concepts(inference_input, prediction_probability)
-        target_assist2017_id = self._target_assist2017_question_id(
+        target_xes3g5m_id = self._target_xes3g5m_question_id(
             inference_input=inference_input,
             target_question_id=target_question_id,
         )
-        target_concepts = self.question_concept_map.get(target_assist2017_id) or [
+        target_concepts = self.question_concept_map.get(target_xes3g5m_id) or [
             inference_input.concept_ids[-1]
         ]
         target_concept_id = target_concepts[0]
@@ -713,21 +713,21 @@ class DGEKTStateEngine(KTStateEngine):
         mapped_teaching_content = self._mapped_target_content(
             key_history=key_history,
             target_question_id=target_question_id,
-            target_assist2017_id=target_assist2017_id,
+            target_xes3g5m_id=target_xes3g5m_id,
             target_concept_id=target_concept_id,
         )
         top_paths = self._partial_attribution_paths(
             key_history=key_history,
             target_question_id=target_question_id,
-            target_assist2017_id=target_assist2017_id,
+            target_xes3g5m_id=target_xes3g5m_id,
             target_concept_id=target_concept_id,
             weak_concepts=weak_concepts,
         )
         fallback_evidence = AttributionEvidence(
             target_question_id=target_question_id,
             target_concept_id=mapped_teaching_content.get("concept_id"),
-            target_assist2017_question_id=target_assist2017_id,
-            target_assist2017_concept_id=target_concept_id,
+            target_xes3g5m_question_id=target_xes3g5m_id,
+            target_xes3g5m_concept_id=target_concept_id,
             prediction_probability=prediction_probability,
             evidence_status="partial",
             evidence_source="online_proxy",
@@ -735,17 +735,17 @@ class DGEKTStateEngine(KTStateEngine):
             partial_evidence_reason=DGEKT_PARTIAL_ATTRIBUTION_REASON,
             raw_model_target={
                 "target_question_id": target_question_id,
-                "assist2017_question_id": target_assist2017_id,
-                "assist2017_concept_id": target_concept_id,
+                "xes3g5m_question_id": target_xes3g5m_id,
+                "xes3g5m_concept_id": target_concept_id,
                 "dataset": self.dataset,
-                "model_vocabulary": "DGEKT ASSIST2017 question/concept ids",
+                "model_vocabulary": "DGEKT XES3G5M question/concept ids",
             },
             mapped_teaching_content=mapped_teaching_content,
             canonical_mapping={
-                "assist2017_question_id": target_assist2017_id,
-                "assist2017_concept_id": target_concept_id,
-                "q_matrix_reference": {
-                    "question_row": target_assist2017_id,
+                "xes3g5m_question_id": target_xes3g5m_id,
+                "xes3g5m_concept_id": target_concept_id,
+                "kc_routes_reference": {
+                    "question_row": target_xes3g5m_id,
                     "concept_columns": target_concepts,
                     "relation_source": DGEKT_RELATION_SOURCE,
                 },
@@ -767,8 +767,8 @@ class DGEKTStateEngine(KTStateEngine):
             dataset=self.dataset,
             student_id=progress.student_id,
             target_question_id=target_question_id,
-            target_assist2017_question_id=target_assist2017_id,
-            target_assist2017_concept_id=target_concept_id,
+            target_xes3g5m_question_id=target_xes3g5m_id,
+            target_xes3g5m_concept_id=target_concept_id,
             prediction_probability=prediction_probability,
             authoritative_weak_concepts=weak_concepts,
             checkpoint_provenance=self._checkpoint_provenance(),
@@ -799,9 +799,9 @@ class DGEKTStateEngine(KTStateEngine):
             "partial_evidence_reason": partial_evidence_reason,
             "vocabulary": [
                 "DGEKT",
-                "ASSIST2017 question_id",
-                "ASSIST2017 concept_id",
-                "Q-matrix",
+                "XES3G5M question_id",
+                "XES3G5M concept_id",
+                "KC routes",
                 "recent history",
                 "top attribution paths",
             ],
@@ -863,7 +863,7 @@ class DGEKTStateEngine(KTStateEngine):
             "checkpoint_path": str(self.paths.checkpoint_path),
             "checkpoint_id": self.metadata.get("checkpoint_id"),
             "dataset_dir": str(self.paths.dataset_dir),
-            "q_matrix_path": str(self.paths.q_matrix_path),
+            "kc_routes_path": str(self.paths.kc_routes_path),
             "model_epoch": self.metadata.get("epoch"),
             "model_auc": self.metadata.get("auc"),
             "model_acc": self.metadata.get("acc"),
@@ -887,33 +887,33 @@ class DGEKTStateEngine(KTStateEngine):
         *,
         key_history: list[dict[str, Any]],
         target_question_id: str,
-        target_assist2017_id: int,
+        target_xes3g5m_id: int,
         target_concept_id: int,
     ) -> dict[str, Any]:
         for history in reversed(key_history):
             if (
                 history.get("question_id") == target_question_id
-                or history.get("assist2017_question_id") == target_assist2017_id
+                or history.get("xes3g5m_question_id") == target_xes3g5m_id
             ):
                 return {
                     "question_id": history.get("question_id") or target_question_id,
                     "concept_id": history.get("concept_id")
-                    or f"assist2017_concept:{target_concept_id}",
+                    or f"xes3g5m_concept:{target_concept_id}",
                     "concept_name": history.get("concept_name")
-                    or f"ASSIST2017 concept {target_concept_id}",
-                    "assist2017_question_id": target_assist2017_id,
-                    "assist2017_concept_id": target_concept_id,
+                    or f"XES3G5M concept {target_concept_id}",
+                    "xes3g5m_question_id": target_xes3g5m_id,
+                    "xes3g5m_concept_id": target_concept_id,
                     "mapping_status": "recent_history_canonical_payload",
                     "relation_source": DGEKT_RELATION_SOURCE,
                 }
 
         return {
             "question_id": target_question_id,
-            "concept_id": f"assist2017_concept:{target_concept_id}",
-            "concept_name": f"ASSIST2017 concept {target_concept_id}",
-            "assist2017_question_id": target_assist2017_id,
-            "assist2017_concept_id": target_concept_id,
-            "mapping_status": "q_matrix_only",
+            "concept_id": f"xes3g5m_concept:{target_concept_id}",
+            "concept_name": f"XES3G5M concept {target_concept_id}",
+            "xes3g5m_question_id": target_xes3g5m_id,
+            "xes3g5m_concept_id": target_concept_id,
+            "mapping_status": "kc_routes_only",
             "relation_source": DGEKT_RELATION_SOURCE,
         }
 
@@ -924,7 +924,7 @@ class DGEKTStateEngine(KTStateEngine):
     ) -> list[dict[str, Any]]:
         events = self._graded_answer_events(progress)
         key_history: list[dict[str, Any]] = []
-        start_position = max(0, ASSIST2017_MAX_STEP - len(inference_input.question_ids))
+        start_position = max(0, XES3G5M_MAX_STEP - len(inference_input.question_ids))
         for index, (event, question_id, answer, concept_id, concept) in enumerate(
             zip(
                 events,
@@ -938,17 +938,17 @@ class DGEKTStateEngine(KTStateEngine):
                 {
                     "event_type": event.type,
                     "question_id": event.payload.get("question_id"),
-                    "assist2017_question_id": question_id,
+                    "xes3g5m_question_id": question_id,
                     "is_correct": answer == 1,
                     "answer": answer,
                     "history_position": start_position + index,
                     "sequence_offset": index,
                     "concept_id": concept.get("concept_id"),
                     "concept_name": concept.get("concept_name"),
-                    "assist2017_concept_id": concept_id,
+                    "xes3g5m_concept_id": concept_id,
                     "influence_source": "recent_dgekt_input",
                     "readable_summary": (
-                        f"ASSIST2017 Q{question_id} | "
+                        f"XES3G5M Q{question_id} | "
                         f"{'correct' if answer == 1 else 'incorrect'} | "
                         f"concept {concept_id}"
                     ),
@@ -961,16 +961,16 @@ class DGEKTStateEngine(KTStateEngine):
         *,
         key_history: list[dict[str, Any]],
         target_question_id: str,
-        target_assist2017_id: int,
+        target_xes3g5m_id: int,
         target_concept_id: int,
         weak_concepts: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         paths: list[dict[str, Any]] = []
         for rank, history in enumerate(reversed(key_history), start=1):
-            history_concept_id = history.get("assist2017_concept_id")
+            history_concept_id = history.get("xes3g5m_concept_id")
             concept_relation_strength = 1.0 if history_concept_id == target_concept_id else 0.0
             question_relation_strength = (
-                1.0 if history.get("assist2017_question_id") == target_assist2017_id else 0.0
+                1.0 if history.get("xes3g5m_question_id") == target_xes3g5m_id else 0.0
             )
             recency_strength = round(1.0 / rank, 6)
             relation_strength = max(concept_relation_strength, question_relation_strength)
@@ -988,8 +988,8 @@ class DGEKTStateEngine(KTStateEngine):
             paths.append(
                 {
                     "path_id": (
-                        f"dgekt-partial-{history.get('assist2017_question_id')}-"
-                        f"{target_assist2017_id}-{rank}"
+                        f"dgekt-partial-{history.get('xes3g5m_question_id')}-"
+                        f"{target_xes3g5m_id}-{rank}"
                     ),
                     "engine": "dgekt",
                     "scorer_name": DGEKT_ONLINE_SCORER_NAME,
@@ -1000,20 +1000,20 @@ class DGEKTStateEngine(KTStateEngine):
                     "partial_evidence_reason": DGEKT_PARTIAL_ATTRIBUTION_REASON,
                     "rank": rank,
                     "history_question_id": history.get("question_id"),
-                    "history_assist2017_question_id": history.get("assist2017_question_id"),
+                    "history_xes3g5m_question_id": history.get("xes3g5m_question_id"),
                     "history_answer": history.get("answer"),
                     "history_is_correct": history.get("is_correct"),
                     "history_readable_summary": history.get("readable_summary"),
                     "history_position": history.get("history_position"),
                     "history_concept_id": history.get("concept_id"),
-                    "history_assist2017_concept_id": history_concept_id,
+                    "history_xes3g5m_concept_id": history_concept_id,
                     "target_question_id": target_question_id,
-                    "target_assist2017_question_id": target_assist2017_id,
-                    "target_concept_id": f"assist2017_concept:{target_concept_id}",
-                    "target_assist2017_concept_id": target_concept_id,
+                    "target_xes3g5m_question_id": target_xes3g5m_id,
+                    "target_concept_id": f"xes3g5m_concept:{target_concept_id}",
+                    "target_xes3g5m_concept_id": target_concept_id,
                     "time_gap": max(
                         0,
-                        ASSIST2017_MAX_STEP - 1 - int(history.get("history_position", 0)),
+                        XES3G5M_MAX_STEP - 1 - int(history.get("history_position", 0)),
                     ),
                     "concept_relation_strength": concept_relation_strength,
                     "question_relation_strength": question_relation_strength,
@@ -1026,7 +1026,7 @@ class DGEKTStateEngine(KTStateEngine):
                     "weak_concept_hit": bool(weak_concept_evidence),
                     "weak_concept_evidence": weak_concept_evidence,
                     "limitations": (
-                        "Online MathTutor currently exposes recent sequence and Q-matrix concept "
+                        "Online MathTutor currently exposes recent sequence and KC routes concept "
                         "links, not the original offline DGEKT path scorer; treat this as partial "
                         "attribution evidence."
                     ),
@@ -1043,15 +1043,15 @@ class DGEKTStateEngine(KTStateEngine):
     ) -> list[dict[str, Any]]:
         hit_concept_ids = {
             str(target_concept_id),
-            f"assist2017_concept:{target_concept_id}",
+            f"xes3g5m_concept:{target_concept_id}",
         }
         if history_concept_id is not None:
             hit_concept_ids.add(str(history_concept_id))
-            hit_concept_ids.add(f"assist2017_concept:{history_concept_id}")
+            hit_concept_ids.add(f"xes3g5m_concept:{history_concept_id}")
 
         evidence: list[dict[str, Any]] = []
         for weak in weak_concepts:
-            assist_concept = weak.get("assist2017_concept_id")
+            assist_concept = weak.get("xes3g5m_concept_id")
             concept_id = weak.get("concept_id")
             if (
                 (assist_concept is not None and str(assist_concept) in hit_concept_ids)
@@ -1061,7 +1061,7 @@ class DGEKTStateEngine(KTStateEngine):
                     {
                         "concept_id": concept_id,
                         "concept_name": weak.get("concept_name"),
-                        "assist2017_concept_id": assist_concept,
+                        "xes3g5m_concept_id": assist_concept,
                         "mastery": weak.get("mastery"),
                         "prediction_probability": weak.get("prediction_probability"),
                         "hit_source": "dgekt_weak_concept_proxy",

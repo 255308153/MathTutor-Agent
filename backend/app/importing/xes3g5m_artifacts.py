@@ -9,28 +9,28 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..mapping.assist2017_mapping import (
+from ..mapping.xes3g5m_mapping import (
     CanonicalConceptMapping,
     CanonicalMappingArtifact,
     CanonicalQuestionMapping,
     MappingProvenance,
     PROJECT_ROOT,
-    QMatrixArtifactSummary,
-    read_q_matrix,
+    KCRoutesArtifactSummary,
+    read_kc_routes,
 )
 from ..rag.schema import RAGDocument
 
 
-BUILD_SCHEMA_VERSION = "assist2017-import-build/v1"
-CONTENT_SCHEMA_VERSION = "assist2017-content-import/v1"
-RAG_SCHEMA_VERSION = "assist2017-rag-documents/v1"
-COVERAGE_SCHEMA_VERSION = "assist2017-coverage-report/v1"
-SMOKE_SCHEMA_VERSION = "assist2017-smoke-dataset/v1"
+BUILD_SCHEMA_VERSION = "xes3g5m-import-build/v1"
+CONTENT_SCHEMA_VERSION = "xes3g5m-content-import/v1"
+RAG_SCHEMA_VERSION = "xes3g5m-rag-documents/v1"
+COVERAGE_SCHEMA_VERSION = "xes3g5m-coverage-report/v1"
+SMOKE_SCHEMA_VERSION = "xes3g5m-smoke-dataset/v1"
 
 ValidationCategory = Literal[
     "missing_file",
     "malformed_row",
-    "q_matrix_mismatch",
+    "kc_routes_mismatch",
     "missing_question_mapping",
     "missing_concept_mapping",
     "missing_teaching_content",
@@ -58,16 +58,16 @@ class ValidationIssue(BaseModel):
     severity: Literal["error", "warning", "info"] = "warning"
     message: str = Field(min_length=1)
     source_ref: str | None = None
-    assist2017_question_id: int | None = Field(default=None, ge=1)
-    assist2017_concept_id: int | None = Field(default=None, ge=1)
+    xes3g5m_question_id: int | None = Field(default=None, ge=1)
+    xes3g5m_concept_id: int | None = Field(default=None, ge=1)
     canonical_question_id: str | None = None
     canonical_concept_id: str | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class ArtifactBuildMetadata(BaseModel):
-    schema_version: Literal["assist2017-import-build/v1"] = BUILD_SCHEMA_VERSION
-    dataset: Literal["assist2017"] = "assist2017"
+    schema_version: Literal["xes3g5m-import-build/v1"] = BUILD_SCHEMA_VERSION
+    dataset: Literal["xes3g5m"] = "xes3g5m"
     generated_at: str
     source_paths: dict[str, str]
     row_counts: dict[str, int] = Field(default_factory=dict)
@@ -76,7 +76,7 @@ class ArtifactBuildMetadata(BaseModel):
 
 
 class ImportedConcept(BaseModel):
-    assist2017_concept_id: int = Field(ge=1)
+    xes3g5m_concept_id: int = Field(ge=1)
     concept_id: str = Field(min_length=1)
     concept_name: str = Field(min_length=1)
     teaching_type: str = Field(min_length=1)
@@ -96,19 +96,19 @@ class ContentAvailability(BaseModel):
 
 class ImportedQuestion(BaseModel):
     question_id: str = Field(min_length=1)
-    assist2017_question_id: int = Field(ge=1)
+    xes3g5m_question_id: int = Field(ge=1)
     stem: str | None = None
     standard_answer: str | None = None
     explanation: str | None = None
     concept_id: str = Field(min_length=1)
     concept_ids: list[str] = Field(min_length=1)
     concept_name: str = Field(min_length=1)
-    assist2017_concept_id: int = Field(ge=1)
+    xes3g5m_concept_id: int = Field(ge=1)
     difficulty: float = Field(ge=0.0, le=1.0)
     teaching_type: str = Field(min_length=1)
     mistake_patterns: list[str] = Field(default_factory=list)
     rag_doc_ids: list[str] = Field(default_factory=list)
-    q_matrix_reference: dict[str, Any] = Field(default_factory=dict)
+    kc_routes_reference: dict[str, Any] = Field(default_factory=dict)
     canonical_mapping: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
     content_availability: ContentAvailability
@@ -117,8 +117,8 @@ class ImportedQuestion(BaseModel):
 class ContentImportArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["assist2017-content-import/v1"] = CONTENT_SCHEMA_VERSION
-    dataset: Literal["assist2017"] = "assist2017"
+    schema_version: Literal["xes3g5m-content-import/v1"] = CONTENT_SCHEMA_VERSION
+    dataset: Literal["xes3g5m"] = "xes3g5m"
     metadata: ArtifactBuildMetadata
     concept_teaching_type_map: dict[str, str]
     concepts: list[ImportedConcept]
@@ -128,8 +128,8 @@ class ContentImportArtifact(BaseModel):
 class RAGDocumentArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["assist2017-rag-documents/v1"] = RAG_SCHEMA_VERSION
-    dataset: Literal["assist2017"] = "assist2017"
+    schema_version: Literal["xes3g5m-rag-documents/v1"] = RAG_SCHEMA_VERSION
+    dataset: Literal["xes3g5m"] = "xes3g5m"
     metadata: ArtifactBuildMetadata
     documents: list[RAGDocument]
 
@@ -141,8 +141,8 @@ class CoverageGap(BaseModel):
     source_ref: str | None = None
     canonical_question_id: str | None = None
     canonical_concept_id: str | None = None
-    assist2017_question_id: int | None = Field(default=None, ge=1)
-    assist2017_concept_id: int | None = Field(default=None, ge=1)
+    xes3g5m_question_id: int | None = Field(default=None, ge=1)
+    xes3g5m_concept_id: int | None = Field(default=None, ge=1)
     message: str = Field(min_length=1)
     provenance: dict[str, Any] = Field(default_factory=dict)
 
@@ -150,8 +150,8 @@ class CoverageGap(BaseModel):
 class CoverageReportArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["assist2017-coverage-report/v1"] = COVERAGE_SCHEMA_VERSION
-    dataset: Literal["assist2017"] = "assist2017"
+    schema_version: Literal["xes3g5m-coverage-report/v1"] = COVERAGE_SCHEMA_VERSION
+    dataset: Literal["xes3g5m"] = "xes3g5m"
     metadata: ArtifactBuildMetadata
     summary: dict[str, Any]
     gaps: list[CoverageGap] = Field(default_factory=list)
@@ -169,16 +169,16 @@ class SmokeLearningPath(BaseModel):
     description: str = Field(min_length=1)
     canonical_question_id: str = Field(min_length=1)
     canonical_concept_id: str = Field(min_length=1)
-    assist2017_question_id: int = Field(ge=1)
-    assist2017_concept_id: int = Field(ge=1)
+    xes3g5m_question_id: int = Field(ge=1)
+    xes3g5m_concept_id: int = Field(ge=1)
     steps: list[SmokeLearningStep] = Field(min_length=1)
 
 
 class SmokeDatasetArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["assist2017-smoke-dataset/v1"] = SMOKE_SCHEMA_VERSION
-    dataset: Literal["assist2017"] = "assist2017"
+    schema_version: Literal["xes3g5m-smoke-dataset/v1"] = SMOKE_SCHEMA_VERSION
+    dataset: Literal["xes3g5m"] = "xes3g5m"
     metadata: ArtifactBuildMetadata
     learning_paths: list[SmokeLearningPath]
 
@@ -194,8 +194,8 @@ class Assist2017ImportArtifacts(BaseModel):
 @dataclass(frozen=True)
 class SourceRow:
     row_number: int
-    assist2017_question_id: int
-    assist2017_concept_id: int
+    xes3g5m_question_id: int
+    xes3g5m_concept_id: int
     concept_name: str
     teaching_type: str
     stem: str | None
@@ -207,17 +207,17 @@ class SourceRow:
 
     @property
     def question_id(self) -> str:
-        return canonical_question_id(self.assist2017_question_id)
+        return canonical_question_id(self.xes3g5m_question_id)
 
     @property
     def concept_id(self) -> str:
-        return canonical_concept_id(self.assist2017_concept_id)
+        return canonical_concept_id(self.xes3g5m_concept_id)
 
 
-def build_assist2017_import_artifacts(
+def build_xes3g5m_import_artifacts(
     *,
     source_rows_path: str | Path,
-    q_matrix_path: str | Path,
+    kc_routes_path: str | Path,
     output_dir: str | Path | None = None,
     generated_at: str | None = None,
     fail_on_errors: bool = True,
@@ -225,76 +225,76 @@ def build_assist2017_import_artifacts(
     generated = generated_at or datetime.now(UTC).isoformat()
     source_paths = {
         "source_rows": _display_path(source_rows_path),
-        "q_matrix": _display_path(q_matrix_path),
+        "kc_routes": _display_path(kc_routes_path),
     }
     issues: list[ValidationIssue] = []
 
     rows = _read_source_rows(source_rows_path, issues)
-    q_rows = _read_q_matrix(q_matrix_path, issues)
+    q_rows = _read_kc_routes(kc_routes_path, issues)
     if any(issue.severity == "error" for issue in issues):
         _raise_if_needed(issues, fail_on_errors)
         q_rows = q_rows or []
 
     rows_by_question_id: dict[int, SourceRow] = {}
     for row in rows:
-        if row.assist2017_question_id in rows_by_question_id:
+        if row.xes3g5m_question_id in rows_by_question_id:
             issues.append(
                 _issue(
                     category="malformed_row",
                     reason_code="duplicate_question_id",
                     severity="error",
-                    message=f"Duplicate assist2017_question_id {row.assist2017_question_id}.",
+                    message=f"Duplicate xes3g5m_question_id {row.xes3g5m_question_id}.",
                     source_ref=f"{source_paths['source_rows']}:row:{row.row_number}",
                     row=row,
                 )
             )
             continue
-        rows_by_question_id[row.assist2017_question_id] = row
+        rows_by_question_id[row.xes3g5m_question_id] = row
 
     aligned_rows: list[SourceRow] = []
-    for row in sorted(rows_by_question_id.values(), key=lambda item: item.assist2017_question_id):
-        q_matrix_concepts = (
-            q_rows[row.assist2017_question_id - 1]
-            if 1 <= row.assist2017_question_id <= len(q_rows)
+    for row in sorted(rows_by_question_id.values(), key=lambda item: item.xes3g5m_question_id):
+        kc_routes_concepts = (
+            q_rows[row.xes3g5m_question_id - 1]
+            if 1 <= row.xes3g5m_question_id <= len(q_rows)
             else []
         )
-        if row.assist2017_question_id < 1 or row.assist2017_question_id > len(q_rows):
+        if row.xes3g5m_question_id < 1 or row.xes3g5m_question_id > len(q_rows):
             issues.append(
                 _issue(
-                    category="q_matrix_mismatch",
-                    reason_code="question_outside_q_matrix",
+                    category="kc_routes_mismatch",
+                    reason_code="question_outside_kc_routes",
                     severity="error",
                     message=(
-                        f"Question {row.assist2017_question_id} is outside Q-matrix "
+                        f"Question {row.xes3g5m_question_id} is outside KC routes "
                         f"row range 1..{len(q_rows)}."
                     ),
                     source_ref=f"{source_paths['source_rows']}:row:{row.row_number}",
                     row=row,
                     provenance={
-                        "q_matrix_path": source_paths["q_matrix"],
-                        "q_matrix_question_count": len(q_rows),
+                        "kc_routes_path": source_paths["kc_routes"],
+                        "kc_routes_question_count": len(q_rows),
                     },
                 )
             )
             continue
-        if row.assist2017_concept_id not in q_matrix_concepts:
+        if row.xes3g5m_concept_id not in kc_routes_concepts:
             issues.append(
                 _issue(
-                    category="q_matrix_mismatch",
-                    reason_code="concept_not_in_q_matrix_row",
+                    category="kc_routes_mismatch",
+                    reason_code="concept_not_in_kc_routes_row",
                     severity="error",
                     message=(
-                        f"Question {row.assist2017_question_id} declares concept "
-                        f"{row.assist2017_concept_id}, but Q-matrix row has "
-                        f"{q_matrix_concepts}."
+                        f"Question {row.xes3g5m_question_id} declares concept "
+                        f"{row.xes3g5m_concept_id}, but KC routes row has "
+                        f"{kc_routes_concepts}."
                     ),
                     source_ref=f"{source_paths['source_rows']}:row:{row.row_number}",
                     row=row,
                     provenance={
-                        "declared_assist2017_concept_id": row.assist2017_concept_id,
-                        "q_matrix_concept_ids": q_matrix_concepts,
-                        "q_matrix_path": source_paths["q_matrix"],
-                        "q_matrix_row": row.assist2017_question_id,
+                        "declared_xes3g5m_concept_id": row.xes3g5m_concept_id,
+                        "kc_routes_concept_ids": kc_routes_concepts,
+                        "kc_routes_path": source_paths["kc_routes"],
+                        "kc_routes_row": row.xes3g5m_question_id,
                     },
                 )
             )
@@ -303,40 +303,40 @@ def build_assist2017_import_artifacts(
 
     _raise_if_needed(issues, fail_on_errors)
 
-    q_matrix_question_ids = set(range(1, len(q_rows) + 1))
-    q_matrix_concept_ids = {concept_id for q_row in q_rows for concept_id in q_row}
-    mapped_question_ids = {row.assist2017_question_id for row in aligned_rows}
-    mapped_concept_ids = {row.assist2017_concept_id for row in aligned_rows}
+    kc_routes_question_ids = set(range(1, len(q_rows) + 1))
+    kc_routes_concept_ids = {concept_id for q_row in q_rows for concept_id in q_row}
+    mapped_question_ids = {row.xes3g5m_question_id for row in aligned_rows}
+    mapped_concept_ids = {row.xes3g5m_concept_id for row in aligned_rows}
 
-    for question_id in sorted(q_matrix_question_ids - mapped_question_ids):
+    for question_id in sorted(kc_routes_question_ids - mapped_question_ids):
         issues.append(
             ValidationIssue(
                 category="missing_question_mapping",
-                reason_code="q_matrix_row_without_source_question",
+                reason_code="kc_routes_row_without_source_question",
                 severity="warning",
-                message=f"Q-matrix row {question_id} has no imported source question.",
-                source_ref=f"{source_paths['q_matrix']}:row:{question_id}",
-                assist2017_question_id=question_id,
+                message=f"KC routes row {question_id} has no imported source question.",
+                source_ref=f"{source_paths['kc_routes']}:row:{question_id}",
+                xes3g5m_question_id=question_id,
                 canonical_question_id=canonical_question_id(question_id),
                 provenance={
-                    "q_matrix_path": source_paths["q_matrix"],
-                    "q_matrix_row": question_id,
+                    "kc_routes_path": source_paths["kc_routes"],
+                    "kc_routes_row": question_id,
                 },
             )
         )
-    for concept_id in sorted(q_matrix_concept_ids - mapped_concept_ids):
+    for concept_id in sorted(kc_routes_concept_ids - mapped_concept_ids):
         issues.append(
             ValidationIssue(
                 category="missing_concept_mapping",
-                reason_code="q_matrix_concept_without_source_concept",
+                reason_code="kc_routes_concept_without_source_concept",
                 severity="warning",
-                message=f"Q-matrix concept column {concept_id} has no imported concept metadata.",
-                source_ref=f"{source_paths['q_matrix']}:column:{concept_id}",
-                assist2017_concept_id=concept_id,
+                message=f"KC routes concept column {concept_id} has no imported concept metadata.",
+                source_ref=f"{source_paths['kc_routes']}:column:{concept_id}",
+                xes3g5m_concept_id=concept_id,
                 canonical_concept_id=canonical_concept_id(concept_id),
                 provenance={
-                    "q_matrix_path": source_paths["q_matrix"],
-                    "q_matrix_concept_column": concept_id,
+                    "kc_routes_path": source_paths["kc_routes"],
+                    "kc_routes_concept_column": concept_id,
                 },
             )
         )
@@ -344,7 +344,7 @@ def build_assist2017_import_artifacts(
     mapping, content = _build_mapping_and_content(
         rows=aligned_rows,
         q_rows=q_rows,
-        q_matrix_path=q_matrix_path,
+        kc_routes_path=kc_routes_path,
         generated_at=generated,
         source_paths=source_paths,
         issues=issues,
@@ -380,8 +380,8 @@ def build_assist2017_import_artifacts(
         row_counts={
             "source_rows": len(rows),
             "valid_source_rows": len(aligned_rows),
-            "q_matrix_questions": len(q_rows),
-            "q_matrix_concepts": len(q_matrix_concept_ids),
+            "kc_routes_questions": len(q_rows),
+            "kc_routes_concepts": len(kc_routes_concept_ids),
             "content_questions": len(content.questions),
             "rag_documents": len(rag_documents),
         },
@@ -400,7 +400,7 @@ def build_assist2017_import_artifacts(
             in {
                 "missing_question_mapping",
                 "missing_concept_mapping",
-                "q_matrix_mismatch",
+                "kc_routes_mismatch",
                 "missing_teaching_content",
                 "missing_rag_doc",
             }
@@ -419,11 +419,11 @@ def build_assist2017_import_artifacts(
     )
 
     if output_dir is not None:
-        write_assist2017_import_artifacts(artifacts, output_dir)
+        write_xes3g5m_import_artifacts(artifacts, output_dir)
     return artifacts
 
 
-def write_assist2017_import_artifacts(
+def write_xes3g5m_import_artifacts(
     artifacts: Assist2017ImportArtifacts,
     output_dir: str | Path,
 ) -> dict[str, Path]:
@@ -447,30 +447,30 @@ def write_assist2017_import_artifacts(
     return outputs
 
 
-def canonical_question_id(assist2017_question_id: int) -> str:
-    return f"q_assist2017_{assist2017_question_id:06d}"
+def canonical_question_id(xes3g5m_question_id: int) -> str:
+    return f"q_xes3g5m_{xes3g5m_question_id:06d}"
 
 
-def canonical_concept_id(assist2017_concept_id: int) -> str:
-    return f"c_assist2017_{assist2017_concept_id:04d}"
+def canonical_concept_id(xes3g5m_concept_id: int) -> str:
+    return f"c_xes3g5m_{xes3g5m_concept_id:04d}"
 
 
 def _build_mapping_and_content(
     *,
     rows: list[SourceRow],
     q_rows: list[list[int]],
-    q_matrix_path: str | Path,
+    kc_routes_path: str | Path,
     generated_at: str,
     source_paths: dict[str, str],
     issues: list[ValidationIssue],
 ) -> tuple[CanonicalMappingArtifact, ContentImportArtifact]:
     concepts_by_id: dict[int, SourceRow] = {}
     for row in rows:
-        concepts_by_id.setdefault(row.assist2017_concept_id, row)
+        concepts_by_id.setdefault(row.xes3g5m_concept_id, row)
 
     concepts = [
         CanonicalConceptMapping(
-            assist2017_concept_id=concept_id,
+            xes3g5m_concept_id=concept_id,
             concept_id=row.concept_id,
             concept_name=row.concept_name,
             teaching_type=row.teaching_type,
@@ -486,26 +486,26 @@ def _build_mapping_and_content(
     questions: list[CanonicalQuestionMapping] = []
     imported_questions: list[ImportedQuestion] = []
     for row in rows:
-        q_matrix_reference = {
-            "q_matrix_path": _display_path(q_matrix_path),
-            "row_index": row.assist2017_question_id,
-            "concept_column_indices": q_rows[row.assist2017_question_id - 1],
+        kc_routes_reference = {
+            "kc_routes_path": _display_path(kc_routes_path),
+            "row_index": row.xes3g5m_question_id,
+            "concept_column_indices": q_rows[row.xes3g5m_question_id - 1],
         }
         expected_rag_doc_ids = _expected_rag_doc_ids(row)
         questions.append(
             CanonicalQuestionMapping(
-                assist2017_question_id=row.assist2017_question_id,
+                xes3g5m_question_id=row.xes3g5m_question_id,
                 question_id=row.question_id,
                 concept_id=row.concept_id,
                 concept_name=row.concept_name,
                 teaching_type=row.teaching_type,
-                q_matrix_reference=q_matrix_reference,
+                kc_routes_reference=kc_routes_reference,
                 source_provenance=MappingProvenance(
                     source=Path(source_paths["source_rows"]).name,
                     confidence="derived",
                     notes=f"source_row_id={row.source_row_id}",
                 ),
-                assist2017_concept_id=row.assist2017_concept_id,
+                xes3g5m_concept_id=row.xes3g5m_concept_id,
                 rag_doc_ids=expected_rag_doc_ids,
             )
         )
@@ -531,35 +531,35 @@ def _build_mapping_and_content(
         imported_questions.append(
             ImportedQuestion(
                 question_id=row.question_id,
-                assist2017_question_id=row.assist2017_question_id,
+                xes3g5m_question_id=row.xes3g5m_question_id,
                 stem=row.stem,
                 standard_answer=row.standard_answer,
                 explanation=row.explanation,
                 concept_id=row.concept_id,
                 concept_ids=[row.concept_id],
                 concept_name=row.concept_name,
-                assist2017_concept_id=row.assist2017_concept_id,
+                xes3g5m_concept_id=row.xes3g5m_concept_id,
                 difficulty=row.difficulty,
                 teaching_type=row.teaching_type,
                 mistake_patterns=row.mistake_patterns,
                 rag_doc_ids=expected_rag_doc_ids,
-                q_matrix_reference=q_matrix_reference,
+                kc_routes_reference=kc_routes_reference,
                 canonical_mapping={
                     "question_id": row.question_id,
                     "concept_id": row.concept_id,
                     "concept_name": row.concept_name,
                     "teaching_type": row.teaching_type,
-                    "assist2017_question_id": row.assist2017_question_id,
-                    "assist2017_concept_id": row.assist2017_concept_id,
-                    "q_matrix_reference": q_matrix_reference,
+                    "xes3g5m_question_id": row.xes3g5m_question_id,
+                    "xes3g5m_concept_id": row.xes3g5m_concept_id,
+                    "kc_routes_reference": kc_routes_reference,
                     "source": Path(source_paths["source_rows"]).name,
                 },
                 provenance={
                     "content_source": source_paths["source_rows"],
                     "source_row_id": row.source_row_id,
-                    "assist2017_question_id": row.assist2017_question_id,
-                    "assist2017_concept_id": row.assist2017_concept_id,
-                    "q_matrix_reference": q_matrix_reference,
+                    "xes3g5m_question_id": row.xes3g5m_question_id,
+                    "xes3g5m_concept_id": row.xes3g5m_concept_id,
+                    "kc_routes_reference": kc_routes_reference,
                     "answer_source": (
                         source_paths["source_rows"] if row.standard_answer is not None else None
                     ),
@@ -573,8 +573,8 @@ def _build_mapping_and_content(
 
     mapping = CanonicalMappingArtifact(
         generated_at=generated_at,
-        q_matrix=QMatrixArtifactSummary(
-            source_path=_display_path(q_matrix_path),
+        kc_routes=KCRoutesArtifactSummary(
+            source_path=_display_path(kc_routes_path),
             question_count=len(q_rows),
             concept_count=max((max(row) for row in q_rows if row), default=0),
         ),
@@ -588,14 +588,14 @@ def _build_mapping_and_content(
         },
         concepts=[
             ImportedConcept(
-                assist2017_concept_id=concept.assist2017_concept_id,
+                xes3g5m_concept_id=concept.xes3g5m_concept_id,
                 concept_id=concept.concept_id,
                 concept_name=concept.concept_name,
                 teaching_type=concept.teaching_type,
                 provenance={
                     "mapping_source": concept.source_provenance.source,
                     "source_row_id": concepts_by_id[
-                        concept.assist2017_concept_id
+                        concept.xes3g5m_concept_id
                     ].source_row_id,
                 },
             )
@@ -614,15 +614,15 @@ def _build_rag_documents(
     documents: list[RAGDocument] = []
     rows_by_concept: dict[int, SourceRow] = {}
     for row in rows:
-        rows_by_concept.setdefault(row.assist2017_concept_id, row)
+        rows_by_concept.setdefault(row.xes3g5m_concept_id, row)
 
-    for row in sorted(rows_by_concept.values(), key=lambda item: item.assist2017_concept_id):
+    for row in sorted(rows_by_concept.values(), key=lambda item: item.xes3g5m_concept_id):
         documents.append(
             _rag_document(
                 doc_id=_doc_id(row, "concept_note"),
                 doc_type="concept_note",
                 title=f"{row.concept_name}：核心概念",
-                content=f"{row.concept_name} 是 ASSISTments2017 导入知识点，可用同概念题目做针对练习。",
+                content=f"{row.concept_name} 是 XES3G5M 导入知识点，可用同概念题目做针对练习。",
                 row=row,
                 source_paths=source_paths,
                 question_aligned=False,
@@ -687,21 +687,21 @@ def _rag_document(
         source=f"{source_paths['source_rows']}#row-{row.row_number}",
         concept_id=row.concept_id,
         question_id=question_id,
-        assist2017_question_id=row.assist2017_question_id if question_aligned else None,
-        assist2017_concept_id=row.assist2017_concept_id,
+        xes3g5m_question_id=row.xes3g5m_question_id if question_aligned else None,
+        xes3g5m_concept_id=row.xes3g5m_concept_id,
         canonical_mapping={
             "question_id": question_id,
             "concept_id": row.concept_id,
             "concept_name": row.concept_name,
             "teaching_type": row.teaching_type,
-            "assist2017_question_id": (
-                row.assist2017_question_id if question_aligned else None
+            "xes3g5m_question_id": (
+                row.xes3g5m_question_id if question_aligned else None
             ),
-            "assist2017_concept_id": row.assist2017_concept_id,
+            "xes3g5m_concept_id": row.xes3g5m_concept_id,
             "source": Path(source_paths["source_rows"]).name,
         },
         provenance={
-            "rag_source": "assist2017_import_builder",
+            "rag_source": "xes3g5m_import_builder",
             "source_row_id": row.source_row_id,
             "content_source": source_paths["source_rows"],
         },
@@ -734,11 +734,11 @@ def _build_smoke_artifact(
         learning_paths=[
             SmokeLearningPath(
                 path_id=f"smoke_{row.question_id}",
-                description="推荐到答题到 TeachingTrace 的 ASSISTments2017 fixture smoke。",
+                description="推荐到答题到 TeachingTrace 的 XES3G5M fixture smoke。",
                 canonical_question_id=row.question_id,
                 canonical_concept_id=row.concept_id,
-                assist2017_question_id=row.assist2017_question_id,
-                assist2017_concept_id=row.assist2017_concept_id,
+                xes3g5m_question_id=row.xes3g5m_question_id,
+                xes3g5m_concept_id=row.xes3g5m_concept_id,
                 steps=[
                     SmokeLearningStep(
                         event_type="chat_message",
@@ -775,10 +775,10 @@ def _coverage_summary(
     rag_documents: list[RAGDocument],
     issues: list[ValidationIssue],
 ) -> dict[str, Any]:
-    q_matrix_question_ids = set(range(1, len(q_rows) + 1))
-    q_matrix_concept_ids = {concept_id for row in q_rows for concept_id in row}
-    mapped_question_ids = {row.assist2017_question_id for row in rows}
-    mapped_concept_ids = {row.assist2017_concept_id for row in rows}
+    kc_routes_question_ids = set(range(1, len(q_rows) + 1))
+    kc_routes_concept_ids = {concept_id for row in q_rows for concept_id in row}
+    mapped_question_ids = {row.xes3g5m_question_id for row in rows}
+    mapped_concept_ids = {row.xes3g5m_concept_id for row in rows}
     complete_content = [
         row
         for row in rows
@@ -799,24 +799,24 @@ def _coverage_summary(
         for issue in issues
         if issue.category == "missing_rag_doc"
     ]
-    q_matrix_gaps = [
+    kc_routes_gaps = [
         _gap_summary(issue)
         for issue in issues
-        if issue.category == "q_matrix_mismatch"
+        if issue.category == "kc_routes_mismatch"
     ]
     return {
         "mapping": {
             "mapped_question_count": len(mapped_question_ids),
-            "unmapped_question_count": len(q_matrix_question_ids - mapped_question_ids),
+            "unmapped_question_count": len(kc_routes_question_ids - mapped_question_ids),
             "mapped_concept_count": len(mapped_concept_ids),
-            "unmapped_concept_count": len(q_matrix_concept_ids - mapped_concept_ids),
+            "unmapped_concept_count": len(kc_routes_concept_ids - mapped_concept_ids),
             "mapped_question_ids": [
                 canonical_question_id(question_id)
                 for question_id in sorted(mapped_question_ids)
             ],
             "unmapped_question_ids": [
                 canonical_question_id(question_id)
-                for question_id in sorted(q_matrix_question_ids - mapped_question_ids)
+                for question_id in sorted(kc_routes_question_ids - mapped_question_ids)
             ],
             "mapped_concept_ids": [
                 canonical_concept_id(concept_id)
@@ -824,7 +824,7 @@ def _coverage_summary(
             ],
             "unmapped_concept_ids": [
                 canonical_concept_id(concept_id)
-                for concept_id in sorted(q_matrix_concept_ids - mapped_concept_ids)
+                for concept_id in sorted(kc_routes_concept_ids - mapped_concept_ids)
             ],
             "missing_question_mappings": [
                 _gap_summary(issue)
@@ -850,11 +850,11 @@ def _coverage_summary(
             "doc_type_counts": doc_type_counts,
             "missing_rag_docs": rag_gaps,
         },
-        "q_matrix": {
+        "kc_routes": {
             "question_count": len(q_rows),
-            "concept_count": len(q_matrix_concept_ids),
-            "mismatch_count": gap_counts.get("q_matrix_mismatch", 0),
-            "mismatches": q_matrix_gaps,
+            "concept_count": len(kc_routes_concept_ids),
+            "mismatch_count": gap_counts.get("kc_routes_mismatch", 0),
+            "mismatches": kc_routes_gaps,
         },
         "validation": validation_summary,
     }
@@ -892,10 +892,10 @@ def _compact_coverage_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "missing_rag_doc_count": summary["rag"]["missing_rag_doc_count"],
             "doc_type_counts": summary["rag"]["doc_type_counts"],
         },
-        "q_matrix": {
-            "question_count": summary["q_matrix"]["question_count"],
-            "concept_count": summary["q_matrix"]["concept_count"],
-            "mismatch_count": summary["q_matrix"]["mismatch_count"],
+        "kc_routes": {
+            "question_count": summary["kc_routes"]["question_count"],
+            "concept_count": summary["kc_routes"]["concept_count"],
+            "mismatch_count": summary["kc_routes"]["mismatch_count"],
         },
         "validation": summary["validation"],
     }
@@ -909,8 +909,8 @@ def _gap_summary(issue: ValidationIssue) -> dict[str, Any]:
         "source_ref": issue.source_ref,
         "canonical_question_id": issue.canonical_question_id,
         "canonical_concept_id": issue.canonical_concept_id,
-        "assist2017_question_id": issue.assist2017_question_id,
-        "assist2017_concept_id": issue.assist2017_concept_id,
+        "xes3g5m_question_id": issue.xes3g5m_question_id,
+        "xes3g5m_concept_id": issue.xes3g5m_concept_id,
         "message": issue.message,
         "provenance": issue.provenance,
     }
@@ -931,15 +931,15 @@ def _read_source_rows(path: str | Path, issues: list[ValidationIssue]) -> list[S
                 category="missing_file",
                 reason_code="source_rows_not_found",
                 severity="error",
-                message=f"ASSIST2017 source rows file not found: {_display_path(path)}.",
+                message=f"XES3G5M source rows file not found: {_display_path(path)}.",
                 source_ref=_display_path(path),
             )
         )
         return []
 
     required = {
-        "assist2017_question_id",
-        "assist2017_concept_id",
+        "xes3g5m_question_id",
+        "xes3g5m_concept_id",
         "concept_name",
         "teaching_type",
         "question_text",
@@ -982,8 +982,8 @@ def _read_source_rows(path: str | Path, issues: list[ValidationIssue]) -> list[S
 
 
 def _parse_source_row(raw: dict[str, str], *, row_number: int) -> SourceRow:
-    assist_question_id = int(_required(raw, "assist2017_question_id"))
-    assist_concept_id = int(_required(raw, "assist2017_concept_id"))
+    assist_question_id = int(_required(raw, "xes3g5m_question_id"))
+    assist_concept_id = int(_required(raw, "xes3g5m_concept_id"))
     difficulty = float(_required(raw, "difficulty"))
     if not 0.0 <= difficulty <= 1.0:
         raise ValueError("difficulty must be between 0.0 and 1.0")
@@ -992,8 +992,8 @@ def _parse_source_row(raw: dict[str, str], *, row_number: int) -> SourceRow:
     source_row_id = _required(raw, "source_row_id")
     return SourceRow(
         row_number=row_number,
-        assist2017_question_id=assist_question_id,
-        assist2017_concept_id=assist_concept_id,
+        xes3g5m_question_id=assist_question_id,
+        xes3g5m_concept_id=assist_concept_id,
         concept_name=concept_name,
         teaching_type=teaching_type,
         stem=_blank_to_none(raw.get("question_text")),
@@ -1005,28 +1005,28 @@ def _parse_source_row(raw: dict[str, str], *, row_number: int) -> SourceRow:
     )
 
 
-def _read_q_matrix(path: str | Path, issues: list[ValidationIssue]) -> list[list[int]]:
+def _read_kc_routes(path: str | Path, issues: list[ValidationIssue]) -> list[list[int]]:
     resolved = _resolve_project_path(path)
     if not resolved.is_file():
         issues.append(
             ValidationIssue(
                 category="missing_file",
-                reason_code="q_matrix_not_found",
+                reason_code="kc_routes_not_found",
                 severity="error",
-                message=f"ASSIST2017 Q-matrix file not found: {_display_path(path)}.",
+                message=f"XES3G5M KC routes file not found: {_display_path(path)}.",
                 source_ref=_display_path(path),
             )
         )
         return []
     try:
-        return read_q_matrix(resolved)
+        return read_kc_routes(resolved)
     except ValueError as exc:
         issues.append(
             ValidationIssue(
                 category="malformed_row",
-                reason_code="invalid_q_matrix",
+                reason_code="invalid_kc_routes",
                 severity="error",
-                message=f"Malformed Q-matrix: {exc}.",
+                message=f"Malformed KC routes: {exc}.",
                 source_ref=_display_path(path),
             )
         )
@@ -1058,7 +1058,7 @@ def _content_availability(row: SourceRow) -> ContentAvailability:
         fallback_message=(
             None
             if not missing_fields
-            else f"{row.question_id} 缺少{'、'.join(labels[field] for field in missing_fields)}，请补齐 ASSISTments2017 教学内容。"
+            else f"{row.question_id} 缺少{'、'.join(labels[field] for field in missing_fields)}，请补齐 XES3G5M 教学内容。"
         ),
     )
 
@@ -1074,8 +1074,8 @@ def _expected_rag_doc_ids(row: SourceRow) -> list[str]:
 
 def _doc_id(row: SourceRow, doc_type: str) -> str:
     if doc_type in {"concept_note", "learning_strategy"}:
-        return f"rag_assist2017_c{row.assist2017_concept_id:04d}_{doc_type}"
-    return f"rag_assist2017_q{row.assist2017_question_id:06d}_{doc_type}"
+        return f"rag_xes3g5m_c{row.xes3g5m_concept_id:04d}_{doc_type}"
+    return f"rag_xes3g5m_q{row.xes3g5m_question_id:06d}_{doc_type}"
 
 
 def _row_for_doc_id(rows: list[SourceRow], doc_id: str) -> SourceRow | None:
@@ -1120,8 +1120,8 @@ def _issue(
         severity=severity,
         message=message,
         source_ref=source_ref,
-        assist2017_question_id=row.assist2017_question_id if row else None,
-        assist2017_concept_id=row.assist2017_concept_id if row else None,
+        xes3g5m_question_id=row.xes3g5m_question_id if row else None,
+        xes3g5m_concept_id=row.xes3g5m_concept_id if row else None,
         canonical_question_id=row.question_id if row else None,
         canonical_concept_id=row.concept_id if row else None,
         provenance=issue_provenance,

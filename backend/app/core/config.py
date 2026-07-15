@@ -41,10 +41,10 @@ class MathTutorSettings(BaseSettings):
     run_viking_rag_smoke: bool = False
     viking_rag_smoke_query: str = ""
 
-    assist2017_dataset_mode: Literal["demo", "fixture", "full"] = "demo"
-    assist2017_full_source_rows_path: str = ""
-    assist2017_full_q_matrix_path: str = ""
-    assist2017_full_artifact_dir: str = ""
+    xes3g5m_dataset_mode: Literal["demo", "fixture", "full"] = "demo"
+    xes3g5m_full_source_rows_path: str = ""
+    xes3g5m_full_kc_routes_path: str = ""
+    xes3g5m_full_artifact_dir: str = ""
 
     content_source: Literal["demo", "imported"] = "demo"
     content_import_path: str = ""
@@ -52,11 +52,11 @@ class MathTutorSettings(BaseSettings):
     rag_artifact_path: str = ""
 
     kt_engine: Literal["mock", "dgekt"] = "mock"
-    dgekt_dataset: str = "assist2017"
+    dgekt_dataset: str = "xes3g5m"
     dgekt_checkpoint_path: str = ""
     dgekt_checkpoint_id: str = ""
     dgekt_dataset_dir: str = ""
-    dgekt_q_matrix_path: str = ""
+    dgekt_kc_routes_path: str = ""
     dgekt_offline_evidence_dir: str = ""
     dgekt_canonical_mapping_path: str = ""
 

@@ -38,7 +38,7 @@ const baseResponse: MathTutorEventResponse = {
   recommended_questions: [
     {
       question_id: "q_frac_001",
-      assist2017_question_id: 1,
+      xes3g5m_question_id: 1,
       stem: "计算：1/2 + 1/4 = ?",
       concept_id: "c_fraction_addition",
       concept_name: "异分母分数加法",
@@ -159,12 +159,12 @@ const baseResponse: MathTutorEventResponse = {
           {
             path_id: "dgekt-partial-1-2-1",
             partial_evidence: true,
-            history_assist2017_question_id: 1,
-            target_assist2017_question_id: 2,
+            history_xes3g5m_question_id: 1,
+            target_xes3g5m_question_id: 2,
             path_weight: 0.85
           }
         ],
-        key_history: [{ assist2017_question_id: 1, is_correct: false }],
+        key_history: [{ xes3g5m_question_id: 1, is_correct: false }],
         weak_concepts: []
       },
       rag_sources: [
@@ -175,8 +175,8 @@ const baseResponse: MathTutorEventResponse = {
           source: "demo-rag/fraction_addition.md",
           concept_id: "c_fraction_addition",
           question_id: "q_frac_001",
-          assist2017_question_id: 3,
-          assist2017_concept_id: 2
+          xes3g5m_question_id: 3,
+          xes3g5m_concept_id: 2
         }
       ],
       planner_decision: { decision: "recommend" },
@@ -601,7 +601,7 @@ const baseProviderHealthResponse: ProviderHealthResponse = {
       status: "healthy",
       severity: "info",
       recoverable: true,
-      actionable_hint: "默认 demo content 与 demo RAG artifact 可运行；当前未要求 full ASSISTments2017 或 generated vector index。",
+      actionable_hint: "默认 demo content 与 demo RAG artifact 可运行；当前未要求 full XES3G5M 或 generated vector index。",
       evidence_gaps: [],
       last_checked_at: "2026-07-09T08:30:00+00:00"
     },
@@ -828,7 +828,7 @@ describe("学习驾驶舱", () => {
     expect(eventCalls).toHaveLength(2);
     expect(eventCalls[1][1]?.body).toContain("\"type\":\"answer_submitted\"");
     expect(eventCalls[1][1]?.body).toContain("\"answer\":\"3/4\"");
-    expect(eventCalls[1][1]?.body).toContain("\"assist2017_question_id\":1");
+    expect(eventCalls[1][1]?.body).toContain("\"xes3g5m_question_id\":1");
   });
 
   it("展示 KT/DGEKT、Content/RAG artifact 与 LearningContextLayer readiness", async () => {
@@ -915,7 +915,7 @@ describe("学习驾驶舱", () => {
     expect(screen.getByText("Memory can influence strategy, not mastery.")).toBeInTheDocument();
     expect(screen.getByText(/trace:tt-test、kt_diagnosis:tt-test、demo-rag\/fraction_addition\.md、memory:mem-preference-1/)).toBeInTheDocument();
     expect(screen.getByText("RAG 引用")).toBeInTheDocument();
-    expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · ASSIST2017 Q3 · C2")).toBeInTheDocument();
+    expect(screen.getByText("题 q_frac_001 · 知识点 c_fraction_addition · XES3G5M Q3 · C2")).toBeInTheDocument();
     expect(screen.getByText("模型证据")).toBeInTheDocument();
     expect(screen.getByText("KT 预测")).toBeInTheDocument();
     expect(screen.getByText("DGEKT attribution")).toBeInTheDocument();
@@ -949,7 +949,7 @@ describe("学习驾驶舱", () => {
     const eventCalls = eventFetchCalls(fetchMock);
     expect(eventCalls).toHaveLength(2);
     expect(eventCalls[1][1]?.body).toContain("\"answer\":\"3/4\"");
-    expect(eventCalls[1][1]?.body).toContain("\"assist2017_question_id\":1");
+    expect(eventCalls[1][1]?.body).toContain("\"xes3g5m_question_id\":1");
   });
 
   it("没有上下文资产时保持推荐主流程可用并展示 fallback", async () => {
@@ -1282,8 +1282,8 @@ describe("学习驾驶舱", () => {
           attribution_evidence: {
             target_question_id: "q_frac_001",
             target_concept_id: "c_fraction_addition",
-            target_assist2017_question_id: 3,
-            target_assist2017_concept_id: 2,
+            target_xes3g5m_question_id: 3,
+            target_xes3g5m_concept_id: 2,
             prediction_probability: 0.2,
             evidence_status: "complete",
             evidence_source: "offline",
@@ -1309,13 +1309,13 @@ describe("学习驾驶舱", () => {
             top_paths: [
               {
                 path_id: "path-fixture-history-q3",
-                history_assist2017_question_id: 3,
-                target_assist2017_question_id: 3,
+                history_xes3g5m_question_id: 3,
+                target_xes3g5m_question_id: 3,
                 path_strength: 0.842,
                 partial_evidence: false
               }
             ],
-            key_history: [{ assist2017_question_id: 3, is_correct: false }],
+            key_history: [{ xes3g5m_question_id: 3, is_correct: false }],
             weak_concepts: [],
             path_ablation: [
               {
@@ -1366,12 +1366,12 @@ describe("学习驾驶舱", () => {
                 path_id: "dgekt-partial-3-3-1",
                 partial_evidence: true,
                 offline_evidence_status: "unavailable",
-                history_assist2017_question_id: 3,
-                target_assist2017_question_id: 3,
+                history_xes3g5m_question_id: 3,
+                target_xes3g5m_question_id: 3,
                 path_weight: 0.85
               }
             ],
-            key_history: [{ assist2017_question_id: 3, is_correct: false }],
+            key_history: [{ xes3g5m_question_id: 3, is_correct: false }],
             weak_concepts: [],
             path_ablation: [],
             evidence_gaps: [
@@ -1470,7 +1470,7 @@ describe("学习驾驶舱", () => {
   it("后端返回 DGEKT detail 时展示可理解错误", async () => {
     mockMathTutorApi({
       eventError: new Response(
-        JSON.stringify({ detail: "DGEKT 映射失败：缺少 ASSIST2017 题目映射" }),
+        JSON.stringify({ detail: "DGEKT 映射失败：缺少 XES3G5M 题目映射" }),
         {
         status: 400,
         headers: { "Content-Type": "application/json" }
@@ -1481,7 +1481,7 @@ describe("学习驾驶舱", () => {
     render(<App />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "事件处理失败：400 DGEKT 映射失败：缺少 ASSIST2017 题目映射"
+      "事件处理失败：400 DGEKT 映射失败：缺少 XES3G5M 题目映射"
     );
   });
 });

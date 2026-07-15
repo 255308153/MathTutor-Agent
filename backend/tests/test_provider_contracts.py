@@ -38,7 +38,7 @@ def test_default_provider_modes_keep_demo_mock_local_fallback() -> None:
     assert settings.run_mem0_live_smoke is False
     assert settings.run_viking_rag_smoke is False
     assert settings.viking_rag_smoke_query == ""
-    assert settings.assist2017_dataset_mode == "demo"
+    assert settings.xes3g5m_dataset_mode == "demo"
     assert settings.content_source == "demo"
     assert settings.rag_source == "demo"
     assert settings.kt_engine == "mock"
@@ -97,7 +97,7 @@ def test_fake_provider_mode_runs_without_network_or_provider_credentials(
         memory_provider_mode="fake_provider",
         rag_provider_mode="fake_provider",
         kt_engine="mock",
-        assist2017_dataset_mode="demo",
+        xes3g5m_dataset_mode="demo",
         content_source="demo",
         rag_source="demo",
     )
@@ -118,8 +118,8 @@ def test_fake_viking_provider_contract_covers_filters_empty_and_normalization() 
         query="通分 题解",
         filters={
             "question_id": "q_frac_001",
-            "assistments2017_question_id": 3,
-            "assistments2017_concept_id": "2",
+            "xes3g5m_question_id": 3,
+            "xes3g5m_concept_id": "2",
         },
         limit=5,
     )
@@ -129,8 +129,8 @@ def test_fake_viking_provider_contract_covers_filters_empty_and_normalization() 
         "fake-rag-fraction-mistake",
     }
     assert all(result.question_id == "q_frac_001" for result in results)
-    assert all(result.assist2017_question_id == 3 for result in results)
-    assert all(result.assist2017_concept_id == 2 for result in results)
+    assert all(result.xes3g5m_question_id == 3 for result in results)
+    assert all(result.xes3g5m_concept_id == 2 for result in results)
     assert all(result.provenance["provider_mode"] == "fake_provider" for result in results)
     assert all(result.provenance["provider_name"] == "fake_vikingdb" for result in results)
     assert results[0].canonical_mapping["source"] == "fake_provider_fixture"
@@ -161,7 +161,7 @@ def test_fake_viking_provider_post_filters_when_provider_does_not_support_metada
         filters={
             "doc_type": "learning_strategy",
             "concept_id": "c_fraction_addition",
-            "assist2017_concept_id": 2,
+            "xes3g5m_concept_id": 2,
         },
         limit=5,
     )
@@ -169,14 +169,14 @@ def test_fake_viking_provider_post_filters_when_provider_does_not_support_metada
     assert [result.doc_id for result in results] == ["fake-rag-fraction-strategy"]
     assert results[0].doc_type == "learning_strategy"
     assert results[0].concept_id == "c_fraction_addition"
-    assert results[0].assist2017_concept_id == 2
+    assert results[0].xes3g5m_concept_id == 2
 
 
 def test_viking_adapter_normalizes_provider_schema_aliases() -> None:
     rag = VikingKnowledgeRAGAdapter(
         provider_name="openviking",
         provider_mode="live_provider",
-        collection="assist2017-smoke",
+        collection="xes3g5m-smoke",
         client=StaticRAGProviderClient(
             [
                 {
@@ -187,16 +187,16 @@ def test_viking_adapter_normalizes_provider_schema_aliases() -> None:
                         "document_type": "question_explanation",
                         "name": "OpenViking q_frac_001 题解",
                         "text": "先找公分母，再把分数化成同分母后相加。",
-                        "source_ref": "openviking://assist2017/q_frac_001",
+                        "source_ref": "openviking://xes3g5m/q_frac_001",
                         "concept_id": "c_fraction_addition",
                         "question_id": "q_frac_001",
-                        "assistments2017_question_id": "3",
-                        "assistments2017_concept_id": "2",
+                        "xes3g5m_question_id": "3",
+                        "xes3g5m_concept_id": "2",
                         "canonical_mapping": {
                             "question_id": "q_frac_001",
                             "concept_id": "c_fraction_addition",
-                            "assist2017_question_id": 3,
-                            "assist2017_concept_id": 2,
+                            "xes3g5m_question_id": 3,
+                            "xes3g5m_concept_id": 2,
                             "source": "openviking_fixture",
                         },
                         "coverage": {
@@ -204,7 +204,7 @@ def test_viking_adapter_normalizes_provider_schema_aliases() -> None:
                             "question_aligned": True,
                             "concept_aligned": True,
                         },
-                        "provenance": {"dataset": "assist2017_fixture"},
+                        "provenance": {"dataset": "xes3g5m_fixture"},
                     },
                     "raw_provider_payload": {"must_not": "leak"},
                     "embedding_vector": [0.1, 0.2, 0.3],
@@ -215,7 +215,7 @@ def test_viking_adapter_normalizes_provider_schema_aliases() -> None:
 
     results = rag.search(
         query="通分 题解",
-        filters={"assist2017_question_id": 3, "doc_type": "question_explanation"},
+        filters={"xes3g5m_question_id": 3, "doc_type": "question_explanation"},
         limit=1,
     )
 
@@ -225,13 +225,13 @@ def test_viking_adapter_normalizes_provider_schema_aliases() -> None:
     assert result.doc_id == "provider-rag-q-frac-001"
     assert result.doc_type == "question_explanation"
     assert result.title == "OpenViking q_frac_001 题解"
-    assert result.source == "openviking://assist2017/q_frac_001"
-    assert result.assist2017_question_id == 3
-    assert result.assist2017_concept_id == 2
+    assert result.source == "openviking://xes3g5m/q_frac_001"
+    assert result.xes3g5m_question_id == 3
+    assert result.xes3g5m_concept_id == 2
     assert result.canonical_mapping["source"] == "openviking_fixture"
     assert result.coverage["question_aligned"] is True
     assert result.provenance["provider_name"] == "openviking"
-    assert result.provenance["collection"] == "assist2017-smoke"
+    assert result.provenance["collection"] == "xes3g5m-smoke"
 
     serialized = json.dumps(result.model_dump(), ensure_ascii=False)
     assert "raw_provider_payload" not in serialized
@@ -299,7 +299,7 @@ def test_default_demo_flow_does_not_need_live_providers_or_full_data() -> None:
     assert "VikingDB" not in serialized
     assert "OpenViking" not in serialized
     assert "checkpoint_path" not in serialized
-    assert "full_assistments2017" not in serialized
+    assert "full_xes3g5m" not in serialized
 
 
 def test_fake_provider_sdk_payloads_are_normalized_before_downstream(

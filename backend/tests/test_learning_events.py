@@ -206,16 +206,16 @@ def test_recommendation_kt_diagnosis_and_trace_share_canonical_target() -> None:
     assert question["answer"] == "54"
     assert question["explanation"] == "六九五十四，所以 6 × 9 = 54。"
     assert question["concept_id"] == "c_multiplication_facts"
-    assert question["assist2017_question_id"] == 2
-    assert question["assist2017_concept_id"] == 1
-    assert question["canonical_mapping"]["assist2017_question_id"] == 2
-    assert question["canonical_mapping"]["q_matrix_reference"]["concept_column_indices"] == [1]
+    assert question["xes3g5m_question_id"] == 2
+    assert question["xes3g5m_concept_id"] == 1
+    assert question["canonical_mapping"]["xes3g5m_question_id"] == 2
+    assert question["canonical_mapping"]["kc_routes_reference"]["concept_column_indices"] == [1]
     assert body["state_summary"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
     assert expert["kt_diagnosis"]["weak_concepts"][0]["concept_id"] == question["concept_id"]
     assert selected_target["question_id"] == question["question_id"]
     assert selected_target["concept_id"] == question["concept_id"]
-    assert selected_target["assist2017_question_id"] == question["assist2017_question_id"]
-    assert selected_target["assist2017_concept_id"] == question["assist2017_concept_id"]
+    assert selected_target["xes3g5m_question_id"] == question["xes3g5m_question_id"]
+    assert selected_target["xes3g5m_concept_id"] == question["xes3g5m_concept_id"]
     assert "question:q_mem_002" in plan_event["evidence_refs"]
 
 
