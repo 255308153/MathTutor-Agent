@@ -1,0 +1,3 @@
+sample_id,dataset,student_id,time_step,target_question_id,target_concept_id,canonical_target_question_id,canonical_target_concept_id,checkpoint_id,history_rank,history_question_id,history_canonical_question_id,history_concept_id,history_canonical_concept_id,history_answer,history_is_correct,history_position,influence_score,readable_summary
+fixture-s1-t2-q3,xes3g5m,student-dgekt-offline-fixture,2,3,2,q_frac_001,c_fraction_addition,dgekt-xes3g5m-fixture-epoch26,2,1,q_mem_001,1,c_multiplication_facts,correct,true,48,0.41,XES3G5M Q1 correct history
+fixture-s1-t2-q3,xes3g5m,student-dgekt-offline-fixture,2,3,2,q_frac_001,c_fraction_addition,dgekt-xes3g5m-fixture-epoch26,1,3,q_frac_001,2,c_fraction_addition,incorrect,false,49,0.93,XES3G5M Q3 incorrect history

@@ -1,0 +1,40 @@
+{
+  "schema_version": "dgekt-offline-evidence/v1",
+  "dataset": "xes3g5m",
+  "scorer": {
+    "name": "dgekt_offline_path_scorer",
+    "version": "fixture-v1",
+    "run_id": "dgekt-fixture-run-20260709",
+    "generated_at": "2026-07-09T00:00:00+00:00"
+  },
+  "checkpoint_provenance": {
+    "dataset": "xes3g5m",
+    "checkpoint_id": "dgekt-xes3g5m-fixture-epoch26",
+    "epoch": 26,
+    "auc": 0.7866464407565317,
+    "acc": 0.728796544573157,
+    "kc_routes_path": "data/mapping/xes3g5m_kc_routes.fixture.csv"
+  },
+  "provenance": {
+    "source": "original_dgekt_explainability_fixture",
+    "notes": "Small committed fixture that mirrors the original DGEKT explainability output shape."
+  },
+  "cases": [
+    {
+      "sample_id": "fixture-s1-t2-q3",
+      "dataset": "xes3g5m",
+      "student_id": "student-dgekt-offline-fixture",
+      "time_step": 2,
+      "target_question_id": 3,
+      "target_concept_id": 2,
+      "canonical_question_id": "q_frac_001",
+      "canonical_concept_id": "c_fraction_addition",
+      "checkpoint_id": "dgekt-xes3g5m-fixture-epoch26",
+      "prediction_probability": 0.2,
+      "provenance": {
+        "case_source": "diagnosis_cases.json#fixture-s1-t2-q3",
+        "history_window": 2
+      }
+    }
+  ]
+}
