@@ -1,0 +1,286 @@
+{
+  "concept_teaching_type_map": {
+    "c_multiplication_facts": "memory",
+    "c_fraction_addition": "procedure",
+    "c_linear_equation": "procedure",
+    "c_area_rectangle": "concept",
+    "c_ratio": "design"
+  },
+  "questions": [
+    {
+      "question_id": "q_mem_001",
+      "stem": "快速回答：7 × 8 = ?",
+      "standard_answer": "56",
+      "explanation": "7 × 8 是常用乘法事实，结果是 56。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.2,
+      "mistake_patterns": ["乘法事实记忆不稳", "相邻口诀混淆"],
+      "rag_doc_ids": ["rag_multiplication_facts", "rag_q_mem_003_solution", "rag_multiplication_high_fact_mistake"]
+    },
+    {
+      "question_id": "q_mem_002",
+      "stem": "快速回答：6 × 9 = ?",
+      "standard_answer": "54",
+      "explanation": "六九五十四，所以 6 × 9 = 54。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.2,
+      "mistake_patterns": ["乘法事实记忆不稳", "口诀结果混淆"],
+      "rag_doc_ids": ["rag_multiplication_facts", "rag_q_mem_005_solution", "rag_multiplication_square_mistake"]
+    },
+    {
+      "question_id": "q_mem_003",
+      "stem": "快速回答：8 × 9 = ?",
+      "standard_answer": "72",
+      "explanation": "八九七十二，所以 8 × 9 = 72。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.25,
+      "mistake_patterns": ["高位乘法口诀记忆不稳"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_mem_004",
+      "stem": "快速回答：7 × 6 = ?",
+      "standard_answer": "42",
+      "explanation": "六七四十二，所以 7 × 6 = 42。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.2,
+      "mistake_patterns": ["乘法事实记忆不稳"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_mem_005",
+      "stem": "快速回答：9 × 9 = ?",
+      "standard_answer": "81",
+      "explanation": "九九八十一，所以 9 × 9 = 81。",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "difficulty": 0.25,
+      "mistake_patterns": ["平方口诀记忆不稳"],
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "question_id": "q_frac_001",
+      "stem": "计算：1/2 + 1/4 = ?",
+      "standard_answer": "3/4",
+      "explanation": "先通分到四分之一，1/2 = 2/4，所以 2/4 + 1/4 = 3/4。",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "difficulty": 0.35,
+      "mistake_patterns": ["没有通分", "分母直接相加"],
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "question_id": "q_frac_002",
+      "stem": "计算：2/3 + 1/6 = ?",
+      "standard_answer": "5/6",
+      "explanation": "2/3 = 4/6，4/6 + 1/6 = 5/6。",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "difficulty": 0.4,
+      "mistake_patterns": ["通分倍数错误", "约分前后混淆"],
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "question_id": "q_frac_003",
+      "stem": "计算：3/5 + 1/10 = ?",
+      "standard_answer": "7/10",
+      "explanation": "3/5 = 6/10，6/10 + 1/10 = 7/10。",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "difficulty": 0.45,
+      "mistake_patterns": ["未找到共同分母", "分子分母同时相加"],
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "question_id": "q_frac_004",
+      "stem": "计算：5/8 + 1/4 = ?",
+      "standard_answer": "7/8",
+      "explanation": "1/4 = 2/8，5/8 + 2/8 = 7/8。",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "difficulty": 0.5,
+      "mistake_patterns": ["通分后分子未同步变化"],
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "question_id": "q_frac_005",
+      "stem": "计算：1/3 + 1/4 = ?",
+      "standard_answer": "7/12",
+      "explanation": "1/3 = 4/12，1/4 = 3/12，所以和为 7/12。",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "difficulty": 0.55,
+      "mistake_patterns": ["最小公倍数选择错误", "分母直接相加"],
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "question_id": "q_eq_001",
+      "stem": "解方程：x + 5 = 12。",
+      "standard_answer": "7",
+      "explanation": "等式两边同时减 5，得到 x = 7。",
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "difficulty": 0.3,
+      "mistake_patterns": ["移项符号错误", "把加法逆运算写成加法"],
+      "rag_doc_ids": ["rag_linear_equation_inverse"]
+    },
+    {
+      "question_id": "q_eq_002",
+      "stem": "解方程：2x = 18。",
+      "standard_answer": "9",
+      "explanation": "等式两边同时除以 2，得到 x = 9。",
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "difficulty": 0.35,
+      "mistake_patterns": ["乘除逆运算混淆", "只改一边"],
+      "rag_doc_ids": ["rag_linear_equation_inverse"]
+    },
+    {
+      "question_id": "q_eq_003",
+      "stem": "解方程：3x + 2 = 11。",
+      "standard_answer": "3",
+      "explanation": "先两边减 2 得 3x = 9，再两边除以 3 得 x = 3。",
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "difficulty": 0.55,
+      "mistake_patterns": ["运算顺序错误", "移项后忘记除以系数"],
+      "rag_doc_ids": ["rag_linear_equation_inverse"]
+    },
+    {
+      "question_id": "q_eq_004",
+      "stem": "解方程：4x - 6 = 10。",
+      "standard_answer": "4",
+      "explanation": "先两边加 6 得 4x = 16，再两边除以 4 得 x = 4。",
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "difficulty": 0.6,
+      "mistake_patterns": ["负号处理错误", "漏做第二步"],
+      "rag_doc_ids": ["rag_linear_equation_inverse"]
+    },
+    {
+      "question_id": "q_eq_005",
+      "stem": "解方程：5x + 5 = 30。",
+      "standard_answer": "5",
+      "explanation": "两边减 5 得 5x = 25，再除以 5 得 x = 5。",
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "difficulty": 0.6,
+      "mistake_patterns": ["先除后减导致错误", "系数和常数混淆"],
+      "rag_doc_ids": ["rag_linear_equation_inverse"]
+    },
+    {
+      "question_id": "q_area_001",
+      "stem": "长方形长 8 厘米，宽 3 厘米，面积是多少平方厘米？",
+      "standard_answer": "24",
+      "explanation": "长方形面积 = 长 × 宽 = 8 × 3 = 24。",
+      "concept_id": "c_area_rectangle",
+      "concept_name": "长方形面积",
+      "difficulty": 0.25,
+      "mistake_patterns": ["把周长公式当面积公式", "单位遗漏"],
+      "rag_doc_ids": ["rag_rectangle_area"]
+    },
+    {
+      "question_id": "q_area_002",
+      "stem": "一个长方形面积为 35 平方米，长 7 米，宽是多少米？",
+      "standard_answer": "5",
+      "explanation": "宽 = 面积 ÷ 长 = 35 ÷ 7 = 5。",
+      "concept_id": "c_area_rectangle",
+      "concept_name": "长方形面积",
+      "difficulty": 0.45,
+      "mistake_patterns": ["面积和周长混淆", "乘除关系反了"],
+      "rag_doc_ids": ["rag_rectangle_area"]
+    },
+    {
+      "question_id": "q_area_003",
+      "stem": "长方形长 10 米，宽 6 米，面积是多少平方米？",
+      "standard_answer": "60",
+      "explanation": "10 × 6 = 60，所以面积是 60 平方米。",
+      "concept_id": "c_area_rectangle",
+      "concept_name": "长方形面积",
+      "difficulty": 0.3,
+      "mistake_patterns": ["使用周长公式", "计算乘法错误"],
+      "rag_doc_ids": ["rag_rectangle_area"]
+    },
+    {
+      "question_id": "q_area_004",
+      "stem": "长方形宽 4 厘米，面积 28 平方厘米，长是多少厘米？",
+      "standard_answer": "7",
+      "explanation": "长 = 面积 ÷ 宽 = 28 ÷ 4 = 7。",
+      "concept_id": "c_area_rectangle",
+      "concept_name": "长方形面积",
+      "difficulty": 0.5,
+      "mistake_patterns": ["反向求边时仍做乘法", "单位混淆"],
+      "rag_doc_ids": ["rag_rectangle_area"]
+    },
+    {
+      "question_id": "q_area_005",
+      "stem": "一个长方形长 9 厘米，宽 5 厘米，面积是多少平方厘米？",
+      "standard_answer": "45",
+      "explanation": "9 × 5 = 45，所以面积是 45 平方厘米。",
+      "concept_id": "c_area_rectangle",
+      "concept_name": "长方形面积",
+      "difficulty": 0.35,
+      "mistake_patterns": ["乘法结果错误", "面积单位写错"],
+      "rag_doc_ids": ["rag_rectangle_area"]
+    },
+    {
+      "question_id": "q_ratio_001",
+      "stem": "3 个苹果要 6 元，按同样单价，5 个苹果要多少元？",
+      "standard_answer": "10",
+      "explanation": "单价是 6 ÷ 3 = 2 元，5 个苹果要 2 × 5 = 10 元。",
+      "concept_id": "c_ratio",
+      "concept_name": "比例与单价",
+      "difficulty": 0.45,
+      "mistake_patterns": ["没有先求单价", "比例关系方向错误"],
+      "rag_doc_ids": ["rag_ratio_unit_rate"]
+    },
+    {
+      "question_id": "q_ratio_002",
+      "stem": "4 支笔 12 元，7 支同样的笔多少元？",
+      "standard_answer": "21",
+      "explanation": "每支笔 12 ÷ 4 = 3 元，7 支是 3 × 7 = 21 元。",
+      "concept_id": "c_ratio",
+      "concept_name": "比例与单价",
+      "difficulty": 0.5,
+      "mistake_patterns": ["乘除顺序错误", "单位量没有求出"],
+      "rag_doc_ids": ["rag_ratio_unit_rate"]
+    },
+    {
+      "question_id": "q_ratio_003",
+      "stem": "2 千克苹果 16 元，5 千克苹果多少元？",
+      "standard_answer": "40",
+      "explanation": "每千克 16 ÷ 2 = 8 元，5 千克是 8 × 5 = 40 元。",
+      "concept_id": "c_ratio",
+      "concept_name": "比例与单价",
+      "difficulty": 0.5,
+      "mistake_patterns": ["总价和数量对应错误", "比例倍数算错"],
+      "rag_doc_ids": ["rag_ratio_unit_rate"]
+    },
+    {
+      "question_id": "q_ratio_004",
+      "stem": "6 本练习本 18 元，10 本练习本多少元？",
+      "standard_answer": "30",
+      "explanation": "每本 18 ÷ 6 = 3 元，10 本是 3 × 10 = 30 元。",
+      "concept_id": "c_ratio",
+      "concept_name": "比例与单价",
+      "difficulty": 0.55,
+      "mistake_patterns": ["直接相加数量差", "单价计算错误"],
+      "rag_doc_ids": ["rag_ratio_unit_rate"]
+    },
+    {
+      "question_id": "q_ratio_005",
+      "stem": "5 米布 25 元，8 米布多少元？",
+      "standard_answer": "40",
+      "explanation": "每米 25 ÷ 5 = 5 元，8 米是 5 × 8 = 40 元。",
+      "concept_id": "c_ratio",
+      "concept_name": "比例与单价",
+      "difficulty": 0.5,
+      "mistake_patterns": ["单位量混淆", "倍数关系错误"],
+      "rag_doc_ids": ["rag_ratio_unit_rate"]
+    }
+  ]
+}

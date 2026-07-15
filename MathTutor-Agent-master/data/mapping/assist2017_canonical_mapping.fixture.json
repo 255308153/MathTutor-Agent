@@ -1,0 +1,144 @@
+{
+  "schema_version": "assist2017-canonical-mapping/v1",
+  "dataset": "assist2017",
+  "generated_at": "fixture",
+  "q_matrix": {
+    "source_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+    "row_base": 1,
+    "column_base": 1,
+    "question_count": 6,
+    "concept_count": 4
+  },
+  "concepts": [
+    {
+      "assist2017_concept_id": 1,
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "teaching_type": "memory",
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": "V1.3 小型可验证 mapping fixture；不是完整 ASSIST2017 导入。"
+      }
+    },
+    {
+      "assist2017_concept_id": 2,
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "teaching_type": "procedure",
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": null
+      }
+    },
+    {
+      "assist2017_concept_id": 3,
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "teaching_type": "procedure",
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": null
+      }
+    }
+  ],
+  "questions": [
+    {
+      "assist2017_question_id": 1,
+      "question_id": "q_mem_001",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "teaching_type": "memory",
+      "q_matrix_reference": {
+        "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+        "row_index": 1,
+        "concept_column_indices": [1]
+      },
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": null
+      },
+      "assist2017_concept_id": 1,
+      "rag_doc_ids": ["rag_multiplication_facts"]
+    },
+    {
+      "assist2017_question_id": 2,
+      "question_id": "q_mem_002",
+      "concept_id": "c_multiplication_facts",
+      "concept_name": "乘法口诀事实",
+      "teaching_type": "memory",
+      "q_matrix_reference": {
+        "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+        "row_index": 2,
+        "concept_column_indices": [1]
+      },
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": "Intentional missing RAG doc for coverage diagnostics."
+      },
+      "assist2017_concept_id": 1,
+      "rag_doc_ids": ["rag_multiplication_facts", "rag_missing_fixture_doc"]
+    },
+    {
+      "assist2017_question_id": 3,
+      "question_id": "q_frac_001",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "teaching_type": "procedure",
+      "q_matrix_reference": {
+        "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+        "row_index": 3,
+        "concept_column_indices": [2]
+      },
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": null
+      },
+      "assist2017_concept_id": 2,
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "assist2017_question_id": 4,
+      "question_id": "q_fixture_missing_content",
+      "concept_id": "c_fraction_addition",
+      "concept_name": "异分母分数加法",
+      "teaching_type": "procedure",
+      "q_matrix_reference": {
+        "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+        "row_index": 4,
+        "concept_column_indices": [2]
+      },
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": "Intentional missing teaching content for coverage diagnostics."
+      },
+      "assist2017_concept_id": 2,
+      "rag_doc_ids": ["rag_fraction_addition_basic"]
+    },
+    {
+      "assist2017_question_id": 5,
+      "question_id": "q_eq_001",
+      "concept_id": "c_linear_equation",
+      "concept_name": "一元一次方程",
+      "teaching_type": "procedure",
+      "q_matrix_reference": {
+        "q_matrix_path": "data/mapping/assist2017_q_matrix.fixture.csv",
+        "row_index": 5,
+        "concept_column_indices": [3]
+      },
+      "source_provenance": {
+        "source": "assist2017_curated_metadata.fixture.json",
+        "confidence": "fixture",
+        "notes": null
+      },
+      "assist2017_concept_id": 3,
+      "rag_doc_ids": ["rag_linear_equation_inverse"]
+    }
+  ]
+}
