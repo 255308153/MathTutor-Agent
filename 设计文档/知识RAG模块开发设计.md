@@ -35,48 +35,75 @@ PDF / 题库 / 概念资料
         ↓
 统一文档和知识片段
         ↓
+PostgreSQL 权威元数据
 OpenSearch 关键词索引
 Milvus 向量索引
-PostgreSQL 知识图谱和元数据
+Neo4j 全局教学知识图谱
         ↓
 学生原始问题
         ↓
-查询改写和指代消解
+分层路由判断
         ↓
-OpenSearch 关键词召回 + Milvus 向量召回
+按需查询改写和指代消解
         ↓
-RRF（倒数排名融合）
+OpenSearch + Milvus 并行召回
         ↓
-知识图谱扩展
+RRF（倒数排名融合）+ Neo4j 按需扩展
         ↓
 Reranker（重排序模型）
         ↓
-重复过滤和上下文裁剪
+证据是否充足判断
+        ↓
+必要时启动 KnowTrace 多轮知识探索
+        ↓
+本轮临时证据图 + 重复过滤 + 上下文裁剪
         ↓
 回答生成与引用校验
         ↓
-TeachingTrace（教学追踪）
+知识回溯 + TeachingTrace（教学追踪）
 ```
 
 ## 3. 存储分工
 
-本项目当前默认使用 SQLite，主要用于本地运行和已有 V1 能力。目标 RAG 实现不要求所有数据都放在 SQLite 中。
+知识 RAG 从一开始采用确定的正式架构，不设计 SQLite、Chroma 或 PostgreSQL 图关系查询作为过渡主链路。
 
 | 存储 | 负责内容 |
 |------|----------|
-| PostgreSQL | 文档元数据、导入任务、版本、引用、证据缺口、知识图谱关系 |
+| PostgreSQL | 文档元数据、导入任务、版本、引用、证据缺口、关系审核记录、Prompt 版本和索引发布状态 |
 | OpenSearch | 中文关键词检索、BM25 排序、字段权重、短语搜索、元数据过滤 |
-| Milvus | 稠密向量、稀疏向量、向量近邻搜索和向量过滤 |
-| 本地文件或对象存储 | 原始 PDF、页面图片、解析中间文件 |
-| SQLite | 本地降级、测试和无外部依赖运行 |
+| Milvus | 稠密向量、向量近邻搜索和向量元数据过滤 |
+| Neo4j | 全局教学知识图谱、邻居查询、前置关系和多跳路径查询 |
+| Redis | 导入任务运行状态、查询缓存和本轮临时证据图 |
+| 持久化挂载目录 | 原始 PDF 和解析中间文件 |
 
-知识图谱第一阶段可以使用 PostgreSQL 的节点表和关系表。只有当多跳查询和关系规模明显增加时，再考虑专用图数据库。
+PostgreSQL 是 Source of Truth（权威数据源）。OpenSearch、Milvus 和 Neo4j 是可重建的查询索引，不允许业务代码绕开 PostgreSQL 随意同时写多个系统。
+
+同步采用 Outbox Pattern（本地消息表模式）：
+
+```text
+资料和审核结果写入 PostgreSQL
+→ 同一事务写入 outbox_event
+→ 索引 Worker 消费事件
+→ 更新 OpenSearch、Milvus、Neo4j
+→ 回写各索引的同步状态和版本
+```
+
+每个可检索片段记录：
+
+```text
+opensearch_status
+milvus_status
+neo4j_status
+index_version
+```
+
+必要索引未完成时，该资料版本不得发布。
 
 ## 4. 资料类型
 
 ### 4.1 题目解析
 
-来源为 XES3G5M 题库，内容包括题干、选项、答案、官方解析、题型、知识点和题图。
+来源为 XES3G5M 题库，内容包括题干、选项、答案、官方解析、题型和知识点。
 
 ```text
 doc_type = question_explanation
@@ -145,16 +172,21 @@ schema_version
 检查 PDF 文件
 → 计算文件指纹
 → 提取文字、目录和页码
-→ 对扫描页执行 OCR（图片文字识别）
 → 识别章节和小节
-→ 处理公式、表格和图片
+→ 处理可提取的公式和表格文本
 → 按章节和段落切成知识片段
 → 绑定已有知识点
-→ 生成稠密和稀疏表示
-→ 写入 OpenSearch
-→ 写入 Milvus
-→ 建立知识图谱关系
+→ 使用统一 Embedding Model 生成稠密向量
+→ 写入 PostgreSQL 和 outbox_event
+→ 同步 OpenSearch 和 Milvus
+→ 提取、审核并同步 Neo4j 关系
 → 生成覆盖率报告
+```
+
+当前资料范围只接受具有可提取文字层的 PDF，不处理扫描版 PDF，不执行 OCR，不提取教材插图，也不保存页面截图。缺少文字层时导入失败并记录：
+
+```text
+gap_type = pdf_text_layer_missing
 ```
 
 每本书记录：
@@ -264,7 +296,7 @@ concept_id 和知识点名称：高
 正文：普通
 ```
 
-SQLite FTS5 只作为本地降级和测试实现，不作为正式生产关键词检索方案。
+OpenSearch 是正式关键词检索实现。测试环境使用相同类型的容器服务，避免使用另一套全文检索行为代替生产行为。
 
 ## 10. Milvus 向量检索
 
@@ -285,7 +317,6 @@ Milvus 负责：
 
 ```text
 稠密向量搜索
-稀疏向量搜索
 近似最近邻索引
 向量过滤
 ```
@@ -309,7 +340,7 @@ Hybrid Search（混合检索）同时执行：
 
 ```text
 OpenSearch 关键词召回
-Milvus 稠密 / 稀疏向量召回
+Milvus 稠密向量召回
 ```
 
 建议两边各取 20～50 条候选结果，再使用 RRF 合并排名：
@@ -380,53 +411,255 @@ confidence < 0.55：向学生追问
 
 涉及提交答案、切换题目、修改推荐或写入学习事实时，不能只依赖模型置信度，必须由明确的系统事件触发。
 
-## 13. 知识图谱
+## 13. 分层路由设计
 
-节点类型：
+完整能力不代表每次请求都调用全部系统。路由按照以下顺序判断：
+
+```text
+系统事件
+→ 明确规则
+→ 模糊情况交给 LLM 路由器
+→ Policy Guard（策略守卫）检查
+→ 首轮检索
+→ 根据证据是否充足决定是否升级 KnowTrace
+```
+
+系统按钮事件由代码直接判断：
+
+```text
+提交答案 → answer_submission
+点击下一题 → next_question_action
+点击换题 → recommendation_feedback
+显示答案 → reveal_answer
+发送聊天消息 → conversation_message
+```
+
+提交答案、下一题、换题和显示答案不能由 LLM 改写成 RAG 请求。
+
+聊天路由只保留以下执行类型：
+
+```text
+no_retrieval：闲聊和简单确认
+fast_question_rag：绑定当前题的明确问题
+fast_concept_rag：明确概念问题
+rewrite_then_rag：带代词、省略或依赖最近对话
+graph_rag：需要前置知识、错因或概念关系
+knowtrace_rag：首轮证据不足，需要多轮知识探索
+clarification：存在多个合理解释，必须追问
+state_action：明确的系统状态动作
+```
+
+LLM 路由器输出：
+
+```text
+intent
+clarity
+scope
+reasoning_depth
+needs_rewrite
+needs_knowledge_relation
+state_write
+confidence
+reason_code
+```
+
+Policy Guard 必须执行以下检查：
+
+```text
+系统事件优先于 LLM 分类
+没有当前题时禁止 fast_question_rag
+低置信度且存在多个解释时转 clarification
+聊天语义判断不得直接写学习事实
+question_id 和 concept_id 必须来自当前状态或标准映射
+```
+
+不要在学生刚发言时就强行判断是否启动 KnowTrace。普通请求先执行一次混合检索，证据仍不足时再升级。
+
+工具调用策略：
+
+| 场景 | 查询改写 | OpenSearch | Milvus | Neo4j | KnowTrace |
+|------|----------|------------|---------|-------|-----------|
+| 闲聊 | 否 | 否 | 否 | 否 | 否 |
+| 当前题明确提问 | 否 | 是 | 是 | 按需 | 否 |
+| 明确概念问题 | 否 | 是 | 是 | 按需 | 否 |
+| 模糊表达 | 是 | 是 | 是 | 按需 | 否 |
+| 前置知识或概念关系 | 按需 | 是 | 是 | 是 | 证据不足时启动 |
+| 多步错因分析 | 是 | 是 | 是 | 是 | 是 |
+| 系统状态动作 | 否 | 否 | 否 | 按动作规则 | 否 |
+
+OpenSearch、Milvus 和按需执行的 Neo4j 查询必须并行发起，不得串行等待。
+
+## 14. 知识图谱
+
+系统同时使用两张用途不同的图：
+
+```text
+全局教学知识图谱：长期保存，存储在 Neo4j
+本轮临时证据图：围绕当前学生问题生成，运行时保存在 Redis，结束后写入 PostgreSQL 和 TeachingTrace
+```
+
+全局图谱节点类型：
 
 ```text
 Question：题目
 Concept：知识点
 Chunk：教材片段
 MistakePattern：错因
-Strategy：学习策略
+LearningStrategy：学习策略
 Formula：公式
 ```
 
-关系类型：
+关系类型采用固定白名单：
 
 ```text
+PARENT_OF：上级知识点
 QUESTION_OF：题目属于知识点
 REQUIRES：题目需要知识点
 EXPLAINS：资料解释知识点
 PREREQUISITE_OF：前置知识
 MISCONCEPTION_OF：常见错误
 SUPPORTS：资料支持讲解
+USES_FORMULA：使用公式
 NEXT_STEP：下一步学习方向
+CONTRASTS_WITH：概念对比
 ```
 
-图谱用于：
+不允许 LLM 在运行时自由创造关系名称。
+
+确定关系直接从知识点目录、XES3G5M 映射和已审核资料生成。由 LLM 从 PDF 提取的关系只能先进入 PostgreSQL 候选审核记录，审核通过后才通过 outbox_event 发布到 Neo4j。
+
+每条关系必须记录：
 
 ```text
-补充前置知识
-寻找相关错因
-寻找相关公式
-寻找相关例题
-扩展关键词和向量召回结果
-```
-
-推导关系必须记录：
-
-```text
+edge_id
+from_node_id
+relation_type
+to_node_id
 source_chunk_ids
+source_level
 confidence
 created_by
 review_status
+graph_version
 ```
 
-没有来源的关系不能作为正式教学证据。
+没有来源的关系不能作为正式教学证据。重复关系合并来源，冲突关系标记 `graph_conflict` 并停止自动使用。
 
-## 14. 重排序和去重
+本轮临时证据图中的关系分为：
+
+```text
+global：来自已发布的 Neo4j 全局图谱
+retrieved：来自本轮检索片段并带引用
+derived：模型根据本轮证据推导，只能辅助规划
+```
+
+本轮临时图不得直接写入全局 Neo4j 图谱。反复出现且来源可靠的新关系进入候选审核队列。
+
+## 15. KnowTrace 多轮知识探索
+
+KnowTrace-RAG 追踪的是“回答当前问题还缺什么知识”，不是学生掌握度 KT。
+
+```text
+Student KT：追踪学生会不会
+KnowTrace-RAG：追踪当前回答已经有什么证据、还缺什么证据
+```
+
+新增运行状态：
+
+```text
+KnowledgeTraceState
+```
+
+至少记录：
+
+```text
+trace_id
+student_message
+resolved_query
+intent
+question_id
+concept_ids
+current_round
+max_rounds
+knowledge_triples[]
+exploration_targets[]
+retrieved_chunk_ids[]
+supporting_triple_ids[]
+status
+stop_reason
+evidence_gaps[]
+```
+
+每一轮包含两个步骤：
+
+```text
+Knowledge Exploration（知识探索）
+→ 判断当前证据是否足够，并生成下一步实体、关系和检索查询
+
+Knowledge Completion（知识补全）
+→ 从重排序后的资料中提取带来源的知识三元组
+```
+
+知识探索输出：
+
+```text
+evidence_sufficient
+missing_knowledge[]
+exploration_targets[]
+```
+
+每个探索目标包含：
+
+```text
+entity
+relation
+lexical_query
+semantic_query
+doc_types[]
+filters
+```
+
+知识补全输出的每条三元组必须包含：
+
+```text
+subject
+predicate
+object
+source_chunk_id
+citation
+confidence
+```
+
+三元组进入临时证据图前必须校验关系白名单、来源片段、页码、知识点标识、重复关系和证据支持情况。
+
+运行限制：
+
+```text
+普通深度问题最多 2 轮
+复杂问题硬上限 3 轮
+每轮最多 2 个探索目标
+每个目标融合后进入重排序的候选不超过 15 条
+每轮最多加入 5 条新三元组
+本轮临时证据图最多保留 20 条三元组
+```
+
+停止条件：
+
+```text
+核心结论已经有可靠引用支持
+达到最大轮数
+本轮没有新增三元组
+查询与上一轮重复
+检索结果为空
+达到延迟或 token 预算
+学生问题需要进一步澄清
+```
+
+回答生成时只加载支持子图和对应资料片段，不加载所有检索结果。回答同时返回 `supporting_triple_ids` 和 `citation_ids`。
+
+回答完成后执行 Knowledge Backtracing（知识回溯），记录真正使用的三元组、片段、查询以及未产生作用的探索步骤。回溯结果进入 TeachingTrace，不直接作为模型训练数据；只有经过正确答案和引用校验的轨迹才能进入后续训练数据审核流程。
+
+## 16. 重排序和去重
 
 Reranker（重排序模型）处理混合检索和图谱扩展后的候选结果：
 
@@ -458,13 +691,16 @@ OpenSearch 和 Milvus 召回
 内容冲突：不合并，标记 content_conflict
 ```
 
-## 15. 提示词设计
+## 17. 提示词设计
 
-提示词分为五类：
+提示词分为八类：
 
 ```text
+LLM 路由分类提示词
 查询改写提示词
 知识图谱关系提取提示词
+Knowledge Exploration（知识探索）提示词
+Knowledge Completion（知识补全）提示词
 教学回答提示词
 不同教学模式提示词
 引用检查提示词
@@ -499,11 +735,14 @@ model_name
 raw_query
 rewritten_query
 retrieval_version
+route_decision
+knowledge_trace_id
 使用的 chunk_id
+supporting_triple_ids
 最终引用
 ```
 
-## 16. 统一检索接口
+## 18. 统一检索接口
 
 请求对象：
 
@@ -554,21 +793,23 @@ score
 citation
 ```
 
-## 17. 异常和证据缺口
+## 19. 异常和证据缺口
 
 以下情况必须记录 `evidence_gap`（证据缺口）：
 
 ```text
 PDF 解析失败
-OCR 质量过低
+PDF 缺少可提取文字层
 资料没有页码
 知识点映射失败
 OpenSearch 没有结果
 Milvus 没有结果
 向量生成失败
+Neo4j 查询失败
 知识图谱关系没有来源
 资料之间存在冲突
 重排序后没有可靠结果
+KnowTrace 达到轮数或预算上限仍缺少证据
 ```
 
 禁止：
@@ -580,60 +821,61 @@ Milvus 没有结果
 让 RAG 修改 KT 或判分事实
 ```
 
-## 18. 开发顺序
+## 20. 开发顺序
 
-第一阶段实现关键生产链路：
-
-```text
-1. PDF 解析、页码和章节保留
-2. 文档片段切分和知识点绑定
-3. OpenSearch 中文关键词检索
-4. Milvus 稠密 / 稀疏向量检索
-5. 查询改写和指代消解
-6. RRF 混合检索
-7. Reranker 重排序
-8. 引用定位和校验
-9. 重复内容处理
-10. 提示词版本管理
-11. TeachingTrace 记录
-```
-
-第二阶段完善：
+开发顺序只表示施工先后，不表示临时架构。每一步都直接使用 PostgreSQL、OpenSearch、Milvus、Neo4j 和 Redis 的最终接口与数据契约。
 
 ```text
-1. 知识图谱关系完善
-2. 图谱多跳检索
-3. 错因和学习策略联动
-4. 多查询改写
-5. 检索评测和提示词评测
-6. Provider（外部服务）降级和健康检查
+1. 定义 PostgreSQL 权威模型、Outbox Event 和索引版本协议
+2. 建立 PDF 持久化目录、文字层检查、页码和章节解析
+3. 完成文档片段切分、知识点绑定、去重和引用定位
+4. 完成 OpenSearch 中文关键词索引和字段权重
+5. 完成 Milvus 稠密向量索引和模型版本管理
+6. 完成 OpenSearch、Milvus、Neo4j 的索引 Worker 和重试状态
+7. 建立 Neo4j 全局知识图谱、关系白名单和审核发布流程
+8. 完成系统事件、规则、LLM 和 Policy Guard 分层路由
+9. 完成查询改写、指代消解和 clarification 追问
+10. 完成 OpenSearch + Milvus 并行召回、RRF 融合和 Reranker
+11. 完成证据充足判断和 KnowTrace 多轮知识探索
+12. 完成本轮临时证据图、三元组校验和 Redis 运行状态
+13. 完成支持子图回答、引用校验和知识回溯
+14. 完成提示词、检索器、图谱和模型版本管理
+15. 完成 TeachingTrace、评测集、性能预算和 Provider 健康检查
 ```
 
-## 19. 验收标准
+## 21. 验收标准
 
 ```text
 学生说“这里为什么这样”，系统能结合当前题完成改写
 学生说“还是不懂”，系统能结合上一轮讲解继续检索
+按钮事件不会被 LLM 错误路由成 RAG 请求
+明确问题走快速路径，不会无条件启动全部工具
 OpenSearch 能命中术语、公式和章节
 Milvus 能命中语义相近内容
 两路结果能正确融合
 重排序能过滤不相关片段
 重复教材内容不会全部进入上下文
-知识图谱能找到前置知识和错因
+Neo4j 能找到前置知识、错因和概念关系
+KnowTrace 能根据证据缺口生成下一轮检索目标
+KnowTrace 能在证据充分、无新证据或达到预算时正确停止
+每条临时知识三元组都能定位到来源片段和页码
 回答带书名、章节、页码或题目编号
 资料不足时不会编造引用
 RAG 不会修改 KT 和学习事实
-每次检索都能追踪原问题、改写结果和最终证据
+每次检索都能追踪原问题、路由、改写、探索轮次、支持子图和最终证据
 ```
 
-## 20. 关键原则
+## 22. 关键原则
 
 ```text
 查询改写负责把学生的话说清楚
+分层路由负责选择最短且足够的执行路径
 OpenSearch 负责精确找词
 Milvus 负责理解语义
-知识图谱负责补充关系
+Neo4j 全局图谱负责提供经过审核的教学关系
+KnowTrace 临时证据图负责追踪当前回答还缺什么知识
 Reranker 负责最后筛选
 提示词负责把证据变成合适的教学回答
 引用负责让回答可以追溯
+知识回溯负责识别真正支持回答的资料和步骤
 ```
