@@ -424,13 +424,13 @@ confidence < 0.55：向学生追问
 → 根据证据是否充足决定是否升级 KnowTrace
 ```
 
-系统按钮事件由代码直接判断：
+系统命令由代码直接判断，保存成功后再产生领域事件：
 
 ```text
-提交答案 → answer_submission
-点击下一题 → next_question_action
-点击换题 → recommendation_feedback
-显示答案 → reveal_answer
+提交答案 → SubmitAnswerCommand → formal_answer_recorded
+点击下一题 → RequestNextQuestionCommand → next_question_requested
+点击换题 → ChangeQuestionCommand → question_changed
+显示答案 → RevealAnswerCommand → answer_revealed
 发送聊天消息 → conversation_message
 ```
 

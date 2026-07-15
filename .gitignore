@@ -79,6 +79,7 @@ checkpoints/
 
 outputs/
 logs/
+tmp/
 
 # Licensed datasets - keep local only
 XES3G5M/
